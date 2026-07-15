@@ -1,0 +1,97 @@
+import React, { useState } from 'react';
+import { useVault } from '../../state/VaultContext';
+import { useAuth } from '../../state/AuthContext';
+import { VaultSettings } from '../../types/models';
+
+export function SettingsScreen() {
+  const { settings, saveSettings } = useVault();
+  const { user } = useAuth();
+  const [form, setForm] = useState({ ...settings });
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = async () => {
+    if (!user) return;
+    await saveSettings(new VaultSettings(
+      form.notInterestedCooldownDays,
+      form.listedCooldownDays,
+      form.maxNoAnswerAttempts,
+      form.assignmentExpiryDays,
+      form.portfolioStaleDays,
+      form.dailyViewCap,
+      form.wifiLockEnabled,
+      form.officeIp,
+    ), user.id);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const field = (label: string, key: keyof typeof form, type = 'number', note?: string) => (
+    <div>
+      <label style={{ fontSize: '0.8125rem', display: 'block', marginBottom: 4, fontWeight: 500 }}>
+        {label}
+      </label>
+      <input
+        className="input"
+        type={type}
+        value={form[key] as string | number}
+        onChange={e => setForm(p => ({
+          ...p,
+          [key]: type === 'number' ? parseInt(e.target.value) || 0 : e.target.value,
+        }))}
+        style={{ maxWidth: 200 }}
+      />
+      {note && <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 4 }}>{note}</div>}
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <h2 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Settings</h2>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {saved && <span style={{ color: 'var(--success)', fontSize: '0.8125rem' }}>Saved ✓</span>}
+          <button className="btn btn-primary" onClick={handleSave}>Save</button>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+        <div className="card">
+          <h3 style={{ fontWeight: 600, marginBottom: 16 }}>Cooldown & Expiry</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {field('Not interested cooldown (days)', 'notInterestedCooldownDays', 'number', 'Owner stays in cooling before returning to pool')}
+            {field('Already listed cooldown (days)', 'listedCooldownDays', 'number')}
+            {field('Max no-answer attempts', 'maxNoAnswerAttempts', 'number', 'Streak before auto-recycle to pool')}
+            {field('Assignment expiry (days)', 'assignmentExpiryDays', 'number', 'Uncalled assignments auto-recycle after this')}
+            {field('Portfolio staleness (days)', 'portfolioStaleDays', 'number', 'Days without call before portfolio is stale')}
+          </div>
+        </div>
+
+        <div className="card">
+          <h3 style={{ fontWeight: 600, marginBottom: 16 }}>Protection</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {field('Daily view cap', 'dailyViewCap', 'number', 'Owner-detail opens per broker per day')}
+
+            <div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.875rem', cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.wifiLockEnabled}
+                  onChange={e => setForm(p => ({ ...p, wifiLockEnabled: e.target.checked }))} />
+                WiFi lock (enforced server-side at go-live)
+              </label>
+            </div>
+
+            {form.wifiLockEnabled && (
+              <div>
+                <label style={{ fontSize: '0.8125rem', display: 'block', marginBottom: 4, fontWeight: 500 }}>
+                  Office IP / network
+                </label>
+                <input className="input" type="text" value={form.officeIp}
+                  onChange={e => setForm(p => ({ ...p, officeIp: e.target.value }))}
+                  placeholder="192.168.1.0/24" style={{ maxWidth: 200 }} />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
