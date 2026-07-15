@@ -1,8 +1,4 @@
-# Prospector
-
-**Prospector** is a CRM and call-management platform built for Dubai real estate brokerages. It enables teams to manage property listings, buyer leads, call dispositions, and daily operations through a shared data vault with role-based access for managers and brokers.
-
-## Features
+# Features
 
 - **Data Vault** — Central repository of properties, leads, call logs, and import datasets, stored locally via IndexedDB
 - **Import Wizards** — Step-by-step CSV/XLSX import for property and lead data with column mapping, header detection, and review
