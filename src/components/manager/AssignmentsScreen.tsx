@@ -1,23 +1,22 @@
 import React, { useState, useMemo } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { useAuth } from '../../state/AuthContext';
-import { Property, PropertyState } from '../../types/models';
-import { PropertyTable } from './PropertyTable';
+import { PropertyState } from '../../types/models';
 import { StateChip } from '../common/StateChip';
+import { RequestsScreen } from './RequestsScreen';
 
 export function AssignmentsScreen() {
-  const { properties, brokers, assign, reclaim, userById } = useVault();
+  const { properties, brokers, assign, reclaim, userById, pendingRequests } = useVault();
   const { user } = useAuth();
-  const [tab, setTab] = useState<'pool' | 'assigned' | 'portfolio'>('pool');
+  const [tab, setTab] = useState<'pool' | 'assigned' | 'requests'>('pool');
 
   const pool = useMemo(() => properties.filter(p => p.state === PropertyState.pool), [properties]);
   const assigned = useMemo(() => properties.filter(p => p.state === PropertyState.assigned), [properties]);
-  const portfolio = useMemo(() => properties.filter(p => p.state === PropertyState.portfolio), [properties]);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [assignBroker, setAssignBroker] = useState('');
 
-  const currentList = tab === 'pool' ? pool : tab === 'assigned' ? assigned : portfolio;
+  const currentList = tab === 'pool' ? pool : assigned;
 
   const toggleSelect = (id: string) => {
     setSelected(prev => {
@@ -55,10 +54,18 @@ export function AssignmentsScreen() {
         <button className={`btn ${tab === 'assigned' ? 'btn-primary' : ''}`} onClick={() => { setTab('assigned'); setSelected(new Set()); }}>
           Assigned ({assigned.length})
         </button>
-        <button className={`btn ${tab === 'portfolio' ? 'btn-primary' : ''}`} onClick={() => { setTab('portfolio'); setSelected(new Set()); }}>
-          Portfolio ({portfolio.length})
+        <button className={`btn ${tab === 'requests' ? 'btn-primary' : ''}`} onClick={() => { setTab('requests'); setSelected(new Set()); }}
+          style={{ position: 'relative' }}>
+          Requests
+          {pendingRequests.length > 0 && (
+            <span style={{ marginLeft: 6, background: 'var(--error)', color: '#fff', borderRadius: 999, padding: '1px 7px', fontSize: '0.6875rem', fontWeight: 700 }}>
+              {pendingRequests.length}
+            </span>
+          )}
         </button>
       </div>
+
+      {tab === 'requests' ? <RequestsScreen /> : <>
 
       <div className="card" style={{ marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
@@ -77,7 +84,7 @@ export function AssignmentsScreen() {
             </button>
           </>
         )}
-        {(tab === 'assigned' || tab === 'portfolio') && (
+        {tab === 'assigned' && (
           <button className="btn btn-sm" disabled={selected.size === 0} onClick={handleReclaim}>
             Reclaim to pool
           </button>
@@ -134,6 +141,7 @@ export function AssignmentsScreen() {
           </tbody>
         </table>
       </div>
+      </>}
     </div>
   );
 }

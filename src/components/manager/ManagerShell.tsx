@@ -32,9 +32,9 @@ export function ManagerShell() {
   const tabs: { key: Tab; label: string; permission?: Permission; badge?: number }[] = [
     { key: 'home', label: 'Dashboard' },
     { key: 'vault', label: 'Data Vault', permission: Permission.manageData },
-    { key: 'assignments', label: 'Assignments', permission: Permission.assignData },
+    { key: 'assignments', label: 'Assignments', permission: Permission.assignData, badge: pendingRequests.length },
     { key: 'team', label: 'Team', permission: Permission.viewReports },
-    { key: 'control', label: 'Control', badge: pendingRequests.length },
+    { key: 'control', label: 'Control' },
   ];
 
   const visibleTabs = tabs.filter(t => !t.permission || user.can(t.permission));
