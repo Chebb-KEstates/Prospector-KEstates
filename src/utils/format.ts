@@ -42,3 +42,32 @@ export function fmtDuration(seconds: number): string {
   const s = seconds % 60;
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
+
+export function fmtInt(v: number): string {
+  return new Intl.NumberFormat('en-AE').format(v);
+}
+
+/** First meaningful token of a name for greetings — skips titles/articles. */
+export function greetingName(name: string): string {
+  const skip = new Set(['the', 'mr', 'mrs', 'ms', 'dr', 'a', 'an']);
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  for (const p of parts) {
+    if (!skip.has(p.toLowerCase().replace(/\./g, ''))) return p;
+  }
+  return parts[0] ?? name;
+}
+
+/** Relative "time ago" for feeds. */
+export function timeAgo(at: string, now: Date = new Date()): string {
+  const ms = now.getTime() - new Date(at).getTime();
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+export function sameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}

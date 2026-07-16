@@ -111,7 +111,7 @@ export function ManagerShell() {
           flex: 1, padding: 24, overflow: 'auto',
           maxHeight: '100vh',
         }}>
-          {activeTab === 'home' && <HomeScreen />}
+          {activeTab === 'home' && <HomeScreen onGo={(t) => setActiveTab(t as Tab)} />}
           {activeTab === 'vault' && <VaultScreen />}
           {activeTab === 'assignments' && <AssignmentsScreen />}
           {activeTab === 'team' && <TeamScreen />}

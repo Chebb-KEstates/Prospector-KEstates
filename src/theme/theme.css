@@ -312,3 +312,74 @@ input, textarea, select {
   overflow-y: auto;
   min-width: 320px;
 }
+
+/* ── Dashboard hero slab ─────────────────────────────────────────────────
+   The one place the app is allowed to be beautiful rather than technical.
+   Theme-aware: soft warm-grey stone on ivory, black-marble graphite in dark.
+   Foreground tokens (--slab-*) are set per theme so the slab reads well in both. */
+.hero-slab {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  isolation: isolate;
+}
+.hero-slab > .hero-inner { position: relative; z-index: 1; padding: 20px 24px; }
+.hero-glow, .hero-glow-2 { position: absolute; border-radius: 50%; z-index: 0; pointer-events: none; }
+.hero-glow { top: -90px; right: -60px; width: 340px; height: 340px; }
+.hero-glow-2 { bottom: -120px; left: -80px; width: 300px; height: 300px; }
+
+[data-theme="light"] .hero-slab {
+  background: linear-gradient(135deg, #EFEAE2 0%, #E4DDD2 100%);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 20px rgba(139, 115, 85, 0.10);
+  --slab-fg: #2A2622;
+  --slab-muted: #6B6560;
+  --slab-gold: #9A7B45;
+  --slab-outline: rgba(139, 115, 85, 0.45);
+}
+[data-theme="light"] .hero-glow { background: radial-gradient(circle, rgba(139,115,85,0.14), transparent 70%); }
+[data-theme="light"] .hero-glow-2 { background: radial-gradient(circle, rgba(255,255,255,0.55), transparent 70%); }
+
+[data-theme="dark"] .hero-slab {
+  background: linear-gradient(135deg, #131316 0%, #08080A 100%);
+  box-shadow: 0 8px 26px rgba(200, 169, 110, 0.14);
+  --slab-fg: #E8E4E0;
+  --slab-muted: #9C9690;
+  --slab-gold: #E0C99A;
+  --slab-outline: #2A2826;
+}
+[data-theme="dark"] .hero-glow { background: radial-gradient(circle, rgba(200,169,110,0.18), transparent 70%); }
+[data-theme="dark"] .hero-glow-2 { background: radial-gradient(circle, rgba(160,132,106,0.08), transparent 70%); }
+
+/* Dashboard responsive column grid — lets the home screens use the whole width. */
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.dash-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 12px 0 16px;
+}
+.dash-card-head .title { flex: 1; font-size: 0.8125rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Small pill button used on slabs and toolbars */
+.slab-action {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 8px; font-size: 0.8125rem; font-weight: 600;
+  border: 1px solid var(--slab-outline, var(--border)); background: transparent;
+  color: var(--slab-fg, var(--text)); transition: all 0.15s;
+}
+.slab-action:hover { background: rgba(200, 169, 110, 0.10); }
+.slab-action.primary {
+  background: var(--gold); color: #2A2013; border-color: var(--gold);
+}
+.slab-action.primary:hover { background: var(--gold-dark); }
+.slab-badge {
+  margin-left: 4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  background: var(--error); color: #fff; font-size: 0.6875rem; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
