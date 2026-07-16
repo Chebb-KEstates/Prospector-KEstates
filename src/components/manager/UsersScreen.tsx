@@ -12,27 +12,37 @@ export function UsersScreen() {
   const [form, setForm] = useState({
     name: '', email: '', role: UserRole.broker as UserRole,
     team: '', active: true, permissions: new Set<Permission>(),
-    viewCapOverride: '',
+    viewCapOverride: '', password: '',
   });
+  const [formError, setFormError] = useState<string | null>(null);
 
   const resetForm = () => setForm({
     name: '', email: '', role: UserRole.broker,
     team: '', active: true, permissions: new Set<Permission>(),
-    viewCapOverride: '',
+    viewCapOverride: '', password: '',
   });
 
   const openEdit = (u: AppUser) => {
     setEditing(u);
+    setFormError(null);
     setForm({
       name: u.name, email: u.email, role: u.role,
       team: u.team, active: u.active,
       permissions: new Set(u.permissions),
       viewCapOverride: u.viewCapOverride?.toString() ?? '',
+      password: '',
     });
   };
 
   const handleSave = async () => {
     if (!user) return;
+    setFormError(null);
+    const password = form.password.trim();
+    // New accounts need an initial password; edits may leave it blank to keep it.
+    if (!editing && password.length < 4) {
+      setFormError('Set an initial password (at least 4 characters) for the new user.');
+      return;
+    }
     const id = editing?.id ?? `u-${Date.now()}`;
     const appUser = new AppUser(
       id, form.name.trim(), form.email.trim(), form.role,
@@ -42,7 +52,12 @@ export function UsersScreen() {
       editing?.createdAt ?? new Date().toISOString(),
     );
     const action = editing ? 'Edited' : 'Created';
-    await saveUser(appUser, user.id, action);
+    try {
+      await saveUser(appUser, user.id, action, password.length > 0 ? password : undefined);
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Could not save user.');
+      return;
+    }
     setEditing(null);
     setShowNew(false);
     resetForm();
@@ -66,7 +81,7 @@ export function UsersScreen() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <h2 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Users</h2>
-        <button className="btn btn-primary" onClick={() => { setShowNew(true); setEditing(null); resetForm(); }}>
+        <button className="btn btn-primary" onClick={() => { setShowNew(true); setEditing(null); resetForm(); setFormError(null); }}>
           + Add user
         </button>
       </div>
@@ -105,6 +120,24 @@ export function UsersScreen() {
                 <input className="input" type="number" value={form.viewCapOverride}
                   onChange={e => setForm(p => ({ ...p, viewCapOverride: e.target.value }))} />
               </div>
+              <div>
+                <label style={{ fontSize: '0.8125rem', display: 'block', marginBottom: 4 }}>
+                  {editing ? 'Reset password (leave blank to keep)' : 'Initial password'}
+                </label>
+                <input className="input" type="password" autoComplete="new-password"
+                  value={form.password} placeholder={editing ? '••••••••' : 'Set a password'}
+                  onChange={e => setForm(p => ({ ...p, password: e.target.value }))} />
+              </div>
+
+              {formError && (
+                <div style={{
+                  padding: '8px 12px', background: 'var(--error)15',
+                  border: '1px solid var(--error)', borderRadius: 8,
+                  color: 'var(--error)', fontSize: '0.8125rem',
+                }}>
+                  {formError}
+                </div>
+              )}
 
               <div>
                 <label style={{ fontSize: '0.8125rem', display: 'block', marginBottom: 8 }}>Permissions</label>

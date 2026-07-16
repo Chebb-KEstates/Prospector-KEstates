@@ -1,0 +1,204 @@
+// Prospector — MySQL schema (Prisma)
+//
+// Design note: every timestamp-like value is stored as a String holding the
+// exact ISO-8601 text the client produced. The original frontend persisted these
+// as ISO strings in IndexedDB and relies on lexical (localeCompare) ordering and
+// string comparison of `cooldownUntil`/`updatedAt`/etc. Storing them as VARCHAR
+// guarantees a byte-identical round-trip and preserves 100% of the sorting,
+// filtering and cooldown behaviour. Do not "improve" these to DateTime.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String   @id @db.VarChar(64)
+  name           String   @db.VarChar(255)
+  email          String   @unique @db.VarChar(255)
+  role           String   @db.VarChar(32) // 'manager' | 'broker'
+  active         Boolean  @default(true)
+  team           String   @default("") @db.VarChar(255)
+  permissions    Json? // string[] | null  (null => role defaults)
+  viewCapOverride Int?
+  createdAt      String?  @db.VarChar(40)
+  passwordHash   String   @db.VarChar(255)
+
+  @@index([role])
+  @@map("users")
+}
+
+model DataSet {
+  id             String   @id @db.VarChar(64)
+  name           String   @db.VarChar(255)
+  source         String   @default("") @db.VarChar(255)
+  type           String   @db.VarChar(32) // 'register' | 'transactions'
+  module         String   @default("owners") @db.VarChar(32) // 'owners' | 'leads'
+  fileName       String   @default("") @db.VarChar(512)
+  communityLabel String   @default("") @db.VarChar(255)
+  importedAt     String   @db.VarChar(40)
+  cost           Float?
+  totalUnits     Int      @default(0)
+  callableUnits  Int      @default(0)
+  updatedUnits   Int      @default(0)
+
+  @@index([importedAt])
+  @@map("datasets")
+}
+
+model Property {
+  id                   String  @id @db.VarChar(64)
+  orgId                String  @db.VarChar(64)
+  datasetId            String  @db.VarChar(64)
+  state                String  @db.VarChar(32)
+  unitKey              String  @db.VarChar(512)
+  community            String  @default("") @db.VarChar(255)
+  cluster              String? @db.VarChar(255)
+  building             String? @db.VarChar(255)
+  unitNumber           String? @db.VarChar(255)
+  plotNumber           String? @db.VarChar(255)
+  propertyType         String? @db.VarChar(255)
+  beds                 Int?
+  sizeSqft             Float?
+  plotSqft             Float?
+  lastTransactionDate  String? @db.VarChar(40)
+  lastTransactionValue Float?
+  txCount              Int     @default(0)
+  rentStart            String? @db.VarChar(40)
+  rentEnd              String? @db.VarChar(40)
+  rentAmount           Float?
+  ownerName            String  @default("") @db.VarChar(255)
+  ownerPhone           String? @db.VarChar(64)
+  ownerNationality     String? @db.VarChar(128)
+  createdAt            String  @db.VarChar(40)
+  updatedAt            String  @db.VarChar(40)
+  assignedTo           String? @db.VarChar(64)
+  assignedAt           String? @db.VarChar(40)
+  assignmentNote       String? @db.Text
+  cooldownUntil        String? @db.VarChar(40)
+  portfolioSince       String? @db.VarChar(40)
+  lastOutcome          String? @db.VarChar(32)
+  lastCalledAt         String? @db.VarChar(40)
+  callAttempts         Int     @default(0)
+  nextFollowUpAt       String? @db.VarChar(40)
+  dncAt                String? @db.VarChar(40)
+
+  @@index([datasetId])
+  @@index([state])
+  @@index([assignedTo])
+  @@index([community])
+  @@index([unitKey])
+  @@index([ownerPhone])
+  @@map("properties")
+}
+
+model Lead {
+  id             String  @id @db.VarChar(64)
+  orgId          String  @db.VarChar(64)
+  datasetId      String  @db.VarChar(64)
+  enquiryDate    String? @db.VarChar(40)
+  name           String  @default("") @db.VarChar(255)
+  phone          String? @db.VarChar(64)
+  email          String? @db.VarChar(255)
+  project        String? @db.VarChar(255)
+  source         String? @db.VarChar(255)
+  extra          Json? // Record<string,string>
+  createdAt      String  @db.VarChar(40)
+  state          String  @db.VarChar(32)
+  updatedAt      String  @db.VarChar(40)
+  assignedTo     String? @db.VarChar(64)
+  assignedAt     String? @db.VarChar(40)
+  assignmentNote String? @db.Text
+  cooldownUntil  String? @db.VarChar(40)
+  portfolioSince String? @db.VarChar(40)
+  lastOutcome    String? @db.VarChar(32)
+  lastCalledAt   String? @db.VarChar(40)
+  callAttempts   Int     @default(0)
+  nextFollowUpAt String? @db.VarChar(40)
+  dncAt          String? @db.VarChar(40)
+
+  @@index([datasetId])
+  @@index([state])
+  @@index([assignedTo])
+  @@index([phone])
+  @@map("leads")
+}
+
+model CallLog {
+  id          String  @id @db.VarChar(64)
+  orgId       String  @db.VarChar(64)
+  propertyIds Json    @default("[]") // string[]
+  leadIds     Json    @default("[]") // string[]
+  brokerId    String  @db.VarChar(64)
+  at          String  @db.VarChar(40)
+  outcome     String  @db.VarChar(32)
+  note        String? @db.Text
+  followUpAt  String? @db.VarChar(40)
+
+  @@index([brokerId])
+  @@index([at])
+  @@map("calls")
+}
+
+model BatchRequest {
+  id           String  @id @db.VarChar(64)
+  orgId        String  @db.VarChar(64)
+  brokerId     String  @db.VarChar(64)
+  community    String  @default("") @db.VarChar(255)
+  cluster      String? @db.VarChar(255)
+  count        Int     @default(0)
+  unitIds      Json    @default("[]") // string[]
+  note         String? @db.Text
+  at           String  @db.VarChar(40)
+  status       String  @default("pending") @db.VarChar(32)
+  decidedAt    String? @db.VarChar(40)
+  grantedCount Int     @default(0)
+
+  @@index([status])
+  @@index([at])
+  @@map("requests")
+}
+
+model AuditEntry {
+  id          String @id @db.VarChar(64)
+  orgId       String @db.VarChar(64)
+  at          String @db.VarChar(40)
+  actorId     String @db.VarChar(64)
+  action      String @db.VarChar(64)
+  detail      String @db.Text
+  propertyIds Json   @default("[]") // string[]
+
+  @@index([actorId])
+  @@index([action])
+  @@index([at])
+  @@map("audit")
+}
+
+// Single-row revision counter, bumped on every mutation. The SPA polls this
+// (and still uses localStorage for same-browser tabs) to detect changes made
+// on other devices and trigger a reload — replacing the old localStorage-only
+// cross-tab sync with something that works cross-device.
+model Meta {
+  id  String @id @db.VarChar(64)
+  rev BigInt @default(0)
+
+  @@map("meta")
+}
+
+model Settings {
+  id                      String  @id @db.VarChar(64) // org id
+  notInterestedCooldownDays Int   @default(30)
+  listedCooldownDays      Int     @default(30)
+  maxNoAnswerAttempts     Int     @default(3)
+  assignmentExpiryDays    Int     @default(14)
+  portfolioStaleDays      Int     @default(21)
+  dailyViewCap            Int     @default(100)
+  wifiLockEnabled         Boolean @default(false)
+  officeIp                String  @default("") @db.VarChar(128)
+
+  @@map("settings")
+}

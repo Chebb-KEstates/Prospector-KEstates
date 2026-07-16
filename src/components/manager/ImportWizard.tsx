@@ -14,6 +14,11 @@ export function ImportWizard() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
+  // One dataset id, generated on file select and reused for both the dry-run
+  // rows and the committed DataSet, so `datasetId` on every row matches the
+  // dataset's `id` (the original code generated two different ids, which
+  // orphaned rows on delete).
+  const [datasetId, setDatasetId] = useState('');
   const [fileName, setFileName] = useState('');
   const [sheets, setSheets] = useState<{ name: string; rows: unknown[][] }[]>([]);
   const [activeSheet, setActiveSheet] = useState(0);
@@ -30,6 +35,7 @@ export function ImportWizard() {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setDatasetId(`ds-${Date.now()}`);
     setFileName(file.name);
     const data = await file.arrayBuffer();
     const parsed = parseVendorFile(file.name, data);
@@ -53,7 +59,7 @@ export function ImportWizard() {
   const handleCommit = async () => {
     if (!dryRun || !user) return;
     const dataset = new DataSet(
-      `ds-${Date.now()}`, datasetName, dataSource, type,
+      datasetId, datasetName, dataSource, type,
       DataModule.owners, fileName, communityLabel,
       new Date().toISOString(),
       cost ? parseFloat(cost) : undefined,
@@ -87,7 +93,7 @@ export function ImportWizard() {
       sheet: new ParsedSheet(sheets[activeSheet].name, sheets[activeSheet].rows),
       headerRow, columns, type,
       communityFallback: communityLabel,
-      datasetId: `ds-${Date.now()}`,
+      datasetId,
       existingByUnitKey: byUnitKey,
     });
     setDryRun(result);

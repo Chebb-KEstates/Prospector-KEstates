@@ -1,6 +1,6 @@
-import { DataSet, Property, Lead, CallLog, BatchRequest, VaultSettings, AuditEntry, kOrgId } from '../types/models';
-import { AppUser, demoUsers } from '../types/user';
-import { vaultDb } from './vaultDb';
+import { DataSet, Property, Lead, CallLog, BatchRequest, VaultSettings, AuditEntry, RequestStatus } from '../types/models';
+import { AppUser } from '../types/user';
+import { api } from './apiClient';
 import { getTabSync } from './tabSync';
 
 export class VaultSnapshot {
@@ -16,6 +16,11 @@ export class VaultSnapshot {
   ) {}
 }
 
+export interface SaveUserOptions {
+  create?: boolean;
+  password?: string;
+}
+
 export interface VaultRepository {
   load(): Promise<VaultSnapshot>;
   commitImport(dataset: DataSet, properties: Property[], onProgress?: (done: number, total: number) => void): Promise<void>;
@@ -27,118 +32,161 @@ export interface VaultRepository {
   saveSettings(settings: VaultSettings): Promise<void>;
   saveAudit(entry: AuditEntry): Promise<void>;
   deleteDataset(datasetId: string, propertyIds: string[], leadIds?: string[]): Promise<void>;
-  saveUser(user: AppUser): Promise<void>;
+  saveUser(user: AppUser, opts?: SaveUserOptions): Promise<void>;
   deleteUser(userId: string): Promise<void>;
   onExternalChange(handler: () => void): void;
 }
 
-class LocalVaultRepository implements VaultRepository {
+interface RevResponse { rev?: string }
+
+interface SnapshotDto {
+  datasets: Record<string, unknown>[];
+  properties: Record<string, unknown>[];
+  leads: Record<string, unknown>[];
+  calls: Record<string, unknown>[];
+  requests: Record<string, unknown>[];
+  settings: Record<string, unknown>;
+  audit: Record<string, unknown>[];
+  users: Record<string, unknown>[];
+  rev: string;
+}
+
+/**
+ * Backend-backed implementation of the exact same repository contract the app
+ * used against IndexedDB. Every screen keeps talking to VaultContext, which
+ * talks to this — so nothing above this layer changes.
+ */
+class ApiVaultRepository implements VaultRepository {
   private static _revKey = 'prospector.vault.rev.v1';
   private _sync = getTabSync();
+  private _lastRev = '';
+  private _pollTimer: ReturnType<typeof setInterval> | null = null;
 
   async load(): Promise<VaultSnapshot> {
-    const rawSets = await vaultDb.getAll('datasets');
-    const rawProps = await vaultDb.getAll('properties');
-    const rawLeads = await vaultDb.getAll('leads');
-    const rawCalls = await vaultDb.getAll('calls');
-    const rawRequests = await vaultDb.getAll('requests');
-    const rawSettings = await vaultDb.getAll('settings');
-    const rawAudit = await vaultDb.getAll('audit');
-    let users = (await vaultDb.getAll('users')).map(u => AppUser.fromJson(u));
-    if (users.length === 0) {
-      for (const u of demoUsers) {
-        await vaultDb.putAll('users', { [u.id]: u.toJson() as Record<string, unknown> });
-      }
-      users = [...demoUsers];
-    }
+    const d = await api.get<SnapshotDto>('/vault');
+    this._lastRev = d.rev;
 
+    // Ordering mirrors the original LocalVaultRepository.load() precisely.
     return new VaultSnapshot(
-      rawSets.map(d => DataSet.fromJson(d)).sort((a, b) => b.importedAt.localeCompare(a.importedAt)),
-      rawProps.map(p => Property.fromJson(p)),
-      rawLeads.map(l => Lead.fromJson(l)),
-      rawCalls.map(c => CallLog.fromJson(c)).sort((a, b) => b.at.localeCompare(a.at)),
-      rawRequests.map(r => BatchRequest.fromJson(r)).sort((a, b) => b.at.localeCompare(a.at)),
-      rawSettings.length > 0 ? VaultSettings.fromJson(rawSettings[0]) : new VaultSettings(),
-      rawAudit.map(a => AuditEntry.fromJson(a)).sort((a, b) => b.at.localeCompare(a.at)),
-      users.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase())),
+      d.datasets.map(x => DataSet.fromJson(x)).sort((a, b) => b.importedAt.localeCompare(a.importedAt)),
+      d.properties.map(x => Property.fromJson(x)),
+      d.leads.map(x => Lead.fromJson(x)),
+      d.calls.map(x => CallLog.fromJson(x)).sort((a, b) => b.at.localeCompare(a.at)),
+      d.requests.map(x => BatchRequest.fromJson(x)).sort((a, b) => b.at.localeCompare(a.at)),
+      d.settings ? VaultSettings.fromJson(d.settings) : new VaultSettings(),
+      d.audit.map(x => AuditEntry.fromJson(x)).sort((a, b) => b.at.localeCompare(a.at)),
+      d.users.map(x => AppUser.fromJson(x)).sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase())),
     );
   }
 
   async commitImport(dataset: DataSet, properties: Property[], onProgress?: (done: number, total: number) => void): Promise<void> {
-    await vaultDb.putAll('datasets', { [dataset.id]: dataset.toJson() as Record<string, unknown> });
-    const props: Record<string, Record<string, unknown>> = {};
-    for (const p of properties) props[p.id] = p.toJson() as Record<string, unknown>;
-    await vaultDb.putAll('properties', props, onProgress);
-    this._bump();
+    const res = await api.post<RevResponse>('/imports/properties', {
+      dataset: dataset.toJson(),
+      properties: properties.map(p => p.toJson()),
+    });
+    onProgress?.(properties.length, properties.length);
+    this._applyRev(res);
   }
 
   async commitLeadImport(dataset: DataSet, leads: Lead[], onProgress?: (done: number, total: number) => void): Promise<void> {
-    await vaultDb.putAll('datasets', { [dataset.id]: dataset.toJson() as Record<string, unknown> });
-    const ls: Record<string, Record<string, unknown>> = {};
-    for (const l of leads) ls[l.id] = l.toJson() as Record<string, unknown>;
-    await vaultDb.putAll('leads', ls, onProgress);
-    this._bump();
+    const res = await api.post<RevResponse>('/imports/leads', {
+      dataset: dataset.toJson(),
+      leads: leads.map(l => l.toJson()),
+    });
+    onProgress?.(leads.length, leads.length);
+    this._applyRev(res);
   }
 
   async saveProperties(properties: Property[]): Promise<void> {
     if (properties.length === 0) return;
-    const props: Record<string, Record<string, unknown>> = {};
-    for (const p of properties) props[p.id] = p.toJson() as Record<string, unknown>;
-    await vaultDb.putAll('properties', props);
-    this._bump();
+    const res = await api.put<RevResponse>('/properties', { properties: properties.map(p => p.toJson()) });
+    this._applyRev(res);
   }
 
   async saveLeads(leads: Lead[]): Promise<void> {
     if (leads.length === 0) return;
-    const ls: Record<string, Record<string, unknown>> = {};
-    for (const l of leads) ls[l.id] = l.toJson() as Record<string, unknown>;
-    await vaultDb.putAll('leads', ls);
-    this._bump();
+    const res = await api.put<RevResponse>('/leads', { leads: leads.map(l => l.toJson()) });
+    this._applyRev(res);
   }
 
   async saveCall(call: CallLog): Promise<void> {
-    await vaultDb.putAll('calls', { [call.id]: call.toJson() as Record<string, unknown> });
-    this._bump();
+    const res = await api.post<RevResponse>('/calls', call.toJson());
+    this._applyRev(res);
   }
 
   async saveRequest(request: BatchRequest): Promise<void> {
-    await vaultDb.putAll('requests', { [request.id]: request.toJson() as Record<string, unknown> });
-    this._bump();
+    // A freshly submitted request creates; a decided one updates. This keeps
+    // the correct permission boundary (requestData vs assignData) server-side.
+    const isNew = request.status === RequestStatus.pending && request.decidedAt == null;
+    const res = isNew
+      ? await api.post<RevResponse>('/requests', request.toJson())
+      : await api.put<RevResponse>(`/requests/${encodeURIComponent(request.id)}`, request.toJson());
+    this._applyRev(res);
   }
 
   async saveSettings(settings: VaultSettings): Promise<void> {
-    await vaultDb.putAll('settings', { [kOrgId]: settings.toJson() as Record<string, unknown> });
-    this._bump();
+    const res = await api.put<RevResponse>('/settings', settings.toJson());
+    this._applyRev(res);
   }
 
   async saveAudit(entry: AuditEntry): Promise<void> {
-    await vaultDb.putAll('audit', { [entry.id]: entry.toJson() as Record<string, unknown> });
+    // Matches the original: audit writes do not bump the cross-tab sync rev.
+    await api.post('/audit', entry.toJson());
   }
 
   async deleteDataset(datasetId: string, propertyIds: string[], leadIds: string[] = []): Promise<void> {
-    await vaultDb.deleteAll('properties', propertyIds);
-    if (leadIds.length > 0) await vaultDb.deleteAll('leads', leadIds);
-    await vaultDb.deleteAll('datasets', [datasetId]);
-    this._bump();
+    const res = await api.del<RevResponse>(`/datasets/${encodeURIComponent(datasetId)}`, { propertyIds, leadIds });
+    this._applyRev(res);
   }
 
-  async saveUser(user: AppUser): Promise<void> {
-    await vaultDb.putAll('users', { [user.id]: user.toJson() as Record<string, unknown> });
-    this._bump();
+  async saveUser(user: AppUser, opts?: SaveUserOptions): Promise<void> {
+    const body: Record<string, unknown> = { ...user.toJson() };
+    if (opts?.password) body.password = opts.password;
+    const res = opts?.create
+      ? await api.post<RevResponse>('/users', body)
+      : await api.put<RevResponse>(`/users/${encodeURIComponent(user.id)}`, body);
+    this._applyRev(res);
   }
 
   async deleteUser(userId: string): Promise<void> {
-    await vaultDb.deleteAll('users', [userId]);
+    const res = await api.del<RevResponse>(`/users/${encodeURIComponent(userId)}`);
+    this._applyRev(res);
+  }
+
+  // Record the authoritative rev returned by our own write so the poller does
+  // not treat it as an external change, then signal same-browser tabs.
+  private _applyRev(res: RevResponse | undefined): void {
+    if (res && res.rev) this._lastRev = res.rev;
     this._bump();
   }
 
+  // Signal same-browser tabs immediately, and let cross-device changes be
+  // picked up by the revision poller.
   private _bump(): void {
-    this._sync.write(LocalVaultRepository._revKey, Date.now().toString());
+    this._sync.write(ApiVaultRepository._revKey, Date.now().toString());
   }
 
   onExternalChange(handler: () => void): void {
-    this._sync.onExternalChange(LocalVaultRepository._revKey, () => handler());
+    // Same-browser cross-tab: instant via localStorage storage event.
+    this._sync.onExternalChange(ApiVaultRepository._revKey, () => handler());
+
+    // Cross-device: poll the server revision; reload when it moves.
+    if (this._pollTimer) clearInterval(this._pollTimer);
+    this._pollTimer = setInterval(async () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      try {
+        const { rev } = await api.get<{ rev: string }>('/vault/rev');
+        if (this._lastRev && rev !== this._lastRev) {
+          this._lastRev = rev;
+          handler();
+        } else {
+          this._lastRev = rev;
+        }
+      } catch {
+        // transient network/auth blips are ignored; next tick retries
+      }
+    }, 8000);
   }
 }
 
-export const vaultRepo = new LocalVaultRepository();
+export const vaultRepo: VaultRepository = new ApiVaultRepository();

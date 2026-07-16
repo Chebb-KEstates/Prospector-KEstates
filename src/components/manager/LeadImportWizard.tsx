@@ -13,6 +13,9 @@ export function LeadImportWizard() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
+  // Single dataset id reused by dry-run rows and the committed DataSet (see the
+  // note in ImportWizard) so lead rows are never orphaned on delete.
+  const [datasetId, setDatasetId] = useState('');
   const [fileName, setFileName] = useState('');
   const [rows, setRows] = useState<unknown[][]>([]);
   const [headerRow, setHeaderRow] = useState(0);
@@ -25,6 +28,7 @@ export function LeadImportWizard() {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setDatasetId(`ds-${Date.now()}`);
     setFileName(file.name);
     const data = await file.arrayBuffer();
     const parsed = parseVendorFile(file.name, data);
@@ -59,7 +63,7 @@ export function LeadImportWizard() {
     const result = LeadPipeline.dryRun({
       sheet: new ParsedSheet('Sheet1', rows),
       headerRow, columns,
-      datasetId: `ds-${Date.now()}`,
+      datasetId,
       existingByKey: byLeadKey,
     });
     setDryRun(result);
@@ -69,7 +73,7 @@ export function LeadImportWizard() {
   const handleCommit = async () => {
     if (!dryRun || !user) return;
     const dataset = new DataSet(
-      `ds-${Date.now()}`, datasetName, dataSource,
+      datasetId, datasetName, dataSource,
       DataSetType.register, DataModule.leads, fileName,
       '', new Date().toISOString(),
       undefined, dryRun.uniqueLeads, dryRun.callable,

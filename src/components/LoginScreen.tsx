@@ -1,23 +1,20 @@
 import React, { useState } from 'react';
 import { useAuth } from '../state/AuthContext';
-import { useVault } from '../state/VaultContext';
-import { UserRole } from '../types/user';
 
 export function LoginScreen() {
   const { signIn } = useAuth();
-  const { users } = useVault();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const err = signIn(email, password, users);
+    const err = await signIn(email, password);
     if (err) setError(err);
   };
 
-  const quickSignIn = (userEmail: string) => {
-    const err = signIn(userEmail, 'demo1234', users);
+  const quickSignIn = async (userEmail: string) => {
+    const err = await signIn(userEmail, 'demo1234');
     if (err) setError(err);
   };
 

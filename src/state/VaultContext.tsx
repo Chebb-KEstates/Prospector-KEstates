@@ -36,7 +36,7 @@ interface VaultContextValue {
   callsBy: (brokerId: string) => CallLog[];
   viewsToday: (brokerId: string, now: string) => number;
 
-  saveUser: (user: AppUser, by: string, action: string) => Promise<void>;
+  saveUser: (user: AppUser, by: string, action: string, password?: string) => Promise<void>;
   deleteUser: (user: AppUser, by: string) => Promise<void>;
   saveSettings: (s: VaultSettings, by: string) => Promise<void>;
   recordView: (viewerId: string, isManager: boolean, what: string, enforceCap?: boolean) => boolean;
@@ -132,8 +132,8 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
     ).length;
   };
 
-  const saveUser = useCallback(async (user: AppUser, by: string, action: string) => {
-    await vaultRepo.saveUser(user);
+  const saveUser = useCallback(async (user: AppUser, by: string, action: string, password?: string) => {
+    await vaultRepo.saveUser(user, { create: action === 'Created', password });
     setSnap(prev => {
       const exists = prev.users.some(u => u.id === user.id);
       const next = exists
