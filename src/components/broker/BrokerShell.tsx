@@ -122,7 +122,7 @@ function BrokerShellInner() {
                 {activeTab === 'home' && <BrokerHome onGo={(t) => setActiveTab(t as Tab)} />}
                 {activeTab === 'today' && <TodayTab />}
                 {activeTab === 'pool' && (
-                  <PropertyTable properties={properties.filter(p => p.state === PropertyState.pool)} />
+                  <PropertyTable teaser properties={properties.filter(p => p.state === PropertyState.pool)} />
                 )}
                 {activeTab === 'portfolio' && (
                   <PropertyTable properties={assignedTo(user.id).filter(p => p.state === PropertyState.portfolio)} />

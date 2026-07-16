@@ -11,9 +11,11 @@ interface PropertyTableProps {
   showActions?: boolean;
   onAssign?: (properties: Property[]) => void;
   onReclaim?: (properties: Property[]) => void;
+  /** Teaser mode: hide owner name + phone (unassigned pool shown to brokers). */
+  teaser?: boolean;
 }
 
-export function PropertyTable({ properties, onSelect, showActions, onAssign, onReclaim }: PropertyTableProps) {
+export function PropertyTable({ properties, onSelect, showActions, onAssign, onReclaim, teaser }: PropertyTableProps) {
   const { userById, communities } = useVault();
   const [stateFilter, setStateFilter] = useState<PropertyState | 'all'>('all');
   const [communityFilter, setCommunityFilter] = useState<string>('all');
@@ -28,13 +30,15 @@ export function PropertyTable({ properties, onSelect, showActions, onAssign, onR
 
   const columns: Column<Property>[] = [
     {
-      key: 'owner', header: 'Owner', sortable: true,
-      render: p => <span style={{ fontWeight: 500 }}>{p.owner.name || '—'}</span>,
+      key: 'owner', header: teaser ? 'Owner (hidden until assigned)' : 'Owner', sortable: !teaser,
+      render: p => teaser
+        ? <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+        : <span style={{ fontWeight: 500 }}>{p.owner.name || '—'}</span>,
     },
     {
-      key: 'phone', header: 'Phone', sortable: true,
+      key: 'phone', header: 'Phone', sortable: !teaser,
       render: p => <span style={{ color: 'var(--text-secondary)', fontVariant: 'tabular-nums' }}>
-        {maskedPhone(p.owner.phone)}
+        {teaser ? '—' : maskedPhone(p.owner.phone)}
       </span>,
     },
     {
@@ -117,11 +121,13 @@ export function PropertyTable({ properties, onSelect, showActions, onAssign, onR
           keyExtractor={p => p.id}
           onRowClick={p => onSelect?.(p.id)}
           searchable
-          searchPlaceholder="Search owner name or phone…"
+          searchPlaceholder={teaser ? 'Search community or unit…' : 'Search owner name or phone…'}
           searchFilter={(p, q) => {
             const query = q.toLowerCase();
-            return p.owner.name.toLowerCase().includes(query) ||
-              (p.owner.phone?.includes(query) ?? false) ||
+            const ownerMatch = !teaser && (
+              p.owner.name.toLowerCase().includes(query) ||
+              (p.owner.phone?.includes(query) ?? false));
+            return ownerMatch ||
               p.community.toLowerCase().includes(query) ||
               p.unitLabel.toLowerCase().includes(query);
           }}
