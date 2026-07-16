@@ -383,3 +383,8 @@ input, textarea, select {
   background: var(--error); color: #fff; font-size: 0.6875rem; font-weight: 700;
   display: inline-flex; align-items: center; justify-content: center;
 }
+
+/* Coverflow: drop the angled side tiles when there isn't room for them. */
+@media (max-width: 1080px) {
+  .cf-side { display: none !important; }
+}

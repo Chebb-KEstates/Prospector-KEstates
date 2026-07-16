@@ -5,6 +5,7 @@ import {
 } from '../types/models';
 import { AppUser, UserRole, demoUserById } from '../types/user';
 import { vaultRepo, VaultSnapshot } from '../data/vaultRepository';
+import { seedDemoData } from '../data/seedDemo';
 import { applyOutcome, sweepCooldowns } from '../logic/dispositions';
 import { ownerKeyOf } from '../logic/ownerGrouping';
 
@@ -74,7 +75,12 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
   const auditSeq = useRef(0);
 
   const reload = useCallback(async () => {
-    const s = await vaultRepo.load();
+    let s = await vaultRepo.load();
+    // First run on an empty vault: seed clearly-synthetic demo data (no real data).
+    if (s.datasets.length === 0 && s.properties.length === 0 && s.leads.length === 0) {
+      await seedDemoData();
+      s = await vaultRepo.load();
+    }
     const now = new Date().toISOString();
     const lapsed = sweepCooldowns(s.properties, now, s.settings);
     if (lapsed.length > 0) await vaultRepo.saveProperties(lapsed);

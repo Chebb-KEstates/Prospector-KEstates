@@ -75,7 +75,7 @@ export function CallSessionView() {
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0, flex: 1, overflow: 'hidden', perspective: 1100 }}>
           {index > 0 && (
-            <div onClick={() => setIndex(index - 1)} style={{ cursor: 'pointer', marginRight: -30 }}>
+            <div className="cf-side" onClick={() => setIndex(index - 1)} style={{ cursor: 'pointer', marginRight: -30 }}>
               <PreviewTile stop={stops[index - 1]} side="left" done={index - 1 < worked} />
             </div>
           )}
@@ -84,7 +84,7 @@ export function CallSessionView() {
               onComplete={(o) => logged(o)} onSkip={next} />
           </div>
           {index < total - 1 && (
-            <div onClick={() => setIndex(index + 1)} style={{ cursor: 'pointer', marginLeft: -30 }}>
+            <div className="cf-side" onClick={() => setIndex(index + 1)} style={{ cursor: 'pointer', marginLeft: -30 }}>
               <PreviewTile stop={stops[index + 1]} side="right" done={false} />
             </div>
           )}

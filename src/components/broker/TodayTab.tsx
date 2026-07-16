@@ -25,23 +25,24 @@ export function TodayTab() {
   const [buyers, setBuyers] = useState(false);
   const [quick, setQuick] = useState<Quick>('all');
 
+  const ownerProps = user ? vault.assignedTo(user.id) : [];
+  const filtered = useMemo(() => {
+    const now = new Date();
+    const match = (p: Property): boolean => {
+      switch (quick) {
+        case 'due': return !!p.nextFollowUpAt && new Date(p.nextFollowUpAt) <= now;
+        case 'fresh': return !p.lastCalledAt;
+        case 'noAnswer': return p.lastOutcome === CallOutcome.noAnswer;
+        case 'interested': return !!p.lastOutcome && isInterested(p.lastOutcome);
+        default: return true;
+      }
+    };
+    return ownerProps.filter(match);
+  }, [ownerProps, quick]);
+
   if (!user) return null;
 
-  const now = new Date();
-  const ownerProps = vault.assignedTo(user.id);
   const leads = vault.leadsOf(user.id).filter(l => l.state === PropertyState.assigned || l.state === PropertyState.portfolio);
-
-  const match = (p: Property): boolean => {
-    switch (quick) {
-      case 'due': return !!p.nextFollowUpAt && new Date(p.nextFollowUpAt) <= now;
-      case 'fresh': return !p.lastCalledAt;
-      case 'noAnswer': return p.lastOutcome === CallOutcome.noAnswer;
-      case 'interested': return !!p.lastOutcome && isInterested(p.lastOutcome);
-      default: return true;
-    }
-  };
-  const filtered = useMemo(() => ownerProps.filter(match), [ownerProps, quick]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const startOwners = () => start(ownerCallStops(vault, user.id), 'Calling owners');
   const startLeads = () => start(leadCallStops(vault, user.id), 'Calling buyer leads');
   const ownerCallable = ownerProps.filter(p => p.callable);
