@@ -1,7 +1,7 @@
 export interface TabSync {
   read(key: string): string | null;
   write(key: string, value: string): void;
-  onExternalChange(key: string, handler: (value: string) => void): void;
+  onExternalChange(key: string, handler: (value: string) => void): () => void;
 }
 
 function createTabSyncWeb(): TabSync {
@@ -12,12 +12,14 @@ function createTabSyncWeb(): TabSync {
     write(key: string, value: string): void {
       localStorage.setItem(key, value);
     },
-    onExternalChange(key: string, handler: (value: string) => void): void {
-      window.addEventListener('storage', (event) => {
+    onExternalChange(key: string, handler: (value: string) => void): () => void {
+      const listener = (event: StorageEvent) => {
         if (event.key === key && event.newValue != null) {
           handler(event.newValue);
         }
-      });
+      };
+      window.addEventListener('storage', listener);
+      return () => window.removeEventListener('storage', listener);
     },
   };
 }

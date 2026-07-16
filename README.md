@@ -29,23 +29,37 @@ no application data is stored in the browser.
 
 ## Getting Started
 
-### Option A — Docker (everything, one command)
+### Option A — Docker, with a bundled MySQL container
 
 ```bash
-cp .env .env.local   # optional: review/adjust secrets & ports
-docker compose up --build
+cp .env.example .env   # review/adjust secrets & ports
+docker compose -f docker-compose.yml -f docker-compose.local-db.yml up --build
 ```
 
-- App: [http://localhost:8080](http://localhost:8080)
-- API: [http://localhost:4000](http://localhost:4000) (also proxied at `/api` by the web container)
+- App: [http://localhost:3023](http://localhost:3023)
+- API: [http://localhost:4023](http://localhost:4023) (also proxied at `/api` by the web container)
 
 The API container automatically applies migrations and seeds the demo accounts on start.
 
-### Option B — Local development
+### Option B — Docker, against an existing MySQL server
+
+Use this when deploying somewhere that already has MySQL running (no need to
+run a second MySQL container).
 
 ```bash
-# 1. Start MySQL (or use the compose db service)
-docker compose up -d db
+cp .env.example .env
+# Point DATABASE_URL at your existing server, e.g.:
+#   DATABASE_URL=mysql://user:password@your-db-host:3306/prospector
+docker compose up --build
+```
+
+This starts only `server` and `web` — no `db` container. Same ports as above.
+
+### Option C — Local development (no Docker for the frontend/backend)
+
+```bash
+# 1. Start MySQL (bundled container, or point at your own)
+docker compose -f docker-compose.yml -f docker-compose.local-db.yml up -d db
 
 # 2. Backend
 cd server
@@ -53,11 +67,11 @@ cp .env.example .env          # DATABASE_URL points at localhost:3307 by default
 npm install
 npx prisma migrate deploy
 npm run seed
-npm run dev                   # API on http://localhost:4000
+npm run dev                   # API on http://localhost:4023
 
 # 3. Frontend (separate terminal, repo root)
 npm install
-npm start                     # http://localhost:3000, proxies /api -> :4000
+npm start                     # http://localhost:3023, proxies /api -> :4023
 ```
 
 ### Demo Accounts

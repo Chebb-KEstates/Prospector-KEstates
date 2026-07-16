@@ -34,7 +34,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    sync.current.onExternalChange(THEME_KEY, (v) => {
+    return sync.current.onExternalChange(THEME_KEY, (v) => {
       setModeState(v === 'light' ? 'light' : v === 'dark' ? 'dark' : 'system');
     });
   }, []);

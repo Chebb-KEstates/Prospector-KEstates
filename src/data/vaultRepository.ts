@@ -34,7 +34,7 @@ export interface VaultRepository {
   deleteDataset(datasetId: string, propertyIds: string[], leadIds?: string[]): Promise<void>;
   saveUser(user: AppUser, opts?: SaveUserOptions): Promise<void>;
   deleteUser(userId: string): Promise<void>;
-  onExternalChange(handler: () => void): void;
+  onExternalChange(handler: () => void): () => void;
 }
 
 interface RevResponse { rev?: string }
@@ -166,9 +166,9 @@ class ApiVaultRepository implements VaultRepository {
     this._sync.write(ApiVaultRepository._revKey, Date.now().toString());
   }
 
-  onExternalChange(handler: () => void): void {
+  onExternalChange(handler: () => void): () => void {
     // Same-browser cross-tab: instant via localStorage storage event.
-    this._sync.onExternalChange(ApiVaultRepository._revKey, () => handler());
+    const unsubscribeSync = this._sync.onExternalChange(ApiVaultRepository._revKey, () => handler());
 
     // Cross-device: poll the server revision; reload when it moves.
     if (this._pollTimer) clearInterval(this._pollTimer);
@@ -186,6 +186,14 @@ class ApiVaultRepository implements VaultRepository {
         // transient network/auth blips are ignored; next tick retries
       }
     }, 8000);
+
+    return () => {
+      unsubscribeSync();
+      if (this._pollTimer) {
+        clearInterval(this._pollTimer);
+        this._pollTimer = null;
+      }
+    };
   }
 }
 

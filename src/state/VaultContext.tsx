@@ -7,6 +7,7 @@ import { AppUser, UserRole, demoUserById } from '../types/user';
 import { vaultRepo, VaultSnapshot } from '../data/vaultRepository';
 import { applyOutcome, sweepCooldowns } from '../logic/dispositions';
 import { ownerKeyOf } from '../logic/ownerGrouping';
+import { useAuth } from './AuthContext';
 
 interface VaultContextValue {
   loading: boolean;
@@ -67,6 +68,7 @@ function copyState(state: VaultSnapshot): VaultSnapshot {
 }
 
 export function VaultProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
   const [snap, setSnap] = useState<VaultSnapshot>(() => new VaultSnapshot(
     [], [], [], [], [], new VaultSettings(), [], [],
   ));
@@ -84,10 +86,17 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   }, []);
 
+  // Auth resolves independently of the vault: wait for a signed-in user
+  // before loading, and reload once one becomes available (e.g. right after
+  // login, when no session cookie existed yet on the earlier mount).
   useEffect(() => {
-    reload();
-    vaultRepo.onExternalChange(() => reload());
-  }, [reload]);
+    if (!user) {
+      setLoading(true);
+      return;
+    }
+    reload().catch(() => setLoading(false));
+    return vaultRepo.onExternalChange(() => reload().catch(() => {}));
+  }, [reload, user]);
 
   const _audit = useCallback((actorId: string, action: string, detail: string, ids: string[] = []) => {
     const entry = new AuditEntry(
