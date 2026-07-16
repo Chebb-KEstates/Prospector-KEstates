@@ -71,3 +71,47 @@ export function timeAgo(at: string, now: Date = new Date()): string {
 export function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
+
+/** Big, grouped, human-readable phone for the sanctioned reveal panel. */
+export function prettyPhone(phone?: string): string {
+  if (!phone) return '—';
+  const digits = phone.replace(/[^\d+]/g, '');
+  const d = digits.startsWith('+') ? digits.slice(1) : digits;
+  if (d.startsWith('971')) {
+    const rest = d.slice(3);
+    // +971 5X XXX XXXX
+    if (rest.length >= 9) return `+971 ${rest.slice(0, 2)} ${rest.slice(2, 5)} ${rest.slice(5, 9)}`;
+    return `+971 ${rest}`;
+  }
+  // Generic grouping in 3s/4s
+  return (digits.startsWith('+') ? '+' : '') + d.replace(/(\d{3})(?=\d)/g, '$1 ').trim();
+}
+
+/** Nationality → flag emoji (data, not an icon). Covers the UAE market; falls back to a globe. */
+const FLAGS: Record<string, string> = {
+  uae: '🇦🇪', emirati: '🇦🇪', 'united arab emirates': '🇦🇪',
+  india: '🇮🇳', indian: '🇮🇳',
+  pakistan: '🇵🇰', pakistani: '🇵🇰',
+  uk: '🇬🇧', 'united kingdom': '🇬🇧', british: '🇬🇧', england: '🇬🇧',
+  egypt: '🇪🇬', egyptian: '🇪🇬',
+  'saudi arabia': '🇸🇦', saudi: '🇸🇦', ksa: '🇸🇦',
+  lebanon: '🇱🇧', lebanese: '🇱🇧',
+  jordan: '🇯🇴', jordanian: '🇯🇴',
+  usa: '🇺🇸', 'united states': '🇺🇸', american: '🇺🇸',
+  russia: '🇷🇺', russian: '🇷🇺',
+  china: '🇨🇳', chinese: '🇨🇳',
+  france: '🇫🇷', french: '🇫🇷',
+  germany: '🇩🇪', german: '🇩🇪',
+  canada: '🇨🇦', canadian: '🇨🇦',
+  philippines: '🇵🇭', filipino: '🇵🇭',
+  nigeria: '🇳🇬', nigerian: '🇳🇬',
+  iran: '🇮🇷', iranian: '🇮🇷',
+  syria: '🇸🇾', syrian: '🇸🇾',
+  turkey: '🇹🇷', turkish: '🇹🇷',
+  italy: '🇮🇹', italian: '🇮🇹',
+  'south africa': '🇿🇦',
+};
+export function flagFor(nationality?: string): string {
+  if (!nationality) return '🌐';
+  return FLAGS[nationality.trim().toLowerCase()] ?? '🌐';
+}
