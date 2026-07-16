@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Property, PropertyState } from '../../types/models';
 import { StateChip, OutcomeChip } from '../common/StateChip';
 import { AppTable, Column } from '../common/AppTable';
-import { maskedPhone, fmtDate, fmtAed } from '../../utils/format';
+import { maskedPhone, fmtDate, fmtAed, fmtArea } from '../../utils/format';
 import { useVault } from '../../state/VaultContext';
 
 interface PropertyTableProps {
@@ -48,6 +48,16 @@ export function PropertyTable({ properties, onSelect, showActions, onAssign, onR
     {
       key: 'beds', header: 'Beds',
       render: p => p.beds != null ? p.beds : '—',
+    },
+    {
+      key: 'size', header: 'Size',
+      render: p => <span style={{ color: 'var(--text-secondary)' }}>{p.sizeSqft != null ? fmtArea(p.sizeSqft) : '—'}</span>,
+    },
+    {
+      key: 'lastTx', header: 'Last transaction',
+      render: p => p.lastTransactionValue != null
+        ? <span style={{ color: 'var(--text-secondary)' }}>{fmtAed(p.lastTransactionValue)}<span style={{ color: 'var(--text-tertiary)', fontSize: '0.7rem' }}> · {fmtDate(p.lastTransactionDate)}</span></span>
+        : '—',
     },
     {
       key: 'state', header: 'State', sortable: true,

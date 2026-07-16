@@ -1,5 +1,12 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# Real owner data NEVER enters version control (Security Playbook).
+# It lives outside this repo; these rules are a second line of defence.
+Sample Data/
+*.xlsx
+*.xlsm
+*.csv
+
 # dependencies
 /node_modules
 /.pnp
