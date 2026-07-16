@@ -7,7 +7,9 @@ import { PropertyTable } from '../manager/PropertyTable';
 import { StateChip, OutcomeChip } from '../common/StateChip';
 import { Icon } from '../common/Icon';
 import { maskedPhone, fmtDate } from '../../utils/format';
-import { ownerCallStops, leadCallStops } from './callStops';
+import { ownerCallStops, leadCallStops, ownerStopForProperty, buildLeadStop } from './callStops';
+import { CallDialog } from './CallDialog';
+import { CallStop } from '../../state/CallSessionContext';
 
 type Quick = 'all' | 'due' | 'fresh' | 'noAnswer' | 'interested';
 const QUICKS: { key: Quick; label: string }[] = [
@@ -24,6 +26,7 @@ export function TodayTab() {
   const { start } = useCallSession();
   const [buyers, setBuyers] = useState(false);
   const [quick, setQuick] = useState<Quick>('all');
+  const [callStop, setCallStop] = useState<CallStop | null>(null);
 
   const ownerProps = user ? vault.assignedTo(user.id) : [];
   const filtered = useMemo(() => {
@@ -48,8 +51,15 @@ export function TodayTab() {
   const ownerCallable = ownerProps.filter(p => p.callable);
   const leadCallable = leads.filter(l => l.callable);
 
+  const p0 = ownerProps;
+  const openOwnerCall = (id: string) => {
+    const prop = p0.find(x => x.id === id);
+    if (prop && prop.callable) setCallStop(ownerStopForProperty(vault, prop, user.id));
+  };
+
   return (
     <div>
+      {callStop && <CallDialog stop={callStop} onClose={() => setCallStop(null)} />}
       {/* Owners | Buyers switch + Start calling */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
@@ -84,7 +94,7 @@ export function TodayTab() {
               </button>
             ))}
           </div>
-          <PropertyTable properties={filtered} onSelect={(id) => vault.recordView(user.id, false, `Viewed owner of ${id}`)} />
+          <PropertyTable properties={filtered} onSelect={openOwnerCall} />
         </>
       ) : (
         <BuyerTable />
@@ -96,11 +106,13 @@ export function TodayTab() {
 function BuyerTable() {
   const { user } = useAuth();
   const vault = useVault();
+  const [callStop, setCallStop] = useState<CallStop | null>(null);
   if (!user) return null;
   const leads = vault.leadsOf(user.id).filter(l => l.state === PropertyState.assigned || l.state === PropertyState.portfolio);
 
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      {callStop && <CallDialog stop={callStop} onClose={() => setCallStop(null)} />}
       <div style={{ overflowX: 'auto' }}>
         <table className="data-table">
           <thead>
@@ -110,7 +122,8 @@ function BuyerTable() {
             {leads.length === 0 ? (
               <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 24 }}>No buyer leads assigned to you.</td></tr>
             ) : leads.map(l => (
-              <tr key={l.id}>
+              <tr key={l.id} style={{ cursor: l.callable ? 'pointer' : 'default' }}
+                onClick={() => l.callable && setCallStop(buildLeadStop(vault, l, user.id))}>
                 <td style={{ fontWeight: 500 }}>{l.name || '—'}</td>
                 <td className="tabular-nums" style={{ color: 'var(--text-secondary)' }}>{maskedPhone(l.phone)}</td>
                 <td>{l.project ?? '—'}</td>

@@ -1,9 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useVault } from '../../state/VaultContext';
+import { useAuth } from '../../state/AuthContext';
 import { PropertyTimeline } from './PropertyTimeline';
 import { StateChip, OutcomeChip } from '../common/StateChip';
-import { fmtDate, fmtAed, fmtArea, maskedPhone } from '../../utils/format';
-import { ownerRefOf, propertyRefOf } from '../../logic/ownerGrouping';
+import { fmtDate, fmtAed, fmtArea, maskedPhone, prettyPhone } from '../../utils/format';
+import { ownerRefOf, propertyRefOf, ownerKeyOf } from '../../logic/ownerGrouping';
+import { Icon } from '../common/Icon';
+import { CallDialog } from '../broker/CallDialog';
+import { ownerStopForProperty } from '../broker/callStops';
 
 interface PropertyDetailProps {
   propertyId: string;
@@ -11,7 +15,11 @@ interface PropertyDetailProps {
 }
 
 export function PropertyDetail({ propertyId, onBack }: PropertyDetailProps) {
-  const { properties, userById } = useVault();
+  const vault = useVault();
+  const { properties, userById, recordView } = vault;
+  const { user } = useAuth();
+  const [revealed, setRevealed] = useState(false);
+  const [calling, setCalling] = useState(false);
   const p = properties.find(pr => pr.id === propertyId);
 
   if (!p) {
@@ -23,11 +31,29 @@ export function PropertyDetail({ propertyId, onBack }: PropertyDetailProps) {
     );
   }
 
+  // Manager single-property detail may see the full number (view-logged) — the one
+  // sanctioned reveal outside the dialer (Security Playbook). Brokers never reach here.
+  const doReveal = () => {
+    if (!user) return;
+    if (recordView(user.id, user.isManager, `Revealed number — ${p.owner.name}`, false)) setRevealed(true);
+  };
+  const otherUnits = properties.filter(x => x.id !== p.id && ownerKeyOf(x) === ownerKeyOf(p));
+
   return (
     <div>
-      <button className="btn btn-ghost" onClick={onBack} style={{ marginBottom: 16 }}>
-        ← Back to vault
-      </button>
+      {calling && user && (
+        <CallDialog stop={ownerStopForProperty(vault, p, user.id)} onClose={() => setCalling(false)} />
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        <button className="btn btn-ghost" onClick={onBack}>← Back to vault</button>
+        <div style={{ flex: 1 }} />
+        {p.callable && (
+          <button className="btn btn-primary" onClick={() => setCalling(true)}
+            style={{ background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013' }}>
+            <Icon name="phoneCall" size={16} /> Call owner
+          </button>
+        )}
+      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
         {/* Left: Owner info */}
@@ -40,12 +66,29 @@ export function PropertyDetail({ propertyId, onBack }: PropertyDetailProps) {
             </div>
             <div>
               <span style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>Phone</span>
-              <div style={{ fontWeight: 500, fontVariant: 'tabular-nums' }}>{maskedPhone(p.owner.phone)}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontWeight: 500, fontVariant: 'tabular-nums' }}>
+                  {revealed ? prettyPhone(p.owner.phone) : maskedPhone(p.owner.phone)}
+                </span>
+                {!revealed && p.owner.phone && (
+                  <button className="btn btn-sm btn-ghost" onClick={doReveal} style={{ color: 'var(--primary)' }}>
+                    <Icon name="eye" size={14} /> Reveal
+                  </button>
+                )}
+              </div>
             </div>
             <div>
               <span style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>Nationality</span>
               <div>{p.owner.nationality ?? '—'}</div>
             </div>
+            {otherUnits.length > 0 && (
+              <div>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>Also owns</span>
+                <div style={{ fontSize: '0.8125rem' }}>
+                  {otherUnits.map(u => u.unitLabel).join(', ')}
+                </div>
+              </div>
+            )}
             <div>
               <span style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>Owner Ref</span>
               <div style={{ fontVariant: 'tabular-nums' }}>{ownerRefOf(p)}</div>
