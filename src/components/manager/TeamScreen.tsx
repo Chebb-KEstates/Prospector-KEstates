@@ -1,100 +1,86 @@
 import React from 'react';
 import { useVault } from '../../state/VaultContext';
-import { PropertyState } from '../../types/models';
+import { PropertyState, CallOutcome, isInterested } from '../../types/models';
+import { fmtInt, fmtAed } from '../../utils/format';
+import { StatTile } from '../common/Dash';
+
+function connected(o: CallOutcome) {
+  return o !== CallOutcome.noAnswer && o !== CallOutcome.unreachable;
+}
 
 export function TeamScreen() {
-  const { brokers, properties, datasets, calls, callsBy, userById } = useVault();
+  const { brokers, properties, datasets, calls, callsBy, assignedTo } = useVault();
 
   const totalCost = datasets.reduce((s, d) => s + (d.cost ?? 0), 0);
+  const callableTotal = properties.filter(p => p.callable).length;
+  const workedCallable = properties.filter(p => p.callable && p.lastCalledAt).length;
+  const interestedTotal = calls.filter(c => isInterested(c.outcome)).length;
+  const reachedTotal = calls.filter(c => connected(c.outcome)).length;
+  const costPerInterested = interestedTotal > 0 ? totalCost / interestedTotal : undefined;
+
+  const active = brokers.filter(b => b.active);
 
   return (
-    <div>
-      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 24 }}>Team Performance</h2>
+    <div style={{ maxWidth: 1500, margin: '0 auto' }}>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 20 }}>Team &amp; Data ROI</h2>
 
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Broker</th>
-              <th>Team</th>
-              <th>Assigned</th>
-              <th>Portfolio</th>
-              <th>Total Calls</th>
-              <th>Interested</th>
-              <th>Call Rate</th>
-              <th>Pool Units</th>
-            </tr>
-          </thead>
-          <tbody>
-            {brokers.map(b => {
-              const bCalls = callsBy(b.id);
-              const bInterested = bCalls.filter(c =>
-                c.outcome === 'interestedSell' || c.outcome === 'interestedRent'
-              ).length;
-              const assigned = properties.filter(p =>
-                p.assignedTo === b.id && p.state === PropertyState.assigned
-              ).length;
-              const portfolio = properties.filter(p =>
-                p.assignedTo === b.id && p.state === PropertyState.portfolio
-              ).length;
-              const totalAssigned = assigned + portfolio;
-              const callRate = totalAssigned > 0
-                ? Math.round((bCalls.length / totalAssigned) * 100)
-                : 0;
-
-              return (
-                <tr key={b.id}>
-                  <td style={{ fontWeight: 500 }}>{b.name}</td>
-                  <td style={{ color: 'var(--text-secondary)' }}>{b.team}</td>
-                  <td>{assigned}</td>
-                  <td>{portfolio}</td>
-                  <td style={{ fontWeight: 500 }}>{bCalls.length}</td>
-                  <td style={{ color: 'var(--success)' }}>{bInterested}</td>
-                  <td>{callRate}%</td>
-                  <td>
-                    {properties.filter(p =>
-                      p.state === PropertyState.pool &&
-                      datasets.some(d =>
-                        properties.filter(pp => pp.datasetId === d.id).length > 0
-                      )
-                    ).length}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 24 }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Broker</th><th>Team</th>
+                <th style={{ textAlign: 'right' }}>Assigned</th>
+                <th style={{ textAlign: 'right' }}>Portfolio</th>
+                <th style={{ textAlign: 'right' }}>Calls</th>
+                <th style={{ textAlign: 'right' }}>Reached</th>
+                <th style={{ textAlign: 'right' }}>Interested</th>
+                <th style={{ textAlign: 'right' }}>Answer rate</th>
+                <th style={{ textAlign: 'right' }}>Interest rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {active.length === 0 ? (
+                <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 24 }}>No active brokers.</td></tr>
+              ) : active.map(b => {
+                const bCalls = callsBy(b.id);
+                const reached = bCalls.filter(c => connected(c.outcome)).length;
+                const interested = bCalls.filter(c => isInterested(c.outcome)).length;
+                const held = assignedTo(b.id);
+                const assigned = held.filter(p => p.state === PropertyState.assigned).length;
+                const portfolio = held.filter(p => p.state === PropertyState.portfolio).length;
+                const answer = bCalls.length ? Math.round(reached / bCalls.length * 100) : null;
+                const interest = reached ? Math.round(interested / reached * 100) : null;
+                return (
+                  <tr key={b.id}>
+                    <td style={{ fontWeight: 500 }}>{b.name}</td>
+                    <td style={{ color: 'var(--text-secondary)' }}>{b.team || '—'}</td>
+                    <td className="tabular-nums" style={{ textAlign: 'right' }}>{assigned}</td>
+                    <td className="tabular-nums" style={{ textAlign: 'right' }}>{portfolio}</td>
+                    <td className="tabular-nums" style={{ textAlign: 'right' }}>{bCalls.length}</td>
+                    <td className="tabular-nums" style={{ textAlign: 'right' }}>{reached}</td>
+                    <td className="tabular-nums" style={{ textAlign: 'right', color: interested > 0 ? 'var(--success)' : undefined, fontWeight: interested > 0 ? 700 : undefined }}>{interested}</td>
+                    <td className="tabular-nums" style={{ textAlign: 'right' }}>{answer == null ? '—' : `${answer}%`}</td>
+                    <td className="tabular-nums" style={{ textAlign: 'right' }}>{interest == null ? '—' : `${interest}%`}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginTop: 24, marginBottom: 12 }}>Data ROI</h3>
+      <h3 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: 12 }}>Data ROI</h3>
       <div className="card">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
-          <div>
-            <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>Total data spend</div>
-            <div style={{ fontWeight: 600 }}>AED {totalCost.toLocaleString()}</div>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>Data sets</div>
-            <div style={{ fontWeight: 600 }}>{datasets.length}</div>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>Total properties</div>
-            <div style={{ fontWeight: 600 }}>{properties.length}</div>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>Total calls</div>
-            <div style={{ fontWeight: 600 }}>{calls.length}</div>
-          </div>
-          <div>
-            <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>Interest rate</div>
-            <div style={{ fontWeight: 600 }}>
-              {calls.length > 0
-                ? Math.round((calls.filter(c =>
-                    c.outcome === 'interestedSell' || c.outcome === 'interestedRent'
-                  ).length / calls.length) * 100) + '%'
-                : '—'}
-            </div>
-          </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '18px 32px' }}>
+          <StatTile value={fmtAed(totalCost)} label="total data spend" />
+          <StatTile value={`${datasets.length}`} label="data sets" />
+          <StatTile value={fmtInt(properties.length)} label="properties" color="var(--primary)" />
+          <StatTile value={fmtInt(callableTotal)} label="callable" />
+          <StatTile value={callableTotal ? `${Math.round(workedCallable / callableTotal * 100)}%` : '—'} label="callable worked" />
+          <StatTile value={fmtInt(calls.length)} label="total calls" />
+          <StatTile value={reachedTotal ? `${Math.round(interestedTotal / reachedTotal * 100)}%` : '—'} label="interest rate" color="var(--success)" />
+          <StatTile value={costPerInterested != null ? fmtAed(costPerInterested) : '—'} label="cost per interested" color="var(--info)" />
         </div>
       </div>
     </div>
