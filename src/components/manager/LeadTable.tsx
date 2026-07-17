@@ -21,6 +21,19 @@ export function LeadTable({ leads, onSelect }: LeadTableProps) {
     return leads.filter(l => l.state === stateFilter);
   }, [leads, stateFilter]);
 
+  // Any unmapped upload fields become their own columns — leads stay flexible
+  // to whatever data is imported, exactly like the owner table.
+  const extraKeys = useMemo(() => {
+    const s = new Set<string>();
+    for (const l of leads) for (const k of Object.keys(l.extra ?? {})) s.add(k);
+    return Array.from(s).sort();
+  }, [leads]);
+
+  const extraColumns: Column<Lead>[] = extraKeys.map(k => ({
+    key: `extra:${k}`, header: k,
+    render: (l: Lead) => <span style={{ color: 'var(--text-secondary)' }}>{l.extra?.[k] ?? '—'}</span>,
+  }));
+
   const columns: Column<Lead>[] = [
     {
       key: 'name', header: 'Name', sortable: true,
@@ -44,6 +57,7 @@ export function LeadTable({ leads, onSelect }: LeadTableProps) {
       key: 'source', header: 'Source', sortable: true,
       render: l => l.source ?? '—',
     },
+    ...extraColumns,
     {
       key: 'state', header: 'State', sortable: true,
       render: l => <StateChip state={l.state} />,
