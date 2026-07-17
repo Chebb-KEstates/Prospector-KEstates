@@ -59,7 +59,14 @@ async function revealGuard(
   const nowIso = new Date().toISOString();
   const { from, to } = dayBounds(nowIso, input.tzOffsetMinutes);
 
-  return transaction(async (cx) => {
+  // The transaction COMMITS in both cases and reports the decision; the throw
+  // happens after it returns.
+  //
+  // This must not be "write cap-block, then throw" inside the transaction: the
+  // throw rolls the transaction back, taking the cap-block entry with it. A
+  // broker hitting the cap would be blocked but leave no trace — the opposite
+  // of the point. Hitting a limit is exactly the event worth recording.
+  const decision = await transaction(async (cx) => {
     const used = await countViewsBetween(input.user.id, from, to, cx);
 
     // Managers are exempt — same rule as the client's recordView.
@@ -70,7 +77,7 @@ async function revealGuard(
         action: 'cap-block',
         detail: `Daily view cap (${cap}) hit — ${input.what}`,
       }, cx);
-      throw viewCapReached(cap);
+      return { blocked: true as const, used };
     }
 
     await writeAudit({
@@ -79,8 +86,12 @@ async function revealGuard(
       detail: input.what,
     }, cx);
 
-    return { phone: prettyPhone(phone), used: used + 1, cap };
+    return { blocked: false as const, used };
   });
+
+  if (decision.blocked) throw viewCapReached(cap);
+
+  return { phone: prettyPhone(phone), used: decision.used + 1, cap };
 }
 
 /**
