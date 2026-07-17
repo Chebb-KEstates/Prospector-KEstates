@@ -36,3 +36,5 @@ yarn-error.log*
 
 # playwright browsers / e2e artifacts
 /e2e/*.png
+.env
+*-lock.json
