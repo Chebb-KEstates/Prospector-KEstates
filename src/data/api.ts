@@ -3,6 +3,7 @@ import {
   Property, Lead, CallLog, BatchRequest, DataSet, AuditEntry, VaultSettings,
   PropertyState, CallOutcome, DataSetType, DataModule, RequestStatus,
 } from '../types/models';
+import type { PhoneEntry } from '../types/models';
 import { AppUser, UserRole, Permission } from '../types/user';
 import { ColumnSpec } from '../logic/importModels';
 import { LeadColumnSpec } from '../logic/leadPipeline';
@@ -116,7 +117,18 @@ export interface PropertyFacets {
   beds: number[]; nationalities: string[]; outcomes: CallOutcome[]; extraKeys: string[];
 }
 
-export interface RevealResult { phone: string; used: number; cap: number; }
+/**
+ * `phone` is the primary; `phones` is EVERY number on record, labelled
+ * (Mobile 1 / Mobile 2 / …). Both grouped for display. Mirrors the server's
+ * RevealResult — one reveal returns the owner's whole contact card, and costs
+ * one cap decrement.
+ */
+export interface RevealResult {
+  phone: string;
+  phones: PhoneEntry[];
+  used: number;
+  cap: number;
+}
 
 export const properties = {
   async page(q: PropertyQuery, signal?: AbortSignal): Promise<Page<Property>> {

@@ -1,0 +1,21 @@
+-- Multiple numbers per owner (Mobile 1 / Mobile 2 / Mobile 3 …).
+--
+-- Vendor sheets routinely carry several numbers for one owner. Previously only
+-- the first survived the import and the rest were dropped, so a broker calling a
+-- dead primary had no fallback.
+--
+-- Shape: a JSON array of { label, number }, labelled from the upload's column
+-- headers, e.g. [{"label":"Mobile 1","number":"971501234567"}, …].
+--
+-- Why a JSON column rather than an owner_phones table:
+--   * Owner fields are already denormalised onto `properties` on purpose (see
+--     note 1 in 001_init) — a child table would fight that decision, and these
+--     numbers are only ever read as a whole list for one property.
+--   * `extra` next door is already JSON, so this matches the file's own idiom.
+--
+-- `owner_phone` REMAINS the primary number and the source of truth for the
+-- generated `callable` column and for ownerKeyOf() grouping. This column is
+-- purely additive: NULL means "one number" and every existing row keeps working
+-- untouched, which is why this migration needs no backfill.
+ALTER TABLE properties
+  ADD COLUMN owner_phones JSON NULL AFTER owner_phone;

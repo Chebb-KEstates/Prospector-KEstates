@@ -49,12 +49,25 @@ function baseCols(): ColDef[] {
     {
       key: 'mobile', label: 'Mobile', flex: 2, ownerData: true, sortable: true,
       // Already masked by the server. `callable` still works because the mask is
-      // a non-empty string exactly when a real number exists.
-      render: p => (
-        <span className="tabular-nums" style={{ color: p.callable ? 'var(--text)' : 'var(--text-tertiary)' }}>
-          {p.owner.phone ?? '—'}
-        </span>
-      ),
+      // a non-empty string exactly when a real number exists. The "+N" badge says
+      // an owner has more numbers on record without revealing any of them.
+      render: p => {
+        const extras = p.owner.allPhones.length - 1;
+        return (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <span className="tabular-nums" style={{ color: p.callable ? 'var(--text)' : 'var(--text-tertiary)' }}>
+              {p.owner.phone ?? '—'}
+            </span>
+            {extras > 0 && (
+              <span className="chip"
+                title={`${p.owner.allPhones.length} numbers on record: ${p.owner.allPhones.map(x => x.label).join(', ')}`}
+                style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', fontSize: '0.65rem', padding: '1px 6px' }}>
+                +{extras}
+              </span>
+            )}
+          </span>
+        );
+      },
     },
     { key: 'beds', label: 'Beds', flex: 1, numeric: true, sortable: true, render: p => p.beds ?? '—' },
     { key: 'size', label: 'Size (BUA)', flex: 2, numeric: true, sortable: true, render: p => fmtArea(p.sizeSqft) },
@@ -168,8 +181,38 @@ export function PropertyTable({
   // so a column doesn't vanish just because this page's rows happen to lack it.
   const extraKeys = facets.extraKeys;
 
+  /**
+   * Labels of the ADDITIONAL numbers (Mobile 2, Mobile 3 …) — one toggleable,
+   * masked column each, so every number an owner has is reachable in the table.
+   *
+   * Derived from the page rather than the facets, unlike `extraKeys` above:
+   * these labels come from the upload's phone headers, so they're uniform across
+   * a dataset rather than free-form per row. If that ever stops holding, add
+   * phoneLabels to the facets endpoint and read it here instead.
+   */
+  const phoneLabels = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of rows) {
+      const list = p.owner.allPhones;
+      for (let i = 1; i < list.length; i++) s.add(list[i].label);
+    }
+    return Array.from(s).sort();
+  }, [rows]);
+
   const allCols = useMemo<ColDef[]>(() => {
     const cols = baseCols().filter(c => !(ownerHidden && c.ownerData));
+    if (!ownerHidden) {
+      for (const label of phoneLabels) {
+        cols.push({
+          key: `phone:${label}`, label, flex: 2, ownerData: true,
+          // Masked server-side, like every other number in this table.
+          render: p => {
+            const e = p.owner.allPhones.find(x => x.label === label);
+            return <span className="tabular-nums" style={{ color: 'var(--text-secondary)' }}>{e?.number ?? '—'}</span>;
+          },
+        });
+      }
+    }
     for (const k of extraKeys) {
       cols.push({
         key: `extra:${k}`, label: k, flex: 2, sortable: true,
@@ -177,7 +220,7 @@ export function PropertyTable({
       });
     }
     return cols;
-  }, [ownerHidden, extraKeys]);
+  }, [ownerHidden, extraKeys, phoneLabels]);
 
   const unitCol: ColDef = useMemo(() => ({
     key: PINNED, label: 'Unit', flex: 3, sortable: true, render: () => null,

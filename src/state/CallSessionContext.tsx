@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { CallOutcome, PropertyState, isInterested } from '../types/models';
+import type { PhoneEntry } from '../types/models';
 
 /** One entry in a caller's call-history timeline. */
 export interface CallHistoryEntry {
@@ -31,15 +32,17 @@ export interface CallStop {
    */
   phoneMasked?: string;
   /**
-   * Fetch the real number. Resolves to it, grouped for display
-   * ("+971 50 123 4567"); rejects with an ApiError if the caller has spent
-   * their daily cap.
+   * Fetch the real numbers. Resolves to EVERY number on record, labelled
+   * (Mobile 1 / Mobile 2 / …) and grouped for display ("+971 50 123 4567");
+   * rejects with an ApiError if the caller has spent their daily cap.
+   * Always at least one entry.
    *
    * This is a server round trip on purpose: it's the audited, capped,
    * single-record reveal, and it is the only way a real number reaches this
-   * browser.
+   * browser. Revealing an owner returns their whole contact card as ONE reveal,
+   * so a broker isn't charged three of their daily cap for one person.
    */
-  reveal: () => Promise<string>;
+  reveal: () => Promise<PhoneEntry[]>;
   subtitle: string;
   assetsTitle: string;
   assets: AssetRow[];

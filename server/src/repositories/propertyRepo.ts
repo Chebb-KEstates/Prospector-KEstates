@@ -3,6 +3,7 @@ import { pool, Row, toDb, fromDb } from '../db/pool';
 import {
   Property, OwnerInfo, PropertyState, CallOutcome, kOrgId,
 } from '../../../src/types/models';
+import type { PhoneEntry } from '../../../src/types/models';
 import { ownerKeyOf } from '../../../src/logic/ownerGrouping';
 
 /**
@@ -62,7 +63,25 @@ export function toProperty(r: Row): Property {
   p.nextFollowUpAt = fromDb(r.next_follow_up_at);
   p.dncAt = fromDb(r.dnc_at);
   p.extra = parseExtra(r.extra);
+  p.owner.phones = parsePhones(r.owner_phones);
   return p;
+}
+
+/**
+ * owner_phones is a JSON array of { label, number }. NULL (every pre-migration
+ * row) means "just the primary", and OwnerInfo.allPhones falls back to it — so
+ * old rows keep working with no backfill.
+ */
+function parsePhones(v: unknown): PhoneEntry[] {
+  if (v == null) return [];
+  const arr = typeof v === 'string' ? safeParse(v) : v;
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter(e => e && typeof e === 'object' && (e as PhoneEntry).number)
+    .map(e => ({
+      label: String((e as PhoneEntry).label ?? 'Mobile'),
+      number: String((e as PhoneEntry).number),
+    }));
 }
 
 function parseExtra(v: unknown): Record<string, string> {
@@ -83,7 +102,7 @@ const COLS = `
   unit_number, plot_number, property_type, beds, size_sqft, plot_sqft,
   last_transaction_date, last_transaction_value, tx_count,
   rent_start, rent_end, rent_amount,
-  owner_name, owner_phone, owner_nationality, extra,
+  owner_name, owner_phone, owner_phones, owner_nationality, extra,
   created_at, updated_at, assigned_to, assigned_at, assignment_note,
   cooldown_until, portfolio_since, last_outcome, last_called_at,
   call_attempts, next_follow_up_at, dnc_at`;
@@ -97,7 +116,11 @@ function writeParams(p: Property): unknown[] {
     p.beds ?? null, p.sizeSqft ?? null, p.plotSqft ?? null,
     toDb(p.lastTransactionDate), p.lastTransactionValue ?? null, p.txCount,
     toDb(p.rentStart), toDb(p.rentEnd), p.rentAmount ?? null,
-    p.owner.name, p.owner.phone ?? null, p.owner.nationality ?? null,
+    p.owner.name, p.owner.phone ?? null,
+    // NULL rather than "[]" when there's only one number, so the column stays
+    // meaningful: NULL = nothing beyond the primary.
+    p.owner.phones && p.owner.phones.length > 0 ? JSON.stringify(p.owner.phones) : null,
+    p.owner.nationality ?? null,
     // owner_key is written by the app using the SHARED ownerKeyOf(), so the
     // grouping SQL can never drift from the grouping the UI does.
     ownerKeyOf(p),
@@ -115,11 +138,11 @@ const WRITE_COLS = `
   unit_number, plot_number, property_type, beds, size_sqft, plot_sqft,
   last_transaction_date, last_transaction_value, tx_count,
   rent_start, rent_end, rent_amount,
-  owner_name, owner_phone, owner_nationality, owner_key, extra,
+  owner_name, owner_phone, owner_phones, owner_nationality, owner_key, extra,
   created_at, updated_at, assigned_to, assigned_at, assignment_note,
   cooldown_until, portfolio_since, last_outcome, last_called_at,
   call_attempts, next_follow_up_at, dnc_at`;
-const PLACEHOLDERS = `(${new Array(37).fill('?').join(', ')})`;
+const PLACEHOLDERS = `(${new Array(38).fill('?').join(', ')})`;
 
 /**
  * Upsert a batch. Chunked because MySQL's max_allowed_packet caps statement
@@ -153,6 +176,7 @@ export async function saveProperties(
         tx_count = new.tx_count, rent_start = new.rent_start,
         rent_end = new.rent_end, rent_amount = new.rent_amount,
         owner_name = new.owner_name, owner_phone = new.owner_phone,
+        owner_phones = new.owner_phones,
         owner_nationality = new.owner_nationality, owner_key = new.owner_key,
         extra = new.extra, updated_at = new.updated_at,
         assigned_to = new.assigned_to, assigned_at = new.assigned_at,

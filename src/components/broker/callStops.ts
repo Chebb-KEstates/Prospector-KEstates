@@ -57,7 +57,7 @@ export function buildOwnerStop(
     phoneMasked: owner.phone,
     // enforceCap:false — opening the session already counted as the view, the
     // same rule the client's recordView(…, false) applied at this point.
-    reveal: async () => (await api.properties.reveal(g0.id, false)).phone,
+    reveal: async () => (await api.properties.reveal(g0.id, false)).phones,
     subtitle: `${units.length} unit${units.length === 1 ? '' : 's'} · ${g0.community}`,
     assetsTitle: `Assets (${units.length})`,
     assets,
@@ -83,7 +83,8 @@ export function buildLeadStop(l: Lead, calls: CallLog[], deps: StopDeps): CallSt
     flag: '🌐',
     buyer: true,
     phoneMasked: l.phone,
-    reveal: async () => (await api.leads.reveal(l.id, false)).phone,
+    // A lead has a single number; the server still returns it as a one-entry list.
+    reveal: async () => (await api.leads.reveal(l.id, false)).phones,
     subtitle: `Buyer lead · ${l.project ?? l.source ?? 'enquiry'}`,
     assetsTitle: 'Enquiry',
     assets,

@@ -1,4 +1,5 @@
 import { Property, OwnerInfo, DataSetType, kOrgId, PropertyState } from '../types/models';
+import type { PhoneEntry } from '../types/models';
 import { ImportField, ColumnSpec, ParsedSheet, DryRunResult } from './importModels';
 
 export abstract class ImportPipeline {
@@ -61,6 +62,18 @@ export abstract class ImportPipeline {
     if (has('mobile') || has('phone') || has('contactno') || h === 'tel') return ImportField.phone;
     if (has('name')) return ImportField.ownerName;
     return ImportField.ignore;
+  }
+
+  /**
+   * True for any header carrying a contact number — "Mobile", "Mobile 1",
+   * "Mobile 2", "Phone", "Contact No"… A sheet may hold any number of these and
+   * we keep them all, labelled by their header. autoMapHeader can only claim ONE
+   * column for ImportField.phone (the primary); this finds the rest.
+   */
+  static isPhoneHeader(header: string): boolean {
+    const h = header.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return h.includes('mobile') || h.includes('phone') || h.includes('telephone') ||
+      h.includes('contactno') || h === 'tel';
   }
 
   static detectType(columns: ColumnSpec[]): DataSetType {
@@ -126,10 +139,20 @@ export abstract class ImportPipeline {
       const i = byField.get(f);
       return (i == null || i >= row.length) ? null : row[i];
     };
+    // Every contact-number column, in sheet order: the one mapped to `phone`
+    // plus any further Mobile 2 / Mobile 3 … left unmapped. First valid number
+    // becomes the primary; the rest are kept, labelled by their header.
+    const phoneCols = params.columns
+      .filter(c => c.field === ImportField.phone ||
+        (c.field === ImportField.ignore && this.isPhoneHeader(c.header)))
+      .sort((a, b) => a.index - b.index);
+
     // Columns the user didn't map to a known field, but that carry a real header —
-    // kept verbatim per row so the table stays flexible to any upload.
+    // kept verbatim per row so the table stays flexible to any upload. Phone
+    // columns are excluded: they become labelled numbers, not text columns.
     const extraCols = params.columns.filter(c =>
-      c.field === ImportField.ignore && !!c.header && !/^Column \d+$/.test(c.header));
+      c.field === ImportField.ignore && !!c.header && !/^Column \d+$/.test(c.header) &&
+      !this.isPhoneHeader(c.header));
     const dataRows = params.sheet.rows.slice(params.headerRow + 1);
     let invalid = 0, inFileDup = 0;
 
@@ -141,6 +164,7 @@ export abstract class ImportPipeline {
       ownerName: string; phone?: string; nationality?: string;
       rentStart?: string; rentEnd?: string; rentAmount?: number;
       extra: Record<string, string>;
+      phones: PhoneEntry[];
     }
 
     const parsed: ParsedRow[] = [];
@@ -150,6 +174,16 @@ export abstract class ImportPipeline {
       for (const c of extraCols) {
         const s = str(c.index < row.length ? row[c.index] : null);
         if (s) extra[c.header] = s;
+      }
+      // Every number on the row, labelled by its column header, de-duped.
+      const phones: PhoneEntry[] = [];
+      const seenNumbers = new Set<string>();
+      for (const c of phoneCols) {
+        const n = this.normalizePhone(c.index < row.length ? row[c.index] : null);
+        if (n && !seenNumbers.has(n)) {
+          seenNumbers.add(n);
+          phones.push({ label: c.header.trim() || 'Mobile', number: n });
+        }
       }
       const community = str(cell(row, ImportField.community)) ?? params.communityFallback;
       const cluster = str(cell(row, ImportField.cluster));
@@ -169,7 +203,8 @@ export abstract class ImportPipeline {
         txValue: num(cell(row, ImportField.transactionValue)),
         party: partyRaw.includes('buy') ? 'buyer' : partyRaw.includes('sell') ? 'seller' : '',
         ownerName: str(cell(row, ImportField.ownerName)) ?? '',
-        phone: this.normalizePhone(cell(row, ImportField.phone)),
+        phone: phones[0]?.number,   // primary = first number on the row
+        phones,
         nationality: str(cell(row, ImportField.nationality)),
         rentStart: this.dateOf(cell(row, ImportField.rentStart)),
         rentEnd: this.dateOf(cell(row, ImportField.rentEnd)),
@@ -181,6 +216,11 @@ export abstract class ImportPipeline {
     const units = new Map<string, Property>();
     let seq = 0;
     const nextId = () => `p-${Date.now()}-${String(seq++).padStart(5, '0')}`;
+    const mkOwner = (r: ParsedRow) => {
+      const o = new OwnerInfo(r.ownerName, r.phone, r.nationality);
+      o.phones = r.phones;
+      return o;
+    };
 
     if (params.type === DataSetType.register) {
       for (const r of parsed) {
@@ -191,7 +231,7 @@ export abstract class ImportPipeline {
           r.plotNumber, r.propertyType, r.beds, r.sizeSqft, r.plotSqft,
           r.txDate, r.txValue, r.txDate ? 1 : 0,
           r.rentStart, r.rentEnd, r.rentAmount,
-          new OwnerInfo(r.ownerName, r.phone, r.nationality),
+          mkOwner(r),
           at, at,
         );
         prop.extra = r.extra;
@@ -227,7 +267,7 @@ export abstract class ImportPipeline {
           ownerRow.beds, ownerRow.sizeSqft, ownerRow.plotSqft,
           lastDate, lastValue, dates.size,
           ownerRow.rentStart, ownerRow.rentEnd, ownerRow.rentAmount,
-          new OwnerInfo(ownerRow.ownerName, ownerRow.phone, ownerRow.nationality),
+          mkOwner(ownerRow),
           at, at,
         );
         // Merge extra across the unit's rows (later rows win).

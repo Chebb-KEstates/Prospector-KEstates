@@ -78,23 +78,52 @@ export interface ProspectFields {
   dncAt?: string;
 }
 
+/** One labelled contact number, e.g. { label: 'Mobile 2', number: '971501234567' }. */
+export interface PhoneEntry { label: string; number: string; }
+
 export class OwnerInfo {
+  /**
+   * Every number on record, labelled from the upload's column headers
+   * (Mobile 1 / Mobile 2 / …). `phone` stays the PRIMARY number so masking,
+   * owner-grouping, the generated `callable` column and every existing caller
+   * keep working untouched.
+   *
+   * On list responses these numbers arrive MASKED, exactly like `phone` — the
+   * real ones only come back from the audited single-record reveal.
+   */
+  phones: PhoneEntry[] = [];
+
   constructor(
     public name: string,
     public phone?: string,
     public nationality?: string,
   ) {}
 
+  /** The full labelled list — falls back to the single primary number. */
+  get allPhones(): PhoneEntry[] {
+    if (this.phones.length > 0) return this.phones;
+    return this.phone ? [{ label: 'Mobile', number: this.phone }] : [];
+  }
+
+  get hasMultiplePhones(): boolean { return this.allPhones.length > 1; }
+
   toJson(): Record<string, unknown> {
-    return { name: this.name, phone: this.phone, nationality: this.nationality };
+    return {
+      name: this.name, phone: this.phone, nationality: this.nationality,
+      phones: this.phones,
+    };
   }
 
   static fromJson(j: Record<string, unknown>): OwnerInfo {
-    return new OwnerInfo(
+    const o = new OwnerInfo(
       (j.name as string) ?? '',
       j.phone as string | undefined,
       j.nationality as string | undefined,
     );
+    o.phones = ((j.phones as PhoneEntry[]) ?? [])
+      .filter(p => p && p.number)
+      .map(p => ({ label: String(p.label ?? 'Mobile'), number: String(p.number) }));
+    return o;
   }
 }
 

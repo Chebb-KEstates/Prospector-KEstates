@@ -150,6 +150,91 @@ describe('re-import keeps transaction history', () => {
   });
 });
 
+describe('multiple numbers per owner (Mobile 1 / 2 / 3)', () => {
+  const rows: unknown[][] = [
+    ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile 1', 'Mobile 2', 'Mobile 3', 'Developer'],
+    ['Dubai Hills', 'T1', '101', 'Amir Haddad', '0501234567', '0559876543', '0561112233', 'Emaar'],
+    ['Dubai Hills', 'T1', '102', 'Layla Sharma', '0507654321', '', '', 'Emaar'],
+  ];
+  const run = (r: unknown[][]) => ImportPipeline.dryRun({
+    sheet: new ParsedSheet('multi.xlsx', r), headerRow: 0,
+    columns: ImportPipeline.buildColumns(r, 0), type: DataSetType.register,
+    communityFallback: 'Dubai Hills', datasetId: 'ds', existingByUnitKey: new Map<string, Property>(),
+  });
+
+  it('recognises every Mobile N header as a phone column', () => {
+    expect(ImportPipeline.isPhoneHeader('Mobile 1')).toBe(true);
+    expect(ImportPipeline.isPhoneHeader('Mobile 3')).toBe(true);
+    expect(ImportPipeline.isPhoneHeader('Contact No')).toBe(true);
+    expect(ImportPipeline.isPhoneHeader('Developer')).toBe(false);
+  });
+
+  it('keeps all three numbers, labelled by their column header', () => {
+    const p = run(rows).newProperties[0];
+    expect(p.owner.allPhones).toEqual([
+      { label: 'Mobile 1', number: '971501234567' },
+      { label: 'Mobile 2', number: '971559876543' },
+      { label: 'Mobile 3', number: '971561112233' },
+    ]);
+    expect(p.owner.hasMultiplePhones).toBe(true);
+  });
+
+  it('uses the first number as the primary, so masking/grouping/callable are unchanged', () => {
+    const p = run(rows).newProperties[0];
+    expect(p.owner.phone).toBe('971501234567');
+    expect(p.callable).toBe(true);
+  });
+
+  it('does NOT leak the extra numbers into the extra text columns', () => {
+    const p = run(rows).newProperties[0];
+    expect(p.extra).toEqual({ Developer: 'Emaar' });
+    expect(Object.keys(p.extra)).not.toContain('Mobile 2');
+  });
+
+  it('handles an owner with only one number', () => {
+    const p = run(rows).newProperties[1];
+    expect(p.owner.allPhones).toEqual([{ label: 'Mobile 1', number: '971507654321' }]);
+    expect(p.owner.hasMultiplePhones).toBe(false);
+  });
+
+  it('de-duplicates the same number repeated across columns', () => {
+    const dup: unknown[][] = [
+      ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile 1', 'Mobile 2'],
+      ['Dubai Hills', 'T1', '103', 'Rohan Nair', '0501112222', '0501112222'],
+    ];
+    expect(run(dup).newProperties[0].owner.allPhones).toHaveLength(1);
+  });
+
+  // Landlines aren't UAE mobiles, so keep them verbatim rather than guess a
+  // country code — the broker still gets a dialable number.
+  it('keeps a landline as-is rather than mangling it', () => {
+    const land: unknown[][] = [
+      ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile 1', 'Mobile 2'],
+      ['Dubai Hills', 'T1', '104', 'Sofia Rossi', '0501234567', '043334444'],
+    ];
+    expect(run(land).newProperties[0].owner.allPhones).toEqual([
+      { label: 'Mobile 1', number: '971501234567' },
+      { label: 'Mobile 2', number: '043334444' },
+    ]);
+  });
+
+  it('survives a round-trip through the wire/storage format', () => {
+    const p = run(rows).newProperties[0];
+    const revived = Property.fromJson(p.toJson());
+    expect(revived.owner.allPhones).toHaveLength(3);
+    expect(revived.owner.allPhones[1].label).toBe('Mobile 2');
+  });
+
+  it('falls back to the primary when no labelled list exists (pre-migration rows)', () => {
+    const legacy = Property.fromJson({
+      id: 'x', datasetId: 'd', state: 'pool', unitKey: 'u1', community: 'C',
+      owner: { name: 'Old Row', phone: '971501234567' },
+    });
+    expect(legacy.owner.allPhones).toEqual([{ label: 'Mobile', number: '971501234567' }]);
+    expect(legacy.owner.hasMultiplePhones).toBe(false);
+  });
+});
+
 describe('owner grouping', () => {
   const mk = (id: string, name: string, phone?: string) => {
     const rows: unknown[][] = [

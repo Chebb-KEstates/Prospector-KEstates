@@ -66,6 +66,11 @@ export function serializeProperty(p: Property) {
       name: p.owner.name,
       // Masked. The real number never travels on a list response.
       phone: hasPhone ? maskedPhone(p.owner.phone) : undefined,
+      // An owner may hold several numbers (Mobile 1 / 2 / 3). EVERY one is
+      // masked here — otherwise this list becomes a back door to exactly the
+      // numbers the `phone` mask above exists to protect. The labels are safe:
+      // they carry no digits, and the UI needs them to say "3 numbers on record".
+      phones: p.owner.phones.map(e => ({ label: e.label, number: maskedPhone(e.number) })),
       nationality: p.owner.nationality,
     },
     createdAt: p.createdAt,

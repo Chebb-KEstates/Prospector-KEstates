@@ -24,6 +24,15 @@ import { notFound, viewCapReached } from '../http/errors';
 export interface RevealResult {
   /** Grouped for display, e.g. "+971 50 123 4567" — matches the old UI exactly. */
   phone: string;
+  /**
+   * Every number on record, labelled (Mobile 1 / Mobile 2 / …) and grouped the
+   * same way. Revealing an owner reveals their contact card, so this is ONE
+   * reveal: one cap decrement and one audit entry, not one per number. Charging
+   * three reveals for one owner would burn a broker's daily cap for no gain,
+   * and splitting it into three audit lines would misreport what happened.
+   * Always contains at least the primary.
+   */
+  phones: { label: string; number: string }[];
   /** Reveals spent today, after this one. */
   used: number;
   cap: number;
@@ -53,6 +62,7 @@ interface RevealInput {
 async function revealGuard(
   input: RevealInput,
   phone: string | undefined,
+  phones: { label: string; number: string }[] = [],
 ): Promise<RevealResult> {
   const settings = await loadSettings();
   const cap = input.user.viewCapOverride ?? settings.dailyViewCap;
@@ -91,7 +101,17 @@ async function revealGuard(
 
   if (decision.blocked) throw viewCapReached(cap);
 
-  return { phone: prettyPhone(phone), used: decision.used + 1, cap };
+  // Fall back to the primary so callers always get a non-empty list.
+  const list = phones.length > 0
+    ? phones
+    : (phone ? [{ label: 'Mobile', number: phone }] : []);
+
+  return {
+    phone: prettyPhone(phone),
+    phones: list.map(e => ({ label: e.label, number: prettyPhone(e.number) })),
+    used: decision.used + 1,
+    cap,
+  };
 }
 
 /**
@@ -109,8 +129,10 @@ export async function revealOwnerPhone(
   const property = await findPropertyById(propertyId);
   if (!property) throw notFound('That unit no longer exists.');
 
-  const what = input.what ?? `Revealed number — ${property.owner.name || 'Unknown owner'}`;
-  return revealGuard({ ...input, what }, property.owner.phone);
+  const all = property.owner.allPhones;
+  const what = input.what ??
+    `Revealed number${all.length > 1 ? `s (${all.length})` : ''} — ${property.owner.name || 'Unknown owner'}`;
+  return revealGuard({ ...input, what }, property.owner.phone, all);
 }
 
 export async function revealLeadPhone(

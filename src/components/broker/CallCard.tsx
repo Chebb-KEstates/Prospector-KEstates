@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CallStop } from '../../state/CallSessionContext';
 import { CallOutcome, CallOutcomeLabel, CallOutcomeBuyerLabel } from '../../types/models';
+import type { PhoneEntry } from '../../types/models';
 import { StateChip } from '../common/StateChip';
 import { Icon } from '../common/Icon';
 import { fmtDate, timeAgo } from '../../utils/format';
@@ -33,7 +34,9 @@ export function CallCard({ stop, onComplete, onSkip, onReveal }: {
   // With no number on file there's nothing to reveal, so go straight to logging
   // (an unreachable owner still needs an outcome recorded).
   const [revealed, setRevealed] = useState(!hasPhone);
-  const [phone, setPhone] = useState<string | null>(null);
+  /** Every number on record, revealed together. `phoneIdx` is the one on show. */
+  const [phones, setPhones] = useState<PhoneEntry[]>([]);
+  const [phoneIdx, setPhoneIdx] = useState(0);
   const [revealing, setRevealing] = useState(false);
   const [revealError, setRevealError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<CallOutcome | null>(null);
@@ -41,6 +44,9 @@ export function CallCard({ stop, onComplete, onSkip, onReveal }: {
   const [followUpAt, setFollowUpAt] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  const current = phones[phoneIdx];
+  const nextNumber = () => setPhoneIdx(i => (i + 1) % phones.length);
 
   const label = (o: CallOutcome) => (stop.buyer ? CallOutcomeBuyerLabel[o] : CallOutcomeLabel[o]);
   const needsFollowUp = outcome === CallOutcome.callbackLater;
@@ -57,7 +63,8 @@ export function CallCard({ stop, onComplete, onSkip, onReveal }: {
     setRevealError(null);
     try {
       const real = await stop.reveal();
-      setPhone(real);
+      setPhones(real);
+      setPhoneIdx(0);
       setRevealed(true);
       onReveal?.();
     } catch (err) {
@@ -145,18 +152,39 @@ export function CallCard({ stop, onComplete, onSkip, onReveal }: {
             </div>
           )}
         </div>
-      ) : phone ? (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
-          borderRadius: 10, background: 'color-mix(in srgb, var(--gold) 12%, transparent)',
-          border: '1px solid color-mix(in srgb, var(--gold) 45%, transparent)',
-        }}>
-          <span className="tabular-nums" style={{ flex: 1, fontSize: '1.15rem', fontWeight: 700, letterSpacing: '1px', userSelect: 'all' }}>
-            {phone}
-          </span>
-          <button className="btn btn-ghost btn-sm" onClick={() => navigator.clipboard?.writeText(phone)}>
-            <Icon name="copy" size={15} /> Copy
-          </button>
+      ) : current ? (
+        <div>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+            borderRadius: 10, background: 'color-mix(in srgb, var(--gold) 12%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--gold) 45%, transparent)',
+          }}>
+            {phones.length > 1 && (
+              <span className="chip" style={{ background: 'var(--surface)', color: 'var(--gold-dark)', fontWeight: 700, flexShrink: 0 }}>
+                {current?.label}
+              </span>
+            )}
+            <span className="tabular-nums" style={{ flex: 1, fontSize: '1.15rem', fontWeight: 700, letterSpacing: '1px', userSelect: 'all' }}>
+              {current?.number}
+            </span>
+            <button className="btn btn-ghost btn-sm" onClick={() => current && navigator.clipboard?.writeText(current.number)}>
+              <Icon name="copy" size={15} /> Copy
+            </button>
+          </div>
+
+          {/* Several numbers on record — step through them, each labelled, so a
+              dead primary isn't the end of the call. */}
+          {phones.length > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+              <button className="btn btn-sm" onClick={nextNumber}
+                style={{ borderColor: 'color-mix(in srgb, var(--gold) 45%, transparent)', color: 'var(--gold-dark)' }}>
+                <Icon name="phone" size={14} /> Multiple numbers ({phones.length}) · show next
+              </button>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
+                {phoneIdx + 1} of {phones.length} · {phones.map(p => p.label).join(' · ')}
+              </span>
+            </div>
+          )}
         </div>
       ) : (
         <div style={{

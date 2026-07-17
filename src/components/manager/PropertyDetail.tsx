@@ -10,6 +10,7 @@ import { CallDialog } from '../broker/CallDialog';
 import { ownerStopForProperty, stopDeps } from '../broker/callStops';
 import { CallStop } from '../../state/CallSessionContext';
 import { Property } from '../../types/models';
+import type { PhoneEntry } from '../../types/models';
 import * as api from '../../data/api';
 import { ApiError } from '../../data/apiClient';
 
@@ -25,7 +26,8 @@ export function PropertyDetail({ propertyId, onBack }: PropertyDetailProps) {
   const [p, setP] = useState<Property | null>(null);
   const [otherUnits, setOtherUnits] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
-  const [phone, setPhone] = useState<string | null>(null);
+  /** Real, labelled numbers once revealed; null while still masked. */
+  const [phones, setPhones] = useState<PhoneEntry[] | null>(null);
   const [revealError, setRevealError] = useState<string | null>(null);
   const [callStop, setCallStop] = useState<CallStop | null>(null);
 
@@ -38,7 +40,7 @@ export function PropertyDetail({ propertyId, onBack }: PropertyDetailProps) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setPhone(null);
+    setPhones(null);
     void (async () => {
       try {
         const [prop, owned] = await Promise.all([
@@ -84,7 +86,7 @@ export function PropertyDetail({ propertyId, onBack }: PropertyDetailProps) {
     setRevealError(null);
     try {
       const r = await revealPhone(p.id, false);
-      setPhone(r.phone);
+      setPhones(r.phones);
     } catch (err) {
       setRevealError(err instanceof ApiError ? err.message : 'Could not fetch the number.');
     }
@@ -118,15 +120,25 @@ export function PropertyDetail({ propertyId, onBack }: PropertyDetailProps) {
               <div style={{ fontWeight: 500 }}>{p.owner.name || '—'}</div>
             </div>
             <div>
-              <span style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>Phone</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                {/* p.owner.phone is the server-side mask until a reveal succeeds. */}
-                <span style={{ fontWeight: 500, fontVariant: 'tabular-nums' }}>
-                  {phone ?? p.owner.phone ?? '—'}
-                </span>
-                {!phone && p.owner.phone && (
-                  <button className="btn btn-sm btn-ghost" onClick={doReveal} style={{ color: 'var(--primary)' }}>
-                    <Icon name="eye" size={14} /> Reveal
+              <span style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>
+                {p.owner.allPhones.length > 1 ? `Numbers on record (${p.owner.allPhones.length})` : 'Phone'}
+              </span>
+              {/* Masked (server-side) until a reveal succeeds; one reveal returns
+                  the owner's whole labelled contact card. */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {(phones ?? p.owner.allPhones).map((e, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {(phones ?? p.owner.allPhones).length > 1 && (
+                      <span className="chip" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', fontSize: '0.65rem' }}>{e.label}</span>
+                    )}
+                    <span style={{ fontWeight: 500, fontVariant: 'tabular-nums' }}>{e.number}</span>
+                  </div>
+                ))}
+                {p.owner.allPhones.length === 0 && <span style={{ fontWeight: 500 }}>—</span>}
+                {!phones && p.owner.phone && (
+                  <button className="btn btn-sm btn-ghost" onClick={doReveal}
+                    style={{ color: 'var(--primary)', alignSelf: 'flex-start' }}>
+                    <Icon name="eye" size={14} /> Reveal {p.owner.allPhones.length > 1 ? 'numbers' : 'number'}
                   </button>
                 )}
               </div>
