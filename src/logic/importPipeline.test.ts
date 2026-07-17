@@ -89,6 +89,67 @@ describe('flexible import — unmapped columns are retained', () => {
   });
 });
 
+describe('re-import keeps transaction history', () => {
+  // Regression: copyWith ends in Object.assign, which copies an explicit
+  // `undefined` instead of skipping it. The update branch used
+  // `newerTx ? candidate.x : undefined` to mean "keep what's there", so every
+  // re-import of a vendor register silently blanked lastTransactionDate /
+  // lastTransactionValue and reset txCount to 0 — wiping the vault's
+  // "Last transaction" column for any unit whose new row had no newer sale.
+  const rowsWith = (tx?: string, value?: number): unknown[][] => [
+    ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile', 'Transaction Date', 'Transaction Value'],
+    ['Dubai Hills', 'T1', '101', 'Amir Haddad', '0501234567', tx ?? '', value ?? ''],
+  ];
+
+  const run = (rows: unknown[][], existing: Map<string, Property>) =>
+    ImportPipeline.dryRun({
+      sheet: new ParsedSheet('f.xlsx', rows), headerRow: 0,
+      columns: ImportPipeline.buildColumns(rows, 0), type: DataSetType.register,
+      communityFallback: 'Dubai Hills', datasetId: 'ds2', existingByUnitKey: existing,
+    });
+
+  const seeded = () => {
+    const first = run(rowsWith('2024-05-01', 1_500_000), new Map<string, Property>());
+    const p = first.newProperties[0];
+    return { property: p, byKey: new Map([[p.unitKey, p]]) };
+  };
+
+  it('preserves an existing sale when the new file has no transaction', () => {
+    const { property, byKey } = seeded();
+    expect(property.lastTransactionValue).toBe(1_500_000);
+
+    // The next monthly file refreshes owners but carries no transaction column data.
+    const updated = run(rowsWith(), byKey).updatedProperties[0];
+
+    expect(updated.lastTransactionValue).toBe(1_500_000);
+    expect(updated.lastTransactionDate).toBe(property.lastTransactionDate);
+    expect(updated.txCount).toBe(1);
+  });
+
+  it('takes the newer sale when the new file has one', () => {
+    const { byKey } = seeded();
+    const updated = run(rowsWith('2025-09-01', 2_100_000), byKey).updatedProperties[0];
+
+    expect(updated.lastTransactionValue).toBe(2_100_000);
+    expect(new Date(updated.lastTransactionDate!).getFullYear()).toBe(2025);
+  });
+
+  it('keeps the older sale when the new file has an older one', () => {
+    const { byKey } = seeded();
+    const updated = run(rowsWith('2020-01-01', 900_000), byKey).updatedProperties[0];
+
+    expect(updated.lastTransactionValue).toBe(1_500_000);
+    expect(new Date(updated.lastTransactionDate!).getFullYear()).toBe(2024);
+  });
+
+  it('never lowers txCount', () => {
+    const { property, byKey } = seeded();
+    property.txCount = 4;
+    const updated = run(rowsWith('2024-05-01', 1_500_000), byKey).updatedProperties[0];
+    expect(updated.txCount).toBe(4);
+  });
+});
+
 describe('owner grouping', () => {
   const mk = (id: string, name: string, phone?: string) => {
     const rows: unknown[][] = [

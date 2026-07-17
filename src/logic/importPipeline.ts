@@ -252,9 +252,15 @@ export abstract class ImportPipeline {
         beds: candidate.beds,
         sizeSqft: candidate.sizeSqft,
         plotSqft: candidate.plotSqft,
-        lastTransactionDate: newerTx ? candidate.lastTransactionDate : undefined,
-        lastTransactionValue: newerTx ? candidate.lastTransactionValue : undefined,
-        txCount: candidate.txCount > existing.txCount ? candidate.txCount : undefined,
+        // Keep the existing transaction history unless the incoming file has a
+        // newer one. These must name the existing value explicitly: copyWith
+        // ends in Object.assign, which COPIES an explicit `undefined` rather
+        // than skipping it — passing undefined here wiped the field, blanking
+        // the vault's "Last transaction" column (and resetting txCount to 0 via
+        // fromJson's `?? 0`) on every re-import of a vendor register.
+        lastTransactionDate: newerTx ? candidate.lastTransactionDate : existing.lastTransactionDate,
+        lastTransactionValue: newerTx ? candidate.lastTransactionValue : existing.lastTransactionValue,
+        txCount: Math.max(candidate.txCount, existing.txCount),
         rentStart: candidate.rentStart,
         rentEnd: candidate.rentEnd,
         rentAmount: candidate.rentAmount,

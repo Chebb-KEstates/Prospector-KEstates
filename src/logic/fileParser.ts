@@ -90,12 +90,5 @@ function parseCSVLine(line: string): string[] {
   return result;
 }
 
-export function saveFile(fileName: string, bytes: Uint8Array): void {
-  const blob = new Blob([bytes]);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+// `saveFile` moved to ./downloadFile — it needs the DOM, and this module is
+// compiled by the server too (see server/tsconfig.json). Import it from there.

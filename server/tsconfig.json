@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "rootDir": "..",
+    "outDir": "dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "resolveJsonModule": true,
+    "sourceMap": true,
+    "declaration": false
+  },
+  // The server compiles the frontend's domain layer directly: the disposition
+  // machine, the import pipelines, the vendor-file parser, the owner-grouping
+  // keys and the phone mask are the SAME code on both sides — the only way to
+  // guarantee client and server can never drift apart.
+  //
+  // Listed file-by-file rather than by glob, because the set is exactly "the
+  // React-free, DOM-free modules". `logic/downloadFile.ts` (needs `document`)
+  // and `logic/template.ts` (imports it) are deliberately client-only; if you
+  // add a module here, keep it free of browser globals or the build breaks.
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "../src/types/models.ts",
+    "../src/types/user.ts",
+    "../src/logic/dispositions.ts",
+    "../src/logic/importModels.ts",
+    "../src/logic/importPipeline.ts",
+    "../src/logic/leadPipeline.ts",
+    "../src/logic/ownerGrouping.ts",
+    "../src/logic/fileParser.ts",
+    "../src/utils/format.ts"
+  ],
+  "exclude": ["../src/**/*.test.ts", "node_modules", "dist"]
+}

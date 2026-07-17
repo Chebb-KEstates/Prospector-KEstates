@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { saveFile } from './fileParser';
+import { saveFile } from './downloadFile';
 
 export const kTemplateHeaders = [
   'Community', 'Sub-Community', 'Building Name', 'Unit Number', 'Plot No',

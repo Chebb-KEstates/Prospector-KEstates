@@ -1,0 +1,430 @@
+import { transaction } from '../db/pool';
+import {
+  Property, Lead, DataSet, DataSetType, DataModule,
+} from '../../../src/types/models';
+import { ImportPipeline } from '../../../src/logic/importPipeline';
+import { LeadPipeline, LeadColumnSpec, LeadField } from '../../../src/logic/leadPipeline';
+import { ColumnSpec, ImportField, ParsedSheet } from '../../../src/logic/importModels';
+import { parseVendorFile } from '../../../src/logic/fileParser';
+import {
+  createStagingSession, findStagingSession, loadStagedSheet,
+  markCommitted, dropStagedRows, StagedSession,
+} from '../repositories/importRepo';
+import { findByUnitKeys, saveProperties } from '../repositories/propertyRepo';
+import { findByLeadKeys, saveLeads } from '../repositories/leadRepo';
+import { insertDataset } from '../repositories/datasetRepo';
+import { writeAudit } from '../repositories/auditRepo';
+import { newImportSessionId, newDatasetId } from '../domain/ids';
+import { env } from '../config/env';
+import { badRequest, notFound, forbidden, unprocessable } from '../http/errors';
+
+/**
+ * The import pipeline.
+ *
+ * Every calculation here — header detection, column auto-mapping, phone
+ * normalisation, unit keys, the register/transactions collapse, the dedupe
+ * against existing units — is the frontend's own `ImportPipeline` /
+ * `LeadPipeline`, imported, not reimplemented. The server owns *when* it runs
+ * and what it's allowed to touch; the maths is identical by construction.
+ *
+ * ── The bug this fixes ──────────────────────────────────────────────────────
+ * The reference wizard generated a dataset id TWICE from the clock:
+ *   runDryRun():   datasetId: `ds-${Date.now()}`   → stamped onto every Property
+ *   handleCommit(): new DataSet(`ds-${Date.now()}`) → the dataset row
+ * Those two calls resolve at different milliseconds, so every imported property
+ * pointed at a dataset id that never existed. `deleteDataset` filters
+ * `properties.filter(p => p.datasetId === d.id)`, matched nothing, deleted the
+ * dataset row and ORPHANED all its owner data — a delete that silently didn't
+ * delete, in a product whose whole purpose is controlling owner data.
+ *
+ * Here the id is minted once, when staging is created, and is the same id used
+ * for the rows and the dataset row. It cannot drift because there is only one.
+ */
+
+const ALLOWED_EXT = ['.xlsx', '.csv'];
+
+export interface StagedResult {
+  sessionId: string;
+  fileName: string;
+  sheets: { name: string; rowCount: number }[];
+  /** Server-detected defaults, so the wizard opens on the same state as before. */
+  headerRow: number;
+  columns: ColumnSpec[] | LeadColumnSpec[];
+  detectedType?: DataSetType;
+  preview: unknown[][];
+}
+
+/**
+ * Parse an upload and stage it. The file's bytes end here — nothing is written
+ * to disk and the buffer is released when this returns.
+ */
+export async function stageUpload(input: {
+  fileName: string;
+  bytes: Buffer;
+  module: DataModule;
+  userId: string;
+}): Promise<StagedResult> {
+  const lower = input.fileName.toLowerCase();
+  if (!ALLOWED_EXT.some(e => lower.endsWith(e))) {
+    throw badRequest('Upload an Excel (.xlsx) or CSV file exported from a data vendor.');
+  }
+  if (input.bytes.length === 0) throw badRequest('That file is empty.');
+  if (input.bytes.length > env.maxUploadBytes) {
+    throw badRequest(`That file is larger than the ${Math.floor(env.maxUploadBytes / 1024 / 1024)}MB limit.`);
+  }
+
+  let parsed;
+  try {
+    // Same parser the browser used — a Buffer is a Uint8Array, which xlsx reads.
+    parsed = parseVendorFile(
+      input.fileName,
+      input.bytes.buffer.slice(
+        input.bytes.byteOffset, input.bytes.byteOffset + input.bytes.byteLength,
+      ) as ArrayBuffer,
+    );
+  } catch (err) {
+    throw unprocessable('That file could not be read. Is it a valid .xlsx or .csv?');
+  }
+
+  const nonEmpty = parsed.nonEmptySheets;
+  if (nonEmpty.length === 0) {
+    throw unprocessable('That file has no rows of data.');
+  }
+
+  // Minted ONCE. See the note at the top of this file.
+  const sessionId = newImportSessionId();
+  const expiresAt = new Date(Date.now() + env.importSessionTtlMinutes * 60_000);
+
+  await createStagingSession({
+    id: sessionId,
+    userId: input.userId,
+    module: input.module,
+    fileName: input.fileName,
+    sheets: nonEmpty,
+    expiresAt,
+  });
+
+  const firstRows = nonEmpty[0].rows;
+  const headerRow = ImportPipeline.detectHeaderRow(firstRows);
+
+  if (input.module === DataModule.owners) {
+    const columns = ImportPipeline.buildColumns(firstRows, headerRow);
+    return {
+      sessionId,
+      fileName: input.fileName,
+      sheets: nonEmpty.map(s => ({ name: s.name, rowCount: s.rows.length })),
+      headerRow,
+      columns,
+      detectedType: ImportPipeline.detectType(columns),
+      preview: firstRows.slice(0, 30),
+    };
+  }
+
+  return {
+    sessionId,
+    fileName: input.fileName,
+    sheets: nonEmpty.map(s => ({ name: s.name, rowCount: s.rows.length })),
+    headerRow,
+    columns: LeadPipeline.buildColumns(firstRows, headerRow),
+    preview: firstRows.slice(0, 30),
+  };
+}
+
+async function requireOwnedSession(sessionId: string, userId: string): Promise<StagedSession> {
+  const session = await findStagingSession(sessionId);
+  if (!session) {
+    throw notFound('That import has expired. Upload the file again.');
+  }
+  // Staged rows are unmasked owner data — only the uploader may touch them.
+  if (session.userId !== userId) throw forbidden('That import belongs to someone else.');
+  if (session.status === 'committed') {
+    throw badRequest('That import has already been committed.');
+  }
+  if (new Date(session.expiresAt) <= new Date()) {
+    throw notFound('That import has expired. Upload the file again.');
+  }
+  return session;
+}
+
+/** Re-derive columns for a different header row, against the staged rows. */
+export async function rebuildColumns(input: {
+  sessionId: string; userId: string; sheetIndex: number; headerRow: number;
+}): Promise<{ columns: ColumnSpec[] | LeadColumnSpec[]; detectedType?: DataSetType }> {
+  const session = await requireOwnedSession(input.sessionId, input.userId);
+  const rows = await loadStagedSheet(input.sessionId, input.sheetIndex);
+  if (rows.length === 0) throw notFound('That sheet has no rows.');
+  if (input.headerRow < 0 || input.headerRow >= rows.length) {
+    throw badRequest('That header row is outside the sheet.');
+  }
+
+  if (session.module === DataModule.owners) {
+    const columns = ImportPipeline.buildColumns(rows, input.headerRow);
+    return { columns, detectedType: ImportPipeline.detectType(columns) };
+  }
+  return { columns: LeadPipeline.buildColumns(rows, input.headerRow) };
+}
+
+export interface OwnerDryRunSummary {
+  type: DataSetType;
+  sourceRows: number;
+  invalidRows: number;
+  inFileDuplicates: number;
+  newCount: number;
+  updatedCount: number;
+  uniqueUnits: number;
+  callable: number;
+  /** A masked sample of the new rows, for the review step. */
+  sample: {
+    owner: string; community: string; unit: string; phone: string;
+  }[];
+}
+
+/**
+ * Dry run, server-side.
+ *
+ * The client used to compute these numbers and then ask the server (well, the
+ * IndexedDB) to trust them. Now the server computes them from the staged rows
+ * and its own view of existing units — so the counts the user approves are the
+ * counts that will actually happen.
+ */
+export async function dryRunOwners(input: {
+  sessionId: string;
+  userId: string;
+  sheetIndex: number;
+  headerRow: number;
+  columns: ColumnSpec[];
+  type: DataSetType;
+  communityFallback: string;
+}): Promise<OwnerDryRunSummary> {
+  const session = await requireOwnedSession(input.sessionId, input.userId);
+  if (session.module !== DataModule.owners) {
+    throw badRequest('That import is a buyer-leads file.');
+  }
+
+  const rows = await loadStagedSheet(input.sessionId, input.sheetIndex);
+  const sheet = new ParsedSheet(session.sheetNames[input.sheetIndex] ?? 'Sheet1', rows);
+
+  // Which existing units this file touches — the dedupe key set. Computed by
+  // running the pipeline once with an empty map to learn the unit keys, then
+  // loading only those rows rather than the whole table.
+  //
+  // Yes, this parses the sheet twice. That's deliberate: the alternative is to
+  // reimplement the key-extraction half of dryRun() here, which is exactly the
+  // duplication that lets server and client drift. Paying one extra in-memory
+  // pass beats loading every unit_key in the org, and beats forking the pipeline.
+  const probe = ImportPipeline.dryRun({
+    sheet, headerRow: input.headerRow, columns: input.columns,
+    type: input.type, communityFallback: input.communityFallback,
+    datasetId: input.sessionId,
+    existingByUnitKey: new Map(),
+  });
+  const touchedKeys = probe.newProperties.map(p => p.unitKey);
+  const existingByUnitKey = await findByUnitKeys(touchedKeys);
+
+  const result = ImportPipeline.dryRun({
+    sheet, headerRow: input.headerRow, columns: input.columns,
+    type: input.type, communityFallback: input.communityFallback,
+    // The dataset id is the staging id — one id, used for the rows now and the
+    // DataSet row at commit.
+    datasetId: input.sessionId,
+    existingByUnitKey,
+  });
+
+  return {
+    type: result.type,
+    sourceRows: result.sourceRows,
+    invalidRows: result.invalidRows,
+    inFileDuplicates: result.inFileDuplicates,
+    newCount: result.newProperties.length,
+    updatedCount: result.updatedProperties.length,
+    uniqueUnits: result.uniqueUnits,
+    callable: result.callable,
+    sample: result.newProperties.slice(0, 20).map(p => ({
+      owner: p.owner.name,
+      community: p.community,
+      unit: p.unitLabel,
+      // Masked even here: the review step never needed real numbers.
+      phone: p.owner.phone ? maskForPreview(p.owner.phone) : '—',
+    })),
+  };
+}
+
+function maskForPreview(phone: string): string {
+  if (phone.length < 4) return phone;
+  return phone.slice(0, -4).replace(/\d/g, '•') + phone.slice(-4);
+}
+
+export interface CommitOwnersInput {
+  sessionId: string;
+  userId: string;
+  sheetIndex: number;
+  headerRow: number;
+  columns: ColumnSpec[];
+  type: DataSetType;
+  communityFallback: string;
+  datasetName: string;
+  source: string;
+  cost?: number;
+}
+
+/**
+ * Commit. Recomputes the import from the staged rows rather than trusting a
+ * client-supplied row set, then writes the dataset and its properties in ONE
+ * transaction — so a failure halfway can't leave a dataset row pointing at
+ * half-imported units.
+ */
+export async function commitOwners(input: CommitOwnersInput): Promise<{
+  datasetId: string; imported: number;
+}> {
+  const session = await requireOwnedSession(input.sessionId, input.userId);
+  if (session.module !== DataModule.owners) {
+    throw badRequest('That import is a buyer-leads file.');
+  }
+
+  const rows = await loadStagedSheet(input.sessionId, input.sheetIndex);
+  const sheet = new ParsedSheet(session.sheetNames[input.sheetIndex] ?? 'Sheet1', rows);
+
+  const probe = ImportPipeline.dryRun({
+    sheet, headerRow: input.headerRow, columns: input.columns,
+    type: input.type, communityFallback: input.communityFallback,
+    datasetId: input.sessionId, existingByUnitKey: new Map(),
+  });
+  const existingByUnitKey = await findByUnitKeys(probe.newProperties.map(p => p.unitKey));
+
+  const result = ImportPipeline.dryRun({
+    sheet, headerRow: input.headerRow, columns: input.columns,
+    type: input.type, communityFallback: input.communityFallback,
+    datasetId: input.sessionId, existingByUnitKey,
+  });
+
+  const all: Property[] = [...result.newProperties, ...result.updatedProperties];
+
+  // ── The fix ──────────────────────────────────────────────────────────────
+  // ONE id: the same value already stamped on every row above.
+  const datasetId = input.sessionId;
+
+  const dataset = new DataSet(
+    datasetId,
+    input.datasetName,
+    input.source,
+    result.type,
+    DataModule.owners,
+    session.fileName,
+    input.communityFallback,
+    new Date().toISOString(),
+    input.cost,
+    result.uniqueUnits,
+    result.callable,
+    result.updatedProperties.length,
+  );
+
+  await transaction(async (cx) => {
+    await insertDataset(dataset, input.userId, cx);
+    // `updatedProperties` were built by copyWith from existing rows and keep
+    // their original ids, so the upsert updates them in place; new rows insert.
+    await saveProperties(all, cx);
+    await markCommitted(input.sessionId, cx);
+    await dropStagedRows(input.sessionId, cx);
+    await writeAudit({
+      actorId: input.userId,
+      action: 'import',
+      detail: `Imported "${dataset.name}" — ${dataset.totalUnits} units`,
+    }, cx);
+  });
+
+  return { datasetId, imported: all.length };
+}
+
+// ── Leads ──────────────────────────────────────────────────────────────────
+
+export interface LeadDryRunSummary {
+  sourceRows: number;
+  invalidRows: number;
+  inFileDuplicates: number;
+  newCount: number;
+  updatedCount: number;
+  uniqueLeads: number;
+  callable: number;
+}
+
+export async function dryRunLeads(input: {
+  sessionId: string; userId: string; sheetIndex: number;
+  headerRow: number; columns: LeadColumnSpec[];
+}): Promise<LeadDryRunSummary> {
+  const session = await requireOwnedSession(input.sessionId, input.userId);
+  if (session.module !== DataModule.leads) {
+    throw badRequest('That import is an owners file.');
+  }
+
+  const rows = await loadStagedSheet(input.sessionId, input.sheetIndex);
+  const sheet = new ParsedSheet(session.sheetNames[input.sheetIndex] ?? 'Sheet1', rows);
+
+  const probe = LeadPipeline.dryRun({
+    sheet, headerRow: input.headerRow, columns: input.columns,
+    datasetId: input.sessionId, existingByKey: new Map(),
+  });
+  const existingByKey = await findByLeadKeys(probe.newLeads.map(l => l.leadKey));
+
+  const result = LeadPipeline.dryRun({
+    sheet, headerRow: input.headerRow, columns: input.columns,
+    datasetId: input.sessionId, existingByKey,
+  });
+
+  return {
+    sourceRows: result.sourceRows,
+    invalidRows: result.invalidRows,
+    inFileDuplicates: result.inFileDuplicates,
+    newCount: result.newLeads.length,
+    updatedCount: result.updatedLeads.length,
+    uniqueLeads: result.uniqueLeads,
+    callable: result.callable,
+  };
+}
+
+export async function commitLeads(input: {
+  sessionId: string; userId: string; sheetIndex: number;
+  headerRow: number; columns: LeadColumnSpec[];
+  datasetName: string; source: string;
+}): Promise<{ datasetId: string; imported: number }> {
+  const session = await requireOwnedSession(input.sessionId, input.userId);
+  if (session.module !== DataModule.leads) {
+    throw badRequest('That import is an owners file.');
+  }
+
+  const rows = await loadStagedSheet(input.sessionId, input.sheetIndex);
+  const sheet = new ParsedSheet(session.sheetNames[input.sheetIndex] ?? 'Sheet1', rows);
+
+  const probe = LeadPipeline.dryRun({
+    sheet, headerRow: input.headerRow, columns: input.columns,
+    datasetId: input.sessionId, existingByKey: new Map(),
+  });
+  const existingByKey = await findByLeadKeys(probe.newLeads.map(l => l.leadKey));
+
+  const result = LeadPipeline.dryRun({
+    sheet, headerRow: input.headerRow, columns: input.columns,
+    datasetId: input.sessionId, existingByKey,
+  });
+
+  const all: Lead[] = [...result.newLeads, ...result.updatedLeads];
+  const datasetId = input.sessionId;
+
+  const dataset = new DataSet(
+    datasetId, input.datasetName, input.source,
+    DataSetType.register, DataModule.leads, session.fileName,
+    '', new Date().toISOString(), undefined,
+    result.uniqueLeads, result.callable, result.updatedLeads.length,
+  );
+
+  await transaction(async (cx) => {
+    await insertDataset(dataset, input.userId, cx);
+    await saveLeads(all, cx);
+    await markCommitted(input.sessionId, cx);
+    await dropStagedRows(input.sessionId, cx);
+    await writeAudit({
+      actorId: input.userId, action: 'import',
+      detail: `Imported leads "${dataset.name}" — ${dataset.totalUnits} enquiries`,
+    }, cx);
+  });
+
+  return { datasetId, imported: all.length };
+}
