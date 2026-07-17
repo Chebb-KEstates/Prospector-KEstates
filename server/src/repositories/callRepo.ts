@@ -138,19 +138,21 @@ export async function listCalls(limit: number, offset: number): Promise<{ rows: 
 export interface BrokerCallStats {
   brokerId: string;
   calls: number;
+  reached: number;
   interested: number;
   lastAt?: string;
 }
 
 /**
- * Per-broker call totals. The Team screen and the Users activity summary used to
- * compute this by filtering the whole in-memory call array per broker; this is
- * the same numbers in one grouped query.
+ * Per-broker lifetime call totals. The Team screen and the Users activity
+ * summary used to compute this by filtering the whole in-memory call array once
+ * per broker; this is the same numbers in one grouped query.
  */
 export async function brokerCallStats(): Promise<BrokerCallStats[]> {
   const [rows] = await pool.query<Row[]>(
     `SELECT broker_id,
             COUNT(*) AS calls,
+            SUM(outcome NOT IN ('noAnswer', 'unreachable')) AS reached,
             SUM(outcome IN ('interestedSell', 'interestedRent')) AS interested,
             MAX(at) AS last_at
      FROM calls WHERE org_id = ?
@@ -160,9 +162,26 @@ export async function brokerCallStats(): Promise<BrokerCallStats[]> {
   return rows.map(r => ({
     brokerId: r.broker_id as string,
     calls: Number(r.calls),
+    reached: Number(r.reached ?? 0),
     interested: Number(r.interested ?? 0),
     lastAt: fromDb(r.last_at),
   }));
+}
+
+/** Lifetime totals across the org — the ROI panel. */
+export async function lifetimeStats(): Promise<{ calls: number; reached: number; interested: number }> {
+  const [rows] = await pool.query<Row[]>(
+    `SELECT COUNT(*) AS calls,
+            SUM(outcome NOT IN ('noAnswer', 'unreachable')) AS reached,
+            SUM(outcome IN ('interestedSell', 'interestedRent')) AS interested
+     FROM calls WHERE org_id = ?`,
+    [kOrgId],
+  );
+  return {
+    calls: Number(rows[0].calls ?? 0),
+    reached: Number(rows[0].reached ?? 0),
+    interested: Number(rows[0].interested ?? 0),
+  };
 }
 
 /** Outcome mix over a window — the manager home's outcomes panel. */
@@ -193,4 +212,75 @@ export async function callsPerDay(since: Date): Promise<{ day: string; n: number
 export async function countCallsTotal(): Promise<number> {
   const [rows] = await pool.query<Row[]>('SELECT COUNT(*) AS n FROM calls WHERE org_id = ?', [kOrgId]);
   return Number(rows[0].n);
+}
+
+/**
+ * "Reached" means the call connected — anything but noAnswer/unreachable. It's
+ * the `connected()` helper the dashboards used, expressed once here so the
+ * manager home and the broker home can't drift on what counts.
+ */
+const CONNECTED_SQL = `outcome NOT IN ('noAnswer', 'unreachable')`;
+const INTERESTED_SQL = `outcome IN ('interestedSell', 'interestedRent')`;
+
+export interface WindowStats {
+  calls: number;
+  reached: number;
+  interested: number;
+  outcomes: Record<string, number>;
+}
+
+/** Totals over an explicit window — used with the caller's local day bounds. */
+export async function statsBetween(from: Date, to: Date): Promise<WindowStats> {
+  const [totals] = await pool.query<Row[]>(
+    `SELECT COUNT(*) AS calls,
+            SUM(${CONNECTED_SQL}) AS reached,
+            SUM(${INTERESTED_SQL}) AS interested
+     FROM calls WHERE org_id = ? AND at >= ? AND at < ?`,
+    [kOrgId, from, to],
+  );
+  const [byOutcome] = await pool.query<Row[]>(
+    `SELECT outcome, COUNT(*) AS n FROM calls
+     WHERE org_id = ? AND at >= ? AND at < ? GROUP BY outcome`,
+    [kOrgId, from, to],
+  );
+  const outcomes: Record<string, number> = {};
+  for (const r of byOutcome) outcomes[r.outcome as string] = Number(r.n);
+
+  return {
+    calls: Number(totals[0].calls ?? 0),
+    reached: Number(totals[0].reached ?? 0),
+    interested: Number(totals[0].interested ?? 0),
+    outcomes,
+  };
+}
+
+export interface BrokerWindowStats {
+  brokerId: string;
+  calls: number;
+  reached: number;
+  interested: number;
+}
+
+/** Per-broker totals over a window — the board's today columns. */
+export async function brokerStatsBetween(from: Date, to: Date): Promise<Map<string, BrokerWindowStats>> {
+  const [rows] = await pool.query<Row[]>(
+    `SELECT broker_id,
+            COUNT(*) AS calls,
+            SUM(${CONNECTED_SQL}) AS reached,
+            SUM(${INTERESTED_SQL}) AS interested
+     FROM calls WHERE org_id = ? AND at >= ? AND at < ?
+     GROUP BY broker_id`,
+    [kOrgId, from, to],
+  );
+  return new Map(rows.map(r => [r.broker_id as string, {
+    brokerId: r.broker_id as string,
+    calls: Number(r.calls),
+    reached: Number(r.reached ?? 0),
+    interested: Number(r.interested ?? 0),
+  }]));
+}
+
+/** Answer/interest rates over a window — the momentum card's two progress lines. */
+export async function rollingStats(since: Date): Promise<WindowStats> {
+  return statsBetween(since, new Date(Date.now() + 60_000));
 }

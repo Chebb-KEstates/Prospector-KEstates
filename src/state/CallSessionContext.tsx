@@ -13,15 +13,33 @@ export interface AssetRow { label: string; value: string; }
 
 /**
  * A single stop in a calling session — one owner (with all their units) or one
- * buyer lead. Carries everything the rich card renders plus a `log` closure that
- * persists the outcome. Built by ownerCallStops / leadCallStops (callable-only).
+ * buyer lead. Carries everything the rich card renders, plus two closures that
+ * reach the server: `reveal` and `log`. Built by ownerCallStops / leadCallStops
+ * (callable-only).
  */
 export interface CallStop {
   id: string;
   name: string;
   flag: string;
   buyer: boolean;
-  phone?: string;
+  /**
+   * The MASKED number ("••••••1234"), or undefined when there is none.
+   *
+   * Display only — never a real number. It exists so the card can tell
+   * "callable" from "no number on file" without asking the server. Pressing
+   * Call goes through `reveal()`.
+   */
+  phoneMasked?: string;
+  /**
+   * Fetch the real number. Resolves to it, grouped for display
+   * ("+971 50 123 4567"); rejects with an ApiError if the caller has spent
+   * their daily cap.
+   *
+   * This is a server round trip on purpose: it's the audited, capped,
+   * single-record reveal, and it is the only way a real number reaches this
+   * browser.
+   */
+  reveal: () => Promise<string>;
   subtitle: string;
   assetsTitle: string;
   assets: AssetRow[];

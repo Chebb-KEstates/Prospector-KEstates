@@ -1,21 +1,39 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useVault } from '../../state/VaultContext';
-import { useAuth } from '../../state/AuthContext';
 import { BatchRequest, RequestStatus } from '../../types/models';
 import { fmtDateTime } from '../../utils/format';
+import { ApiError } from '../../data/apiClient';
 
 export function RequestsScreen() {
-  const { requests, pendingRequests, approveRequest, denyRequest, userById } = useVault();
-  const { user } = useAuth();
+  const { requests, pendingRequests, approveRequest, denyRequest, userById, reloadRequests } = useVault();
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleApprove = async (req: BatchRequest) => {
-    if (!user) return;
-    await approveRequest(req, user.id);
-  };
-
-  const handleDeny = async (req: BatchRequest) => {
-    if (!user) return;
-    await denyRequest(req, user.id);
+  /**
+   * Approve/deny are decided under a row lock server-side. A second manager
+   * racing the same request gets a 409 rather than double-granting the units —
+   * surfaced here, and the list is refreshed so they can see what actually
+   * happened instead of a stale Pending badge.
+   */
+  const decide = async (req: BatchRequest, action: 'approve' | 'deny') => {
+    if (busyId) return;
+    setBusyId(req.id);
+    setError(null);
+    try {
+      if (action === 'approve') {
+        const granted = await approveRequest(req);
+        if (granted < req.count) {
+          setError(`Granted ${granted} of ${req.count} — the rest are no longer in the pool.`);
+        }
+      } else {
+        await denyRequest(req);
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not decide that request.');
+      if (err instanceof ApiError && err.isConflict) await reloadRequests();
+    } finally {
+      setBusyId(null);
+    }
   };
 
   return (
@@ -28,6 +46,12 @@ export function RequestsScreen() {
           </span>
         )}
       </h2>
+
+      {error && (
+        <div className="card" style={{ marginBottom: 12, borderColor: 'var(--error)', color: 'var(--error)', fontSize: '0.875rem' }}>
+          {error}
+        </div>
+      )}
 
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <table className="data-table">
@@ -70,10 +94,12 @@ export function RequestsScreen() {
                   <td>
                     {req.status === RequestStatus.pending && (
                       <div style={{ display: 'flex', gap: 4 }}>
-                        <button className="btn btn-sm btn-primary" onClick={() => handleApprove(req)}>
-                          Approve
+                        <button className="btn btn-sm btn-primary" disabled={busyId === req.id}
+                          onClick={() => decide(req, 'approve')}>
+                          {busyId === req.id ? '…' : 'Approve'}
                         </button>
-                        <button className="btn btn-sm btn-danger" onClick={() => handleDeny(req)}>
+                        <button className="btn btn-sm btn-danger" disabled={busyId === req.id}
+                          onClick={() => decide(req, 'deny')}>
                           Deny
                         </button>
                       </div>

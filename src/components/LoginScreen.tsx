@@ -1,24 +1,29 @@
 import React, { useState } from 'react';
 import { useAuth } from '../state/AuthContext';
-import { useVault } from '../state/VaultContext';
-import { UserRole } from '../types/user';
 
+/**
+ * Sign in.
+ *
+ * The one-click demo buttons are gone. They signed in with `demo1234` — a
+ * password compiled into the JS bundle that every account matched, printed on
+ * the login screen. That was survivable for a local IndexedDB demo and is not
+ * survivable against a real database of owner data.
+ */
 export function LoginScreen() {
   const { signIn } = useAuth();
-  const { users } = useVault();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const err = signIn(email, password, users);
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const err = await signIn(email, password);
     if (err) setError(err);
-  };
-
-  const quickSignIn = (userEmail: string) => {
-    const err = signIn(userEmail, 'demo1234', users);
-    if (err) setError(err);
+    setBusy(false);
   };
 
   return (
@@ -101,28 +106,16 @@ export function LoginScreen() {
           <button
             type="submit"
             className="btn btn-primary"
+            disabled={busy}
             style={{ width: '100%', justifyContent: 'center', padding: '10px 16px' }}
           >
-            Sign in
+            {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
 
-        <div style={{ marginTop: 24, textAlign: 'center' }}>
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginBottom: 12 }}>
-            Demo accounts (password: <code style={{ color: 'var(--primary)' }}>demo1234</code>)
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <button className="btn btn-ghost" onClick={() => quickSignIn('director@demo.ae')}>
-              Sign in as Director (Manager)
-            </button>
-            <button className="btn btn-ghost" onClick={() => quickSignIn('sara@demo.ae')}>
-              Sign in as Sara (Broker)
-            </button>
-            <button className="btn btn-ghost" onClick={() => quickSignIn('omar@demo.ae')}>
-              Sign in as Omar (Broker)
-            </button>
-          </div>
-        </div>
+        <p style={{ marginTop: 24, textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+          Accounts are created by your manager.
+        </p>
       </div>
     </div>
   );

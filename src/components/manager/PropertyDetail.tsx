@@ -1,13 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { useAuth } from '../../state/AuthContext';
 import { PropertyTimeline } from './PropertyTimeline';
 import { StateChip, OutcomeChip } from '../common/StateChip';
-import { fmtDate, fmtAed, fmtArea, maskedPhone, prettyPhone } from '../../utils/format';
-import { ownerRefOf, propertyRefOf, ownerKeyOf } from '../../logic/ownerGrouping';
+import { fmtDate, fmtAed, fmtArea } from '../../utils/format';
+import { ownerRefOf, propertyRefOf } from '../../logic/ownerGrouping';
 import { Icon } from '../common/Icon';
 import { CallDialog } from '../broker/CallDialog';
-import { ownerStopForProperty } from '../broker/callStops';
+import { ownerStopForProperty, stopDeps } from '../broker/callStops';
+import { CallStop } from '../../state/CallSessionContext';
+import { Property } from '../../types/models';
+import * as api from '../../data/api';
+import { ApiError } from '../../data/apiClient';
 
 interface PropertyDetailProps {
   propertyId: string;
@@ -16,11 +20,51 @@ interface PropertyDetailProps {
 
 export function PropertyDetail({ propertyId, onBack }: PropertyDetailProps) {
   const vault = useVault();
-  const { properties, userById, recordView } = vault;
+  const { userById, revealPhone } = vault;
   const { user } = useAuth();
-  const [revealed, setRevealed] = useState(false);
-  const [calling, setCalling] = useState(false);
-  const p = properties.find(pr => pr.id === propertyId);
+  const [p, setP] = useState<Property | null>(null);
+  const [otherUnits, setOtherUnits] = useState<Property[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [phone, setPhone] = useState<string | null>(null);
+  const [revealError, setRevealError] = useState<string | null>(null);
+  const [callStop, setCallStop] = useState<CallStop | null>(null);
+
+  const deps = useMemo(
+    () => stopDeps(vault.users, vault.logCall, vault.logLeadCall),
+    [vault.users, vault.logCall, vault.logLeadCall],
+  );
+
+  // The record is fetched by id — there's no local vault array to search any more.
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setPhone(null);
+    void (async () => {
+      try {
+        const [prop, owned] = await Promise.all([
+          api.properties.byId(propertyId),
+          api.properties.ownerUnits(propertyId).catch(() => [] as Property[]),
+        ]);
+        if (cancelled) return;
+        setP(prop);
+        setOtherUnits(owned.filter(u => u.id !== propertyId));
+      } catch {
+        if (!cancelled) setP(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [propertyId, vault.revision]);
+
+  if (loading) {
+    return (
+      <div>
+        <button className="btn btn-ghost" onClick={onBack}>← Back</button>
+        <p style={{ marginTop: 16, color: 'var(--text-tertiary)' }}>Loading…</p>
+      </div>
+    );
+  }
 
   if (!p) {
     return (
@@ -31,24 +75,33 @@ export function PropertyDetail({ propertyId, onBack }: PropertyDetailProps) {
     );
   }
 
-  // Manager single-property detail may see the full number (view-logged) — the one
-  // sanctioned reveal outside the dialer (Security Playbook). Brokers never reach here.
-  const doReveal = () => {
-    if (!user) return;
-    if (recordView(user.id, user.isManager, `Revealed number — ${p.owner.name}`, false)) setRevealed(true);
+  /**
+   * The one sanctioned reveal outside the dialer. It's a server round trip that
+   * checks the cap and writes the audit entry; the number only appears if that
+   * succeeded, so a revealed number and its audit record cannot come apart.
+   */
+  const doReveal = async () => {
+    setRevealError(null);
+    try {
+      const r = await revealPhone(p.id, false);
+      setPhone(r.phone);
+    } catch (err) {
+      setRevealError(err instanceof ApiError ? err.message : 'Could not fetch the number.');
+    }
   };
-  const otherUnits = properties.filter(x => x.id !== p.id && ownerKeyOf(x) === ownerKeyOf(p));
+
+  const startCall = async () => {
+    setCallStop(await ownerStopForProperty(p, deps));
+  };
 
   return (
     <div>
-      {calling && user && (
-        <CallDialog stop={ownerStopForProperty(vault, p, user.id)} onClose={() => setCalling(false)} />
-      )}
+      {callStop && <CallDialog stop={callStop} onClose={() => setCallStop(null)} />}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <button className="btn btn-ghost" onClick={onBack}>← Back to vault</button>
         <div style={{ flex: 1 }} />
         {p.callable && (
-          <button className="btn btn-primary" onClick={() => setCalling(true)}
+          <button className="btn btn-primary" onClick={startCall}
             style={{ background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013' }}>
             <Icon name="phoneCall" size={16} /> Call owner
           </button>
@@ -67,15 +120,19 @@ export function PropertyDetail({ propertyId, onBack }: PropertyDetailProps) {
             <div>
               <span style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>Phone</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {/* p.owner.phone is the server-side mask until a reveal succeeds. */}
                 <span style={{ fontWeight: 500, fontVariant: 'tabular-nums' }}>
-                  {revealed ? prettyPhone(p.owner.phone) : maskedPhone(p.owner.phone)}
+                  {phone ?? p.owner.phone ?? '—'}
                 </span>
-                {!revealed && p.owner.phone && (
+                {!phone && p.owner.phone && (
                   <button className="btn btn-sm btn-ghost" onClick={doReveal} style={{ color: 'var(--primary)' }}>
                     <Icon name="eye" size={14} /> Reveal
                   </button>
                 )}
               </div>
+              {revealError && (
+                <div style={{ fontSize: '0.75rem', color: 'var(--error)', marginTop: 4 }}>{revealError}</div>
+              )}
             </div>
             <div>
               <span style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>Nationality</span>

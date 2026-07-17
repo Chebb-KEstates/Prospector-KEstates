@@ -2,14 +2,26 @@ import React, { useState, useMemo } from 'react';
 import { useAuth } from '../../state/AuthContext';
 import { useVault } from '../../state/VaultContext';
 import { useCallSession } from '../../state/CallSessionContext';
-import { Property, PropertyState, CallOutcome, isInterested } from '../../types/models';
+import { PropertyState, CallOutcome } from '../../types/models';
 import { PropertyTable } from '../manager/PropertyTable';
 import { StateChip, OutcomeChip } from '../common/StateChip';
 import { Icon } from '../common/Icon';
-import { maskedPhone, fmtDate } from '../../utils/format';
-import { ownerCallStops, leadCallStops, ownerStopForProperty, buildLeadStop } from './callStops';
+import { fmtDate } from '../../utils/format';
+import {
+  ownerCallStops, leadCallStops, ownerStopForProperty, leadStopFor, stopDeps,
+} from './callStops';
 import { CallDialog } from './CallDialog';
 import { CallStop } from '../../state/CallSessionContext';
+import { useMyProperties, useMyLeads } from '../../data/hooks';
+
+/**
+ * Today — the broker's working list.
+ *
+ * A broker's own set is bounded (they hold tens of units, not the vault), so it
+ * still loads whole via useMyProperties and the quick-filter chips still filter
+ * in memory, exactly as before. The paginated PropertyTable underneath scopes
+ * itself to `mine` server-side.
+ */
 
 type Quick = 'all' | 'due' | 'fresh' | 'noAnswer' | 'interested';
 const QUICKS: { key: Quick; label: string }[] = [
@@ -20,6 +32,25 @@ const QUICKS: { key: Quick; label: string }[] = [
   { key: 'interested', label: 'Interested' },
 ];
 
+/**
+ * Maps a quick chip onto server filters.
+ *
+ * `dueOnly` and `interestedOnly` are dedicated filters on the API: they're a
+ * date comparison and a two-value set, neither of which the plain `outcome`
+ * filter can express. Without them these two chips would silently do nothing.
+ */
+function quickToQuery(quick: Quick): {
+  forcedOutcome?: string; dueOnly?: boolean; interestedOnly?: boolean;
+} {
+  switch (quick) {
+    case 'fresh': return { forcedOutcome: 'none' };
+    case 'noAnswer': return { forcedOutcome: CallOutcome.noAnswer };
+    case 'due': return { dueOnly: true };
+    case 'interested': return { interestedOnly: true };
+    default: return {};
+  }
+}
+
 export function TodayTab() {
   const { user } = useAuth();
   const vault = useVault();
@@ -27,39 +58,57 @@ export function TodayTab() {
   const [buyers, setBuyers] = useState(false);
   const [quick, setQuick] = useState<Quick>('all');
   const [callStop, setCallStop] = useState<CallStop | null>(null);
+  const [starting, setStarting] = useState(false);
 
-  const ownerProps = user ? vault.assignedTo(user.id) : [];
-  const filtered = useMemo(() => {
-    const now = new Date();
-    const match = (p: Property): boolean => {
-      switch (quick) {
-        case 'due': return !!p.nextFollowUpAt && new Date(p.nextFollowUpAt) <= now;
-        case 'fresh': return !p.lastCalledAt;
-        case 'noAnswer': return p.lastOutcome === CallOutcome.noAnswer;
-        case 'interested': return !!p.lastOutcome && isInterested(p.lastOutcome);
-        default: return true;
-      }
-    };
-    return ownerProps.filter(match);
-  }, [ownerProps, quick]);
+  const { rows: myProperties } = useMyProperties();
+  const { rows: myLeads } = useMyLeads();
+
+  const deps = useMemo(
+    () => stopDeps(vault.users, vault.logCall, vault.logLeadCall),
+    [vault.users, vault.logCall, vault.logLeadCall],
+  );
+
+  const leads = useMemo(
+    () => myLeads.filter(l => l.state === PropertyState.assigned || l.state === PropertyState.portfolio),
+    [myLeads],
+  );
+
+  const ownerCallable = useMemo(() => myProperties.filter(p => p.callable), [myProperties]);
+  const leadCallable = useMemo(() => leads.filter(l => l.callable), [leads]);
 
   if (!user) return null;
 
-  const leads = vault.leadsOf(user.id).filter(l => l.state === PropertyState.assigned || l.state === PropertyState.portfolio);
-  const startOwners = () => start(ownerCallStops(vault, user.id), 'Calling owners');
-  const startLeads = () => start(leadCallStops(vault, user.id), 'Calling buyer leads');
-  const ownerCallable = ownerProps.filter(p => p.callable);
-  const leadCallable = leads.filter(l => l.callable);
-
-  const p0 = ownerProps;
-  const openOwnerCall = (id: string) => {
-    const prop = p0.find(x => x.id === id);
-    if (prop && prop.callable) setCallStop(ownerStopForProperty(vault, prop, user.id));
+  const startOwners = async () => {
+    setStarting(true);
+    try {
+      start(await ownerCallStops(myProperties, deps), 'Calling owners');
+    } finally {
+      setStarting(false);
+    }
   };
+
+  const startLeads = async () => {
+    setStarting(true);
+    try {
+      start(await leadCallStops(leads, deps), 'Calling buyer leads');
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const openOwnerCall = async (id: string) => {
+    const prop = myProperties.find(x => x.id === id);
+    if (!prop || !prop.callable) return;
+    setCallStop(await ownerStopForProperty(prop, deps));
+  };
+
+  // Owner counting mirrors the original: one caller per distinct number.
+  const ownerCount = new Set(ownerCallable.map(p => p.owner.phone)).size;
 
   return (
     <div>
       {callStop && <CallDialog stop={callStop} onClose={() => setCallStop(null)} />}
+
       {/* Owners | Buyers switch + Start calling */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
@@ -72,21 +121,20 @@ export function TodayTab() {
         </div>
         <div style={{ flex: 1 }} />
         {!buyers ? (
-          <button className="btn btn-primary" onClick={startOwners} disabled={ownerCallable.length === 0}
+          <button className="btn btn-primary" onClick={startOwners} disabled={ownerCallable.length === 0 || starting}
             style={{ background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013' }}>
-            <Icon name="phoneCall" size={16} /> Start calling ({new Set(ownerCallable.map(p => p.owner.phone)).size})
+            <Icon name="phoneCall" size={16} /> {starting ? 'Preparing…' : `Start calling (${ownerCount})`}
           </button>
         ) : (
-          <button className="btn btn-primary" onClick={startLeads} disabled={leadCallable.length === 0}
+          <button className="btn btn-primary" onClick={startLeads} disabled={leadCallable.length === 0 || starting}
             style={{ background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013' }}>
-            <Icon name="phoneCall" size={16} /> Start calling ({leadCallable.length})
+            <Icon name="phoneCall" size={16} /> {starting ? 'Preparing…' : `Start calling (${leadCallable.length})`}
           </button>
         )}
       </div>
 
       {!buyers ? (
         <>
-          {/* Quick filter chips */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
             {QUICKS.map(q => (
               <button key={q.key} className={`btn btn-sm ${quick === q.key ? 'btn-primary' : ''}`} onClick={() => setQuick(q.key)}>
@@ -94,7 +142,13 @@ export function TodayTab() {
               </button>
             ))}
           </div>
-          <PropertyTable prefsKey="broker_today" hideOwner properties={filtered} onSelect={openOwnerCall} />
+          <PropertyTable
+            prefsKey="broker_today"
+            hideOwner
+            scope="mine"
+            onSelect={openOwnerCall}
+            {...quickToQuery(quick)}
+          />
         </>
       ) : (
         <BuyerTable />
@@ -106,9 +160,26 @@ export function TodayTab() {
 function BuyerTable() {
   const { user } = useAuth();
   const vault = useVault();
+  const { rows: myLeads, loading } = useMyLeads();
   const [callStop, setCallStop] = useState<CallStop | null>(null);
+
+  const deps = useMemo(
+    () => stopDeps(vault.users, vault.logCall, vault.logLeadCall),
+    [vault.users, vault.logCall, vault.logLeadCall],
+  );
+
+  const leads = useMemo(
+    () => myLeads.filter(l => l.state === PropertyState.assigned || l.state === PropertyState.portfolio),
+    [myLeads],
+  );
+
   if (!user) return null;
-  const leads = vault.leadsOf(user.id).filter(l => l.state === PropertyState.assigned || l.state === PropertyState.portfolio);
+
+  const open = async (leadId: string) => {
+    const l = leads.find(x => x.id === leadId);
+    if (!l || !l.callable) return;
+    setCallStop(await leadStopFor(l, deps));
+  };
 
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -119,13 +190,15 @@ function BuyerTable() {
             <tr><th>Name</th><th>Phone</th><th>Project</th><th>Source</th><th>State</th><th>Last outcome</th><th>Enquired</th></tr>
           </thead>
           <tbody>
-            {leads.length === 0 ? (
+            {loading ? (
+              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 24 }}>Loading…</td></tr>
+            ) : leads.length === 0 ? (
               <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 24 }}>No buyer leads assigned to you.</td></tr>
             ) : leads.map(l => (
-              <tr key={l.id} style={{ cursor: l.callable ? 'pointer' : 'default' }}
-                onClick={() => l.callable && setCallStop(buildLeadStop(vault, l, user.id))}>
+              <tr key={l.id} style={{ cursor: l.callable ? 'pointer' : 'default' }} onClick={() => open(l.id)}>
                 <td style={{ fontWeight: 500 }}>{l.name || '—'}</td>
-                <td className="tabular-nums" style={{ color: 'var(--text-secondary)' }}>{maskedPhone(l.phone)}</td>
+                {/* Already masked server-side. */}
+                <td className="tabular-nums" style={{ color: 'var(--text-secondary)' }}>{l.phone ?? '—'}</td>
                 <td>{l.project ?? '—'}</td>
                 <td style={{ color: 'var(--text-secondary)' }}>{l.source ?? '—'}</td>
                 <td><StateChip state={l.state} /></td>

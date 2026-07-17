@@ -1,21 +1,28 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAuth } from '../../state/AuthContext';
 import { useVault } from '../../state/VaultContext';
 import { useCallSession } from '../../state/CallSessionContext';
-import { PropertyState, CallOutcome, isInterested } from '../../types/models';
+import { PropertyState } from '../../types/models';
 import { groupByOwner } from '../../logic/ownerGrouping';
-import { ownerCallStops } from './callStops';
-import { fmtInt, fmtDate, greetingName, sameDay } from '../../utils/format';
+import { ownerCallStops, stopDeps } from './callStops';
+import { fmtInt, fmtDate, greetingName } from '../../utils/format';
 import {
   HeroSlab, SlabAction, DashColumns, DashCard, StatTile, SegmentBar, ProgressLine, Segment,
 } from '../common/Dash';
 import { Icon } from '../common/Icon';
+import { useMyProperties, useBrokerDashboard } from '../../data/hooks';
+
+/**
+ * A broker's home.
+ *
+ * Two data sources, split by what they need to know:
+ *  - their own assigned units (bounded — loads whole, groups locally)
+ *  - team comparisons and the pool snapshot (aggregates, from the server: a
+ *    broker cannot see the team's calls, so they can't compute the average).
+ */
 
 const STEEL = 'var(--text-tertiary)';
 
-function connected(o: CallOutcome) {
-  return o !== CallOutcome.noAnswer && o !== CallOutcome.unreachable;
-}
 function partOfDay(now: Date) {
   const h = now.getHours();
   return h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
@@ -25,21 +32,38 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
   const { user } = useAuth();
   const vault = useVault();
   const { start } = useCallSession();
-  if (!user) return null;
+  const { rows: mine } = useMyProperties();
+  const { data: dash } = useBrokerDashboard();
+  const [starting, setStarting] = useState(false);
+
+  const groups = useMemo(() => groupByOwner(mine), [mine]);
+  const callable = useMemo(() => mine.filter(p => p.callable), [mine]);
+  const deps = useMemo(
+    () => stopDeps(vault.users, vault.logCall, vault.logLeadCall),
+    [vault.users, vault.logCall, vault.logLeadCall],
+  );
 
   const now = new Date();
-  const mine = vault.assignedTo(user.id);
-  const groups = groupByOwner(mine);
-  const myCalls = vault.callsBy(user.id);
-  const callsToday = myCalls.filter(c => sameDay(new Date(c.at), now));
-  const interestedTotal = myCalls.filter(c => isInterested(c.outcome)).length;
-  const reachedTotal = myCalls.filter(c => connected(c.outcome)).length;
-  const portfolio = mine.filter(p => p.state === PropertyState.portfolio).length;
-  const dueNext = groups.filter(g => g.dueFollowUp && new Date(g.dueFollowUp) <= now);
-  const callable = mine.filter(p => p.callable);
-  const freshOwners = groups.filter(g => g.neverCalled).length;
+  const dueNext = useMemo(
+    () => groups.filter(g => g.dueFollowUp && new Date(g.dueFollowUp) <= new Date()),
+    [groups],
+  );
+  const freshOwners = useMemo(() => groups.filter(g => g.neverCalled).length, [groups]);
+  const portfolio = useMemo(
+    () => mine.filter(p => p.state === PropertyState.portfolio).length,
+    [mine],
+  );
 
-  // Pipeline of my assigned records
+  if (!user) return null;
+
+  const callsToday = dash?.myCallsToday ?? 0;
+  const interestedTotal = dash?.myInterested ?? 0;
+  const myCallsTotal = dash?.myCalls ?? 0;
+  // The server gives lifetime calls and interested; the answer rate needs
+  // "reached", which is only meaningful over the same window — today's is what
+  // the broker can act on.
+  const reachedToday = dash?.myReachedToday ?? 0;
+
   const mineIn = (s: PropertyState) => mine.filter(p => p.state === s).length;
   const pipeline: Segment[] = [
     { value: mineIn(PropertyState.assigned), color: 'var(--info)', label: 'To work' },
@@ -48,21 +72,36 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
     { value: mineIn(PropertyState.dnc), color: 'var(--error)', label: 'DNC' },
   ];
 
-  // Me vs team (interested per broker)
-  const brokers = vault.brokers.filter(b => b.active);
-  const teamInterested = brokers.map(b => vault.callsBy(b.id).filter(c => isInterested(c.outcome)).length);
-  const teamAvg = teamInterested.length ? teamInterested.reduce((s, x) => s + x, 0) / teamInterested.length : 0;
-  const teamMax = Math.max(1, ...teamInterested);
+  // Me vs team. The comparison is against the team average the server computed:
+  // a broker has no business seeing their colleagues' individual numbers.
+  const teamAvg = dash?.teamAverageCalls ?? 0;
+  const teamMax = Math.max(1, interestedTotal, teamAvg);
 
-  // Coach's corner — rule-based tips
+  // Coach's corner — rule-based tips, unchanged.
   const tips: string[] = [];
-  if (callable.length > 0 && callsToday.length === 0) tips.push(`You have ${new Set(callable.map(p => p.owner.phone)).size} callable owners and no calls yet today — start a session.`);
-  if (dueNext.length > 0) tips.push(`${dueNext.length} follow-up${dueNext.length === 1 ? '' : 's'} are due now — these are your warmest contacts.`);
-  if (freshOwners > 0) tips.push(`${freshOwners} owner${freshOwners === 1 ? '' : 's'} have never been called — fresh data converts best.`);
-  if (reachedTotal > 0 && interestedTotal / reachedTotal < 0.15) tips.push('Your interest rate is low — try leading with the recent transaction on their unit.');
+  const callableOwners = new Set(callable.map(p => p.owner.phone)).size;
+  if (callable.length > 0 && callsToday === 0) {
+    tips.push(`You have ${callableOwners} callable owners and no calls yet today — start a session.`);
+  }
+  if (dueNext.length > 0) {
+    tips.push(`${dueNext.length} follow-up${dueNext.length === 1 ? '' : 's'} are due now — these are your warmest contacts.`);
+  }
+  if (freshOwners > 0) {
+    tips.push(`${freshOwners} owner${freshOwners === 1 ? '' : 's'} have never been called — fresh data converts best.`);
+  }
+  if (callsToday > 0 && reachedToday > 0 && (dash?.myInterestedToday ?? 0) / reachedToday < 0.15) {
+    tips.push('Your interest rate is low — try leading with the recent transaction on their unit.');
+  }
   if (tips.length === 0) tips.push('You are on top of your list. Keep the momentum going.');
 
-  const startCalling = () => start(ownerCallStops(vault, user.id), 'Calling owners');
+  const startCalling = async () => {
+    setStarting(true);
+    try {
+      start(await ownerCallStops(mine, deps), 'Calling owners');
+    } finally {
+      setStarting(false);
+    }
+  };
 
   return (
     <div style={{ maxWidth: 1500, margin: '0 auto' }}>
@@ -70,7 +109,7 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
         title={`Good ${partOfDay(now)}, ${greetingName(user.name)}`}
         subtitle={fmtDate(now.toISOString())}
         stats={[
-          { value: `${callsToday.length}`, label: 'calls today' },
+          { value: `${callsToday}`, label: 'calls today' },
           { value: fmtInt(mine.length), label: 'on your list' },
           { value: `${dueNext.length}`, label: 'due follow-ups' },
           { value: fmtInt(portfolio), label: 'in portfolio' },
@@ -82,9 +121,10 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
           </>
         }
         side={
-          <button className="slab-action primary" onClick={startCalling} disabled={callable.length === 0}
+          <button className="slab-action primary" onClick={startCalling}
+            disabled={callable.length === 0 || starting}
             style={{ padding: '14px 22px', fontSize: '0.95rem' }}>
-            <Icon name="phoneCall" size={18} /> Start calling ({new Set(callable.map(p => p.owner.phone)).size})
+            <Icon name="phoneCall" size={18} /> {starting ? 'Preparing…' : `Start calling (${callableOwners})`}
           </button>
         }
       />
@@ -104,9 +144,9 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
 
         <DashCard title="You vs the team" icon="team">
           <ProgressLine label="Your interested" fraction={interestedTotal / teamMax} trailing={`${interestedTotal}`} color="var(--success)" />
-          <ProgressLine label="Team average" fraction={teamAvg / teamMax} trailing={teamAvg.toFixed(1)} color={STEEL} />
-          <ProgressLine label="Your answer rate" fraction={myCalls.length ? reachedTotal / myCalls.length : 0}
-            trailing={myCalls.length ? `${Math.round(reachedTotal / myCalls.length * 100)}%` : '—'} color="var(--info)" />
+          <ProgressLine label="Team average (calls)" fraction={teamAvg / Math.max(1, myCallsTotal, teamAvg)} trailing={`${teamAvg}`} color={STEEL} />
+          <ProgressLine label="Your answer rate (today)" fraction={callsToday ? reachedToday / callsToday : 0}
+            trailing={callsToday ? `${Math.round(reachedToday / callsToday * 100)}%` : '—'} color="var(--info)" />
         </DashCard>
 
         <DashCard title="Due next" icon="clock" flush>
@@ -125,8 +165,8 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
 
         <DashCard title="Pool snapshot" icon="layers" trailing={<button className="btn btn-ghost btn-sm" onClick={() => onGo?.('pool')}>Open</button>}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 24px' }}>
-            <StatTile value={fmtInt(vault.countIn(PropertyState.pool))} label="units in pool" />
-            <StatTile value={`${vault.communities.length}`} label="communities" />
+            <StatTile value={fmtInt(dash?.poolAvailable ?? 0)} label="units in pool" />
+            <StatTile value={`${dash?.myPendingRequests ?? 0}`} label="pending requests" />
           </div>
           <div style={{ marginTop: 10, fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
             Request more data from the pool when your list runs low.

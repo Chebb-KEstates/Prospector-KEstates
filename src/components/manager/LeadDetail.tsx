@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { StateChip, OutcomeChip } from '../common/StateChip';
-import { fmtDate, maskedPhone } from '../../utils/format';
+import { fmtDate } from '../../utils/format';
+import { Lead } from '../../types/models';
+import * as api from '../../data/api';
 
 interface LeadDetailProps {
   leadId: string;
@@ -9,8 +11,35 @@ interface LeadDetailProps {
 }
 
 export function LeadDetail({ leadId, onBack }: LeadDetailProps) {
-  const { leads, userById } = useVault();
-  const l = leads.find(ld => ld.id === leadId);
+  const { userById, revision } = useVault();
+  const [l, setL] = useState<Lead | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Fetched by id — there's no local leads array to search any more.
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    void (async () => {
+      try {
+        const lead = await api.leads.byId(leadId);
+        if (!cancelled) setL(lead);
+      } catch {
+        if (!cancelled) setL(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [leadId, revision]);
+
+  if (loading) {
+    return (
+      <div>
+        <button className="btn btn-ghost" onClick={onBack}>← Back</button>
+        <p style={{ marginTop: 16, color: 'var(--text-tertiary)' }}>Loading…</p>
+      </div>
+    );
+  }
 
   if (!l) {
     return (
@@ -37,7 +66,8 @@ export function LeadDetail({ leadId, onBack }: LeadDetailProps) {
             </div>
             <div>
               <span style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>Phone</span>
-              <div style={{ fontVariant: 'tabular-nums' }}>{maskedPhone(l.phone)}</div>
+              {/* Masked server-side; the reveal lives in the call dialog. */}
+              <div style={{ fontVariant: 'tabular-nums' }}>{l.phone ?? '—'}</div>
             </div>
             <div>
               <span style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>Email</span>

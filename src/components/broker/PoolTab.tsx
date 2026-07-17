@@ -1,14 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAuth } from '../../state/AuthContext';
 import { useVault } from '../../state/VaultContext';
-import { PropertyState } from '../../types/models';
+import { PropertyState, RequestStatus, Property } from '../../types/models';
 import { PropertyTable } from '../manager/PropertyTable';
 import { Icon } from '../common/Icon';
+import { ApiError } from '../../data/apiClient';
+import * as api from '../../data/api';
 
 /**
  * The broker's view of the pool: a teaser (owners hidden until assigned) where
  * they tick the units they want and submit a hand-picked request. The manager
  * approves in Assignments → Requests, which grants exactly those units.
+ *
+ * The teaser is enforced server-side now: /api/properties?scope=pool strips
+ * owner identity for a broker and refuses owner-derived filters, so ticking
+ * boxes here can't be turned into a way to read the owner data behind them.
  */
 export function PoolTab() {
   const { user } = useAuth();
@@ -17,33 +23,75 @@ export function PoolTab() {
   const [note, setNote] = useState('');
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  /** The ticked units, resolved so we can name their communities. */
+  const [picked, setPicked] = useState<Property[]>([]);
 
-  if (!user) return null;
-  const pool = vault.properties.filter(p => p.state === PropertyState.pool);
-  const mine = vault.requests.filter(r => r.brokerId === user.id);
-  const pending = mine.filter(r => r.status === 'pending');
+  const pending = useMemo(
+    () => vault.requests.filter(r => r.brokerId === user?.id && r.status === RequestStatus.pending),
+    [vault.requests, user?.id],
+  );
 
-  const picks = pool.filter(p => checked.has(p.id));
-  const communities = Array.from(new Set(picks.map(p => p.community)));
-  const clusters = Array.from(new Set(picks.map(p => p.cluster).filter(Boolean) as string[]));
+  const communities = useMemo(
+    () => Array.from(new Set(picked.map(p => p.community))),
+    [picked],
+  );
+  const clusters = useMemo(
+    () => Array.from(new Set(picked.map(p => p.cluster).filter(Boolean) as string[])),
+    [picked],
+  );
+
+  /**
+   * Selection is by id, but the request needs the community/cluster of what was
+   * picked — and with pagination those rows may not be on screen any more. Keep
+   * a resolved copy alongside the id set as the user ticks.
+   */
+  const onCheckedChanged = async (ids: Set<string>) => {
+    setChecked(ids);
+    setPicked(prev => {
+      const known = new Map(prev.map(p => [p.id, p]));
+      return Array.from(ids).map(id => known.get(id)).filter((p): p is Property => !!p);
+    });
+    // Resolve anything newly ticked that we don't already hold.
+    const missing = Array.from(ids).filter(id => !picked.some(p => p.id === id));
+    if (missing.length === 0) return;
+    try {
+      const fetched = await Promise.all(missing.map(id => api.properties.byId(id)));
+      setPicked(prev => {
+        const byId = new Map(prev.map(p => [p.id, p]));
+        for (const p of fetched) byId.set(p.id, p);
+        return Array.from(ids).map(id => byId.get(id)).filter((p): p is Property => !!p);
+      });
+    } catch {
+      // A pool unit we can't resolve just won't contribute its community label.
+    }
+  };
 
   const submit = async () => {
-    if (picks.length === 0 || busy) return;
+    if (checked.size === 0 || busy) return;
     setBusy(true);
-    await vault.submitRequest(
-      user.id,
-      communities.length === 1 ? communities[0] : `${communities.length} communities`,
-      picks.length,
-      clusters.length === 1 ? clusters[0] : undefined,
-      picks.map(p => p.id),
-      note.trim() || undefined,
-    );
-    setChecked(new Set());
-    setNote('');
-    setBusy(false);
-    setSent(true);
-    setTimeout(() => setSent(false), 4000);
+    setError(null);
+    try {
+      await vault.submitRequest({
+        community: communities.length === 1 ? communities[0] : `${communities.length} communities`,
+        count: checked.size,
+        cluster: clusters.length === 1 ? clusters[0] : undefined,
+        unitIds: Array.from(checked),
+        note: note.trim() || undefined,
+      });
+      setChecked(new Set());
+      setPicked([]);
+      setNote('');
+      setSent(true);
+      setTimeout(() => setSent(false), 4000);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not send that request.');
+    } finally {
+      setBusy(false);
+    }
   };
+
+  if (!user) return null;
 
   return (
     <div>
@@ -51,24 +99,31 @@ export function PoolTab() {
       <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
         <Icon name="layers" size={17} style={{ color: 'var(--primary)' }} />
         <span style={{ fontSize: '0.875rem' }}>
-          {picks.length === 0
+          {checked.size === 0
             ? 'Tick the units you want, then request them from your manager.'
-            : <><b>{picks.length}</b> unit{picks.length === 1 ? '' : 's'} selected
+            : <><b>{checked.size}</b> unit{checked.size === 1 ? '' : 's'} selected
               {communities.length > 0 && <span style={{ color: 'var(--text-secondary)' }}> · {communities.join(', ')}</span>}</>}
         </span>
         <div style={{ flex: 1 }} />
-        {picks.length > 0 && (
+        {checked.size > 0 && (
           <>
             <input className="input" style={{ width: 220 }} placeholder="Note to your manager (optional)"
               value={note} onChange={e => setNote(e.target.value)} />
-            <button className="btn btn-sm btn-ghost" onClick={() => setChecked(new Set())}>Clear</button>
+            <button className="btn btn-sm btn-ghost" onClick={() => { setChecked(new Set()); setPicked([]); }}>Clear</button>
           </>
         )}
-        <button className="btn btn-sm btn-primary" disabled={picks.length === 0 || busy} onClick={submit}
-          style={{ background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013', opacity: picks.length === 0 ? 0.5 : 1 }}>
-          <Icon name="assign" size={15} /> {busy ? 'Sending…' : `Request ${picks.length || ''} unit${picks.length === 1 ? '' : 's'}`.trim()}
+        <button className="btn btn-sm btn-primary" disabled={checked.size === 0 || busy} onClick={submit}
+          style={{ background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013', opacity: checked.size === 0 ? 0.5 : 1 }}>
+          <Icon name="assign" size={15} /> {busy ? 'Sending…' : `Request ${checked.size || ''} unit${checked.size === 1 ? '' : 's'}`.trim()}
         </button>
       </div>
+
+      {error && (
+        <div className="card" style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center', borderColor: 'var(--error)' }}>
+          <Icon name="alert" size={16} style={{ color: 'var(--error)' }} />
+          <span style={{ fontSize: '0.875rem', color: 'var(--error)' }}>{error}</span>
+        </div>
+      )}
 
       {sent && (
         <div className="card" style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center', borderColor: 'var(--success)' }}>
@@ -94,9 +149,10 @@ export function PoolTab() {
 
       <PropertyTable
         prefsKey="broker_pool" teaser
-        properties={pool}
+        scope="pool"
+        fixedState={PropertyState.pool}
         checkedIds={checked}
-        onCheckedChanged={setChecked}
+        onCheckedChanged={onCheckedChanged}
       />
     </div>
   );

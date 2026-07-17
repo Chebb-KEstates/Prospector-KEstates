@@ -33,3 +33,6 @@ yarn-error.log*
 /server/node_modules
 /server/dist
 /server/.env
+
+# playwright browsers / e2e artifacts
+/e2e/*.png

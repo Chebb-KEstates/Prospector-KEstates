@@ -238,6 +238,10 @@ export interface PropertyFilter {
   states?: PropertyState[];
   /** Drop owner_name from the search haystack (teaser / hideOwner). */
   ownerHidden?: boolean;
+  /** Follow-up is due now or overdue — the broker's "Due follow-up" chip. */
+  dueOnly?: boolean;
+  /** Last outcome was interested (sell or rent) — the "Interested" chip. */
+  interestedOnly?: boolean;
 }
 
 export interface PropertyQuery extends PropertyFilter {
@@ -300,6 +304,14 @@ function buildWhere(f: PropertyFilter): { sql: string; params: unknown[] } {
     }
   }
   if (f.callableOnly) where.push('callable = 1');
+
+  // The broker's quick chips. `dueOnly` compares against the server's clock,
+  // where the client compared against the browser's — a difference of at most
+  // clock skew, and the server is the one that owns "now" for cooldowns anyway.
+  if (f.dueOnly) where.push('next_follow_up_at IS NOT NULL AND next_follow_up_at <= NOW(3)');
+  if (f.interestedOnly) {
+    where.push(`last_outcome IN ('${CallOutcome.interestedSell}', '${CallOutcome.interestedRent}')`);
+  }
 
   // The client compared against a parsed date with no time component; a bare
   // `<= txTo` would exclude everything later that same day, so the upper bound
@@ -492,6 +504,96 @@ export async function countTotal(): Promise<number> {
     'SELECT COUNT(*) AS n FROM properties WHERE org_id = ?', [kOrgId],
   );
   return Number(rows[0].n);
+}
+
+/**
+ * Distinct owners.
+ *
+ * The manager home showed `new Set(properties.map(ownerKeyOf)).size`. owner_key
+ * is written from that same shared function, so this is the identical number
+ * without shipping every row to the browser to count them.
+ */
+export async function countDistinctOwners(): Promise<number> {
+  const [rows] = await pool.query<Row[]>(
+    'SELECT COUNT(DISTINCT owner_key) AS n FROM properties WHERE org_id = ?', [kOrgId],
+  );
+  return Number(rows[0].n);
+}
+
+/** Portfolio units going stale — mirrors isPortfolioStale's lastCalledAt ?? portfolioSince. */
+export async function countStalePortfolio(staleDays: number): Promise<number> {
+  const [rows] = await pool.query<Row[]>(
+    `SELECT COUNT(*) AS n FROM properties
+     WHERE org_id = ? AND state = 'portfolio'
+       AND COALESCE(last_called_at, portfolio_since) IS NOT NULL
+       AND COALESCE(last_called_at, portfolio_since) <= DATE_SUB(NOW(3), INTERVAL ? DAY)`,
+    [kOrgId, staleDays],
+  );
+  return Number(rows[0].n);
+}
+
+/** Assigned, never called, and within `warnDays` of auto-returning to the pool. */
+export async function countAgingAssignments(expiryDays: number, warnDays = 3): Promise<number> {
+  const threshold = Math.max(0, expiryDays - warnDays);
+  const [rows] = await pool.query<Row[]>(
+    `SELECT COUNT(*) AS n FROM properties
+     WHERE org_id = ? AND state = 'assigned'
+       AND last_called_at IS NULL AND assigned_at IS NOT NULL
+       AND assigned_at <= DATE_SUB(NOW(3), INTERVAL ? DAY)`,
+    [kOrgId, threshold],
+  );
+  return Number(rows[0].n);
+}
+
+/** How many units each broker is holding — the board's "On list" column. */
+export async function assignedCountByBroker(): Promise<Map<string, number>> {
+  const [rows] = await pool.query<Row[]>(
+    `SELECT assigned_to, COUNT(*) AS n FROM properties
+     WHERE org_id = ? AND assigned_to IS NOT NULL AND state IN ('assigned', 'portfolio')
+     GROUP BY assigned_to`,
+    [kOrgId],
+  );
+  return new Map(rows.map(r => [r.assigned_to as string, Number(r.n)]));
+}
+
+/** Held units per broker, split by state — the Team screen's two columns. */
+export async function heldByBrokerAndState(): Promise<Map<string, { assigned: number; portfolio: number }>> {
+  const [rows] = await pool.query<Row[]>(
+    `SELECT assigned_to, state, COUNT(*) AS n FROM properties
+     WHERE org_id = ? AND assigned_to IS NOT NULL AND state IN ('assigned', 'portfolio')
+     GROUP BY assigned_to, state`,
+    [kOrgId],
+  );
+  const out = new Map<string, { assigned: number; portfolio: number }>();
+  for (const r of rows) {
+    const id = r.assigned_to as string;
+    const entry = out.get(id) ?? { assigned: 0, portfolio: 0 };
+    if (r.state === 'assigned') entry.assigned = Number(r.n);
+    else entry.portfolio = Number(r.n);
+    out.set(id, entry);
+  }
+  return out;
+}
+
+/** Callable units that have actually been called — the "callable worked" figure. */
+export async function countCallableWorked(): Promise<number> {
+  const [rows] = await pool.query<Row[]>(
+    `SELECT COUNT(*) AS n FROM properties
+     WHERE org_id = ? AND callable = 1 AND last_called_at IS NOT NULL`,
+    [kOrgId],
+  );
+  return Number(rows[0].n);
+}
+
+/** Units worked per data set — the coverage bars. */
+export async function workedByDataset(): Promise<Map<string, number>> {
+  const [rows] = await pool.query<Row[]>(
+    `SELECT dataset_id, COUNT(*) AS n FROM properties
+     WHERE org_id = ? AND dataset_id IS NOT NULL AND last_called_at IS NOT NULL
+     GROUP BY dataset_id`,
+    [kOrgId],
+  );
+  return new Map(rows.map(r => [r.dataset_id as string, Number(r.n)]));
 }
 
 export async function deleteByDataset(datasetId: string, cx?: PoolConnection): Promise<number> {

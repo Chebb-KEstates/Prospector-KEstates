@@ -1,8 +1,8 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../state/AuthContext';
-import { useVault } from '../../state/VaultContext';
 import { useTheme } from '../../state/ThemeContext';
+import { useMyProperties, useMyLeads } from '../../data/hooks';
 import { CallSessionProvider, useCallSession } from '../../state/CallSessionContext';
 import { AccountSheet } from '../common/AccountSheet';
 import { MarbleBackground } from '../common/MarbleBackground';
@@ -26,16 +26,19 @@ const NAV: { key: Tab; label: string; icon: IconName }[] = [
 function BrokerShellInner() {
   const [activeTab, setActiveTab] = React.useState<Tab>('home');
   const { user } = useAuth();
-  const { properties, assignedTo, leadsOf } = useVault();
   const { resolved } = useTheme();
   const { session, minimize, resume, end } = useCallSession();
-
-  if (!user) return <Navigate to="/login" />;
+  // A broker's own set is bounded, so it loads whole — the badge still counts
+  // in the browser's local day, exactly as it did before.
+  const { rows: myProperties } = useMyProperties();
+  const { rows: myLeads } = useMyLeads();
 
   const now = new Date().toDateString();
   const todayCount =
-    assignedTo(user.id).filter(p => p.lastCalledAt && new Date(p.lastCalledAt).toDateString() === now).length +
-    leadsOf(user.id).filter(l => l.lastCalledAt && new Date(l.lastCalledAt).toDateString() === now).length;
+    myProperties.filter(p => p.lastCalledAt && new Date(p.lastCalledAt).toDateString() === now).length +
+    myLeads.filter(l => l.lastCalledAt && new Date(l.lastCalledAt).toDateString() === now).length;
+
+  if (!user) return <Navigate to="/login" />;
 
   const go = (t: Tab) => {
     setActiveTab(t);
@@ -122,7 +125,8 @@ function BrokerShellInner() {
                 {activeTab === 'today' && <TodayTab />}
                 {activeTab === 'pool' && <PoolTab />}
                 {activeTab === 'portfolio' && (
-                  <PropertyTable prefsKey="broker_portfolio" hideOwner properties={assignedTo(user.id).filter(p => p.state === PropertyState.portfolio)} />
+                  <PropertyTable prefsKey="broker_portfolio" hideOwner
+                    scope="mine" fixedState={PropertyState.portfolio} />
                 )}
               </>
             )}

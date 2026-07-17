@@ -4,44 +4,57 @@ import { useVault } from '../../state/VaultContext';
 import { PropertyState } from '../../types/models';
 import { StateChip, OutcomeChip } from '../common/StateChip';
 import { ownerRefOf, groupByOwner } from '../../logic/ownerGrouping';
-import { maskedPhone, fmtDate } from '../../utils/format';
+import { fmtDate } from '../../utils/format';
+import { useMyProperties, useBrokerDashboard } from '../../data/hooks';
+
+/**
+ * A broker's owner-grouped list.
+ *
+ * Their own set is bounded, so it still loads whole and groups in memory with
+ * the shared groupByOwner — the grouping logic is untouched. What changed is
+ * where the rows come from, and that phone numbers arrive already masked.
+ */
 
 interface HomeTabProps {
-  filterPool?: boolean;
   filterPortfolio?: boolean;
 }
 
-export function HomeTab({ filterPool, filterPortfolio }: HomeTabProps) {
+export function HomeTab({ filterPortfolio }: HomeTabProps) {
   const { user } = useAuth();
-  const { properties, assignedTo, callsBy } = useVault();
+  const { rows: myProperties, loading } = useMyProperties();
+  const { data: dash } = useBrokerDashboard();
+
+  const scoped = useMemo(
+    () => (filterPortfolio
+      ? myProperties.filter(p => p.state === PropertyState.portfolio)
+      : myProperties),
+    [myProperties, filterPortfolio],
+  );
+
+  const groups = useMemo(() => groupByOwner(scoped), [scoped]);
+
+  const dueFollowUps = useMemo(
+    () => groups.filter(g => g.dueFollowUp && new Date(g.dueFollowUp) <= new Date()),
+    [groups],
+  );
+
+  const portfolioCount = useMemo(
+    () => myProperties.filter(p => p.state === PropertyState.portfolio).length,
+    [myProperties],
+  );
 
   if (!user) return null;
 
-  let userProps = assignedTo(user.id);
-
-  if (filterPool) {
-    userProps = properties.filter(p => p.state === PropertyState.pool);
-  } else if (filterPortfolio) {
-    userProps = properties.filter(p => p.assignedTo === user.id && p.state === PropertyState.portfolio);
-  }
-
-  const groups = groupByOwner(userProps);
-
-  const todayStr = new Date().toDateString();
-  const todayCalls = callsBy(user.id).filter(c => new Date(c.at).toDateString() === todayStr).length;
-
-  const dueFollowUps = groups.filter(g => g.dueFollowUp && new Date(g.dueFollowUp) <= new Date());
-
-  if (filterPool || filterPortfolio) {
+  if (filterPortfolio) {
     return (
       <div>
         <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 24 }}>
-          {filterPool ? 'Pool' : 'Portfolio'}
+          Portfolio
           <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', fontWeight: 400, marginLeft: 8 }}>
             {groups.length} owners
           </span>
         </h2>
-        <OwnerGroupList groups={groups} user={user} />
+        <OwnerGroupList groups={groups} loading={loading} />
       </div>
     );
   }
@@ -52,7 +65,7 @@ export function HomeTab({ filterPool, filterPortfolio }: HomeTabProps) {
         <div>
           <h2 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Welcome, {user.name}</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            {todayCalls} calls today
+            {dash?.myCallsToday ?? 0} calls today
           </p>
         </div>
       </div>
@@ -60,7 +73,7 @@ export function HomeTab({ filterPool, filterPortfolio }: HomeTabProps) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
         <div className="card">
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Assigned</div>
-          <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{userProps.length}</div>
+          <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{myProperties.length}</div>
         </div>
         <div className="card">
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Due follow-ups</div>
@@ -68,9 +81,7 @@ export function HomeTab({ filterPool, filterPortfolio }: HomeTabProps) {
         </div>
         <div className="card">
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Portfolio</div>
-          <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--success)' }}>
-            {properties.filter(p => p.assignedTo === user.id && p.state === PropertyState.portfolio).length}
-          </div>
+          <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--success)' }}>{portfolioCount}</div>
         </div>
       </div>
 
@@ -79,21 +90,35 @@ export function HomeTab({ filterPool, filterPortfolio }: HomeTabProps) {
           <h3 style={{ fontWeight: 600, marginBottom: 12, color: 'var(--warning)' }}>
             Due Follow-ups
           </h3>
-          <OwnerGroupList groups={dueFollowUps} user={user} />
+          <OwnerGroupList groups={dueFollowUps} loading={false} />
         </div>
       )}
 
       <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: 12 }}>
         Your Properties ({groups.length} owners)
       </h3>
-      <OwnerGroupList groups={groups} user={user} />
+      <OwnerGroupList groups={groups} loading={loading} />
     </div>
   );
 }
 
-function OwnerGroupList({ groups, user }: { groups: ReturnType<typeof groupByOwner>; user: import('../../types/user').AppUser }) {
+function OwnerGroupList({ groups, loading }: {
+  groups: ReturnType<typeof groupByOwner>;
+  loading: boolean;
+}) {
   const { recordView } = useVault();
   const [activeGroup, setActiveGroup] = React.useState<string | null>(null);
+
+  /**
+   * Opening an owner is an audited, cap-counted view. It used to be a local
+   * function call that always "succeeded"; now it's a server round trip that can
+   * refuse. Failure is swallowed here on purpose — expanding a row is not worth
+   * an error dialog, and the server has already recorded the cap-block.
+   */
+  const open = (group: ReturnType<typeof groupByOwner>[number]) => {
+    setActiveGroup(activeGroup === group.key ? null : group.key);
+    void recordView(group.properties[0].id, `Viewed owner ${group.key}`).catch(() => {});
+  };
 
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -112,15 +137,16 @@ function OwnerGroupList({ groups, user }: { groups: ReturnType<typeof groupByOwn
           </tr>
         </thead>
         <tbody>
-          {groups.map(g => (
-            <tr key={g.key} style={{ cursor: 'pointer' }}
-              onClick={() => {
-                setActiveGroup(activeGroup === g.key ? null : g.key);
-                recordView(user.id, user.isManager, `Viewed owner ${g.key}`);
-              }}>
+          {loading ? (
+            <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 24 }}>Loading…</td></tr>
+          ) : groups.length === 0 ? (
+            <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 24 }}>Nothing assigned to you yet.</td></tr>
+          ) : groups.map(g => (
+            <tr key={g.key} style={{ cursor: 'pointer' }} onClick={() => open(g)}>
               <td style={{ fontWeight: 500 }}>{g.owner.name || '—'}</td>
+              {/* Masked server-side. */}
               <td style={{ fontVariant: 'tabular-nums', color: 'var(--text-secondary)' }}>
-                {maskedPhone(g.owner.phone)}
+                {g.owner.phone ?? '—'}
               </td>
               <td>{g.properties.length}</td>
               <td style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{g.areaSummary}</td>

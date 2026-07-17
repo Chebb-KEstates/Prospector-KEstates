@@ -3,7 +3,8 @@ import { CallStop } from '../../state/CallSessionContext';
 import { CallOutcome, CallOutcomeLabel, CallOutcomeBuyerLabel } from '../../types/models';
 import { StateChip } from '../common/StateChip';
 import { Icon } from '../common/Icon';
-import { prettyPhone, fmtDate, timeAgo } from '../../utils/format';
+import { fmtDate, timeAgo } from '../../utils/format';
+import { ApiError } from '../../data/apiClient';
 
 function outcomeColor(o: CallOutcome): string {
   if (o === CallOutcome.interestedSell || o === CallOutcome.interestedRent) return 'var(--success)';
@@ -25,20 +26,48 @@ export function CallCard({ stop, onComplete, onSkip, onReveal }: {
   stop: CallStop;
   onComplete: (outcome: CallOutcome) => void;
   onSkip: () => void;
+  /** Fired after a successful reveal — callers use it to refresh a cap counter. */
   onReveal?: () => void;
 }) {
-  const hasPhone = !!stop.phone;
+  const hasPhone = !!stop.phoneMasked;
+  // With no number on file there's nothing to reveal, so go straight to logging
+  // (an unreachable owner still needs an outcome recorded).
   const [revealed, setRevealed] = useState(!hasPhone);
+  const [phone, setPhone] = useState<string | null>(null);
+  const [revealing, setRevealing] = useState(false);
+  const [revealError, setRevealError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<CallOutcome | null>(null);
   const [note, setNote] = useState('');
   const [followUpAt, setFollowUpAt] = useState<string>('');
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const label = (o: CallOutcome) => (stop.buyer ? CallOutcomeBuyerLabel[o] : CallOutcomeLabel[o]);
   const needsFollowUp = outcome === CallOutcome.callbackLater;
   const canSave = outcome != null && (!needsFollowUp || !!followUpAt) && !saving;
 
-  const reveal = () => { setRevealed(true); onReveal?.(); };
+  /**
+   * Pressing Call now fetches the number from the server — it is capped and
+   * audited there. The card only reveals once that succeeds: showing the number
+   * optimistically would mean showing one the audit trail never recorded.
+   */
+  const reveal = async () => {
+    if (revealing) return;
+    setRevealing(true);
+    setRevealError(null);
+    try {
+      const real = await stop.reveal();
+      setPhone(real);
+      setRevealed(true);
+      onReveal?.();
+    } catch (err) {
+      setRevealError(
+        err instanceof ApiError ? err.message : 'Could not fetch the number. Try again.',
+      );
+    } finally {
+      setRevealing(false);
+    }
+  };
 
   const pick = (o: CallOutcome) => {
     if (saving) return;
@@ -49,9 +78,19 @@ export function CallCard({ stop, onComplete, onSkip, onReveal }: {
   const saveNext = async () => {
     if (!canSave || !outcome) return;
     setSaving(true);
+    setSaveError(null);
     const fu = followUpAt ? new Date(followUpAt).toISOString() : undefined;
-    await stop.log(outcome, note.trim() || undefined, fu);
-    onComplete(outcome);
+    try {
+      await stop.log(outcome, note.trim() || undefined, fu);
+      onComplete(outcome);
+    } catch (err) {
+      // Never advance on a failed save — the outcome would be lost silently,
+      // and the broker would have no idea the call wasn't recorded.
+      setSaveError(
+        err instanceof ApiError ? err.message : 'Could not save that. Try again.',
+      );
+      setSaving(false);
+    }
   };
 
   return (
@@ -90,21 +129,42 @@ export function CallCard({ stop, onComplete, onSkip, onReveal }: {
 
       {/* Call / number reveal */}
       {!revealed ? (
-        <button className="btn btn-primary" onClick={reveal} style={{ justifyContent: 'center', padding: '12px', fontSize: '0.95rem' }}>
-          <Icon name="phoneCall" size={18} /> Call
-        </button>
-      ) : (
+        <div>
+          <button className="btn btn-primary" onClick={reveal} disabled={revealing}
+            style={{ justifyContent: 'center', padding: '12px', fontSize: '0.95rem', width: '100%' }}>
+            <Icon name="phoneCall" size={18} /> {revealing ? 'Fetching number…' : 'Call'}
+          </button>
+          {revealError && (
+            <div style={{
+              marginTop: 8, padding: '8px 12px', borderRadius: 8, fontSize: '0.8125rem',
+              background: 'color-mix(in srgb, var(--error) 12%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--error) 45%, transparent)',
+              color: 'var(--error)',
+            }}>
+              {revealError}
+            </div>
+          )}
+        </div>
+      ) : phone ? (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
           borderRadius: 10, background: 'color-mix(in srgb, var(--gold) 12%, transparent)',
           border: '1px solid color-mix(in srgb, var(--gold) 45%, transparent)',
         }}>
           <span className="tabular-nums" style={{ flex: 1, fontSize: '1.15rem', fontWeight: 700, letterSpacing: '1px', userSelect: 'all' }}>
-            {prettyPhone(stop.phone)}
+            {phone}
           </span>
-          <button className="btn btn-ghost btn-sm" onClick={() => stop.phone && navigator.clipboard?.writeText(stop.phone)}>
+          <button className="btn btn-ghost btn-sm" onClick={() => navigator.clipboard?.writeText(phone)}>
             <Icon name="copy" size={15} /> Copy
           </button>
+        </div>
+      ) : (
+        <div style={{
+          padding: '8px 12px', borderRadius: 10, fontSize: '0.8125rem',
+          color: 'var(--text-tertiary)', background: 'var(--surface-2)',
+          border: '1px solid var(--border)',
+        }}>
+          No number on file — log an outcome below.
         </div>
       )}
 
@@ -148,13 +208,25 @@ export function CallCard({ stop, onComplete, onSkip, onReveal }: {
 
       {/* Save & next — appears once an outcome is chosen */}
       {revealed && outcome != null && (
-        <button className="btn btn-primary" onClick={saveNext} disabled={!canSave} style={{
-          justifyContent: 'center', padding: '11px', fontSize: '0.95rem',
-          background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013',
-          opacity: canSave ? 1 : 0.5,
-        }}>
-          <Icon name="check" size={18} /> {saving ? 'Saving…' : 'Save & next'}
-        </button>
+        <div>
+          <button className="btn btn-primary" onClick={saveNext} disabled={!canSave} style={{
+            justifyContent: 'center', padding: '11px', fontSize: '0.95rem', width: '100%',
+            background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013',
+            opacity: canSave ? 1 : 0.5,
+          }}>
+            <Icon name="check" size={18} /> {saving ? 'Saving…' : 'Save & next'}
+          </button>
+          {saveError && (
+            <div style={{
+              marginTop: 8, padding: '8px 12px', borderRadius: 8, fontSize: '0.8125rem',
+              background: 'color-mix(in srgb, var(--error) 12%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--error) 45%, transparent)',
+              color: 'var(--error)',
+            }}>
+              {saveError}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Full call history */}

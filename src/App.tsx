@@ -4,13 +4,24 @@ import { AuthProvider, useAuth } from './state/AuthContext';
 import { ThemeProvider } from './state/ThemeContext';
 import { VaultProvider } from './state/VaultContext';
 import { LoginScreen } from './components/LoginScreen';
+import { ChangePasswordScreen } from './components/ChangePasswordScreen';
 import { ManagerShell } from './components/manager/ManagerShell';
 import { BrokerShell } from './components/broker/BrokerShell';
 import { Watermark } from './components/common/Watermark';
 
+/**
+ * Gate the app on a resolved session.
+ *
+ * `loading` is the boot-time session probe: the server, not this browser, is the
+ * authority on who's signed in, so there's a round trip before we know.
+ *
+ * A user who must change their password gets that screen INSTEAD of the routes,
+ * not alongside them — otherwise "forced" would mean "suggested".
+ */
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, mustChangePassword } = useAuth();
   if (loading) return null;
+  if (user && mustChangePassword) return <ChangePasswordScreen />;
   return <>{children}</>;
 }
 

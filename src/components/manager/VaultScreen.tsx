@@ -1,41 +1,43 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useVault } from '../../state/VaultContext';
-import { useAuth } from '../../state/AuthContext';
-import { PropertyState, DataModule, DataModuleLabel } from '../../types/models';
+import { DataModule, DataModuleLabel } from '../../types/models';
 import { PropertyTable } from './PropertyTable';
 import { LeadTable } from './LeadTable';
 import { PropertyDetail } from './PropertyDetail';
 import { LeadDetail } from './LeadDetail';
+import { ApiError } from '../../data/apiClient';
+import { Icon } from '../common/Icon';
 
 export function VaultScreen() {
-  const { properties, leads, recordView } = useVault();
-  const { user } = useAuth();
+  const { recordView } = useVault();
   const [module, setModule] = useState<DataModule>(DataModule.owners);
   const [detailProperty, setDetailProperty] = useState<string | null>(null);
   const [detailLead, setDetailLead] = useState<string | null>(null);
+  const [capError, setCapError] = useState<string | null>(null);
 
-  const handleViewProperty = (id: string) => {
-    if (!user) return;
-    const ok = recordView(user.id, user.isManager, `Viewed owner detail ${id}`);
-    if (ok) setDetailProperty(id);
+  /**
+   * Opening an owner's detail is an audited, cap-counted view.
+   *
+   * It used to be a synchronous `if (recordView(...))`. It's a server round trip
+   * now, and it can refuse: a broker over their daily cap gets a 429 and the
+   * detail does not open. Showing the record anyway would make the cap
+   * decorative, which is what it was before.
+   */
+  const handleViewProperty = async (id: string) => {
+    setCapError(null);
+    try {
+      await recordView(id, `Viewed owner detail ${id}`);
+      setDetailProperty(id);
+    } catch (err) {
+      setCapError(err instanceof ApiError ? err.message : 'Could not open that record.');
+    }
   };
 
   if (detailProperty) {
-    return (
-      <PropertyDetail
-        propertyId={detailProperty}
-        onBack={() => setDetailProperty(null)}
-      />
-    );
+    return <PropertyDetail propertyId={detailProperty} onBack={() => setDetailProperty(null)} />;
   }
-
   if (detailLead) {
-    return (
-      <LeadDetail
-        leadId={detailLead}
-        onBack={() => setDetailLead(null)}
-      />
-    );
+    return <LeadDetail leadId={detailLead} onBack={() => setDetailLead(null)} />;
   }
 
   return (
@@ -61,17 +63,17 @@ export function VaultScreen() {
         </div>
       </div>
 
+      {capError && (
+        <div className="card" style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center', borderColor: 'var(--error)' }}>
+          <Icon name="ban" size={16} style={{ color: 'var(--error)' }} />
+          <span style={{ fontSize: '0.875rem', color: 'var(--error)' }}>{capError}</span>
+        </div>
+      )}
+
       {module === DataModule.owners ? (
-        <PropertyTable
-          prefsKey="vault"
-          properties={properties}
-          onSelect={handleViewProperty}
-        />
+        <PropertyTable prefsKey="vault" scope="all" onSelect={handleViewProperty} />
       ) : (
-        <LeadTable
-          leads={leads}
-          onSelect={id => setDetailLead(id)}
-        />
+        <LeadTable prefsKey="vault_leads" scope="all" onSelect={id => setDetailLead(id)} />
       )}
     </div>
   );

@@ -1,7 +1,6 @@
 import React, { useRef, useState, useLayoutEffect, useEffect } from 'react';
 import { useCallSession, CallStop } from '../../state/CallSessionContext';
 import { useAuth } from '../../state/AuthContext';
-import { useVault } from '../../state/VaultContext';
 import { CallCard } from './CallCard';
 import { Icon } from '../common/Icon';
 
@@ -29,7 +28,6 @@ function PreviewTile({ stop, side, done }: { stop: CallStop; side: 'left' | 'rig
 export function CallSessionView() {
   const { session, next, prev, logged, setIndex } = useCallSession();
   const { user } = useAuth();
-  const vault = useVault();
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(900);
@@ -60,8 +58,7 @@ export function CallSessionView() {
   const total = stops.length;
   const worked = session.worked;
 
-  const onReveal = () => vault.recordView(user.id, false, `Revealed number — ${stops[index].name}`, false);
-
+  // The reveal is audited inside stop.reveal() — the card owns it now.
   const cardW = Math.max(300, Math.min(w * 0.82, 540));
   const offsetPx = Math.min(w * 0.32, 300);
 
@@ -114,7 +111,7 @@ export function CallSessionView() {
                   pointerEvents: Math.abs(offset) > 1 ? 'none' : 'auto',
                 }}>
                 {isActive
-                  ? <CallCard key={stop.id} stop={stop} onReveal={onReveal} onComplete={(o) => logged(o)} onSkip={next} />
+                  ? <CallCard key={stop.id} stop={stop} onComplete={(o) => logged(o)} onSkip={next} />
                   : <PreviewTile stop={stop} side={offset < 0 ? 'left' : 'right'} done={i < worked} />}
               </div>
             );

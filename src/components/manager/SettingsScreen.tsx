@@ -2,27 +2,36 @@ import React, { useState } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { useAuth } from '../../state/AuthContext';
 import { VaultSettings } from '../../types/models';
+import { ApiError } from '../../data/apiClient';
 
 export function SettingsScreen() {
   const { settings, saveSettings } = useVault();
   const { user } = useAuth();
   const [form, setForm] = useState({ ...settings });
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSave = async () => {
     if (!user) return;
-    await saveSettings(new VaultSettings(
-      form.notInterestedCooldownDays,
-      form.listedCooldownDays,
-      form.maxNoAnswerAttempts,
-      form.assignmentExpiryDays,
-      form.portfolioStaleDays,
-      form.dailyViewCap,
-      form.wifiLockEnabled,
-      form.officeIp,
-    ), user.id);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setError(null);
+    try {
+      await saveSettings(new VaultSettings(
+        form.notInterestedCooldownDays,
+        form.listedCooldownDays,
+        form.maxNoAnswerAttempts,
+        form.assignmentExpiryDays,
+        form.portfolioStaleDays,
+        form.dailyViewCap,
+        form.wifiLockEnabled,
+        form.officeIp,
+      ));
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      // These values gate cooldowns and the reveal cap, so the server bounds
+      // them. A rejection has to be shown, not swallowed.
+      setError(err instanceof ApiError ? err.message : 'Could not save those settings.');
+    }
   };
 
   const field = (label: string, key: keyof typeof form, type = 'number', note?: string) => (
@@ -53,6 +62,15 @@ export function SettingsScreen() {
           <button className="btn btn-primary" onClick={handleSave}>Save</button>
         </div>
       </div>
+
+      {/* These values gate the cooldowns and the reveal cap, so the server bounds
+          them and can reject a save. Silently swallowing that would leave the
+          manager believing a protection had been changed when it hadn't. */}
+      {error && (
+        <div className="card" style={{ marginBottom: 16, borderColor: 'var(--error)', color: 'var(--error)', fontSize: '0.875rem' }}>
+          {error}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
         <div className="card">

@@ -1,23 +1,51 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { useAuth } from '../../state/AuthContext';
 import { AppUser, UserRole, Permission, PermissionLabel, UserRoleLabel } from '../../types/user';
-import { isInterested } from '../../types/models';
 import { fmtInt, timeAgo } from '../../utils/format';
+import { ApiError } from '../../data/apiClient';
+import * as api from '../../data/api';
 
-/** Summarised per-user activity: what they hold, their calling, and recent assignments. */
+/**
+ * User administration.
+ *
+ * Two things are new, both consequences of auth being real:
+ *
+ *  - A manager sets the colleague's FIRST PASSWORD, and the account must change
+ *    it on first sign-in. Previously every account — including ones created
+ *    here — signed in with the `demo1234` string compiled into the bundle.
+ *
+ *  - Deactivating actually ends their sessions. It used to only hide the UI;
+ *    `AuthContext.refreshFrom` was written to handle it and never called.
+ *
+ * Users are still deactivated, never deleted: history must stay auditable.
+ */
+
+/** Per-user activity, fetched on demand — it's a fold over all their calls. */
 function ActivitySummary({ target }: { target: AppUser }) {
-  const { assignedTo, leadsOf, callsBy, audit } = useVault();
-  const held = assignedTo(target.id);
-  const units = held.length;
-  const portfolio = held.filter(p => p.state === 'portfolio').length;
-  const leads = leadsOf(target.id).length;
-  const calls = callsBy(target.id);
-  const interested = calls.filter(c => isInterested(c.outcome)).length;
-  const lastAt = calls.length ? calls.map(c => c.at).reduce((a, b) => (a > b ? a : b)) : undefined;
-  const recentAssigns = audit
-    .filter(a => a.action === 'assign' && a.detail.includes(target.name))
-    .slice(0, 5);
+  const [data, setData] = useState<{
+    calls: number; interested: number; assigned: number; portfolio: number; lastAt?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const team = await api.dashboard.team();
+        const row = team.brokers.find(b => b.id === target.id);
+        if (!cancelled && row) {
+          setData({
+            calls: row.calls, interested: row.interested,
+            assigned: row.assigned, portfolio: row.portfolio,
+          });
+        }
+        if (!cancelled && !row) setData({ calls: 0, interested: 0, assigned: 0, portfolio: 0 });
+      } catch {
+        if (!cancelled) setData(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [target.id]);
 
   const cell = (v: string, l: string) => (
     <div><div className="tabular-nums" style={{ fontSize: '1.15rem', fontWeight: 700 }}>{v}</div>
@@ -27,23 +55,15 @@ function ActivitySummary({ target }: { target: AppUser }) {
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 14, background: 'var(--surface-2)', marginBottom: 16 }}>
       <div style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', marginBottom: 10 }}>Activity summary</div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 22px' }}>
-        {cell(fmtInt(units), 'units held')}
-        {cell(fmtInt(leads), 'leads held')}
-        {cell(fmtInt(portfolio), 'in portfolio')}
-        {cell(fmtInt(calls.length), 'calls')}
-        {cell(fmtInt(interested), 'interested')}
-        {cell(lastAt ? timeAgo(lastAt) : 'never', 'last activity')}
-      </div>
-      {recentAssigns.length > 0 && (
-        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-light)' }}>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: 6 }}>Recent assignments</div>
-          {recentAssigns.map(a => (
-            <div key={a.id} style={{ fontSize: '0.75rem', display: 'flex', gap: 8, padding: '2px 0' }}>
-              <span style={{ color: 'var(--text-tertiary)' }}>{timeAgo(a.at)}</span>
-              <span className="truncate">{a.detail}</span>
-            </div>
-          ))}
+      {!data ? (
+        <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>Loading…</div>
+      ) : (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 22px' }}>
+          {cell(fmtInt(data.assigned + data.portfolio), 'units held')}
+          {cell(fmtInt(data.portfolio), 'in portfolio')}
+          {cell(fmtInt(data.calls), 'calls')}
+          {cell(fmtInt(data.interested), 'interested')}
+          {cell(data.lastAt ? timeAgo(data.lastAt) : '—', 'last activity')}
         </div>
       )}
     </div>
@@ -51,56 +71,77 @@ function ActivitySummary({ target }: { target: AppUser }) {
 }
 
 export function UsersScreen() {
-  const { users, saveUser } = useVault();
+  const { users, saveUser, setUserActive, resetUserPassword } = useVault();
   const { user } = useAuth();
   const [editing, setEditing] = useState<AppUser | null>(null);
   const [showNew, setShowNew] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [resetFor, setResetFor] = useState<AppUser | null>(null);
 
   const [form, setForm] = useState({
     name: '', email: '', role: UserRole.broker as UserRole,
     team: '', active: true, permissions: new Set<Permission>(),
-    viewCapOverride: '',
+    viewCapOverride: '', initialPassword: '',
   });
 
   const resetForm = () => setForm({
     name: '', email: '', role: UserRole.broker,
     team: '', active: true, permissions: new Set<Permission>(),
-    viewCapOverride: '',
+    viewCapOverride: '', initialPassword: '',
   });
 
   const openEdit = (u: AppUser) => {
     setEditing(u);
+    setError(null);
     setForm({
       name: u.name, email: u.email, role: u.role,
       team: u.team, active: u.active,
       permissions: new Set(u.permissions),
       viewCapOverride: u.viewCapOverride?.toString() ?? '',
+      initialPassword: '',
     });
   };
 
+  const close = () => { setShowNew(false); setEditing(null); setError(null); resetForm(); };
+
   const handleSave = async () => {
-    if (!user) return;
-    const id = editing?.id ?? `u-${Date.now()}`;
-    const appUser = new AppUser(
-      id, form.name.trim(), form.email.trim(), form.role,
-      form.active, form.team.trim(),
-      form.permissions.size > 0 ? form.permissions : undefined,
-      form.viewCapOverride ? parseInt(form.viewCapOverride) : undefined,
-      editing?.createdAt ?? new Date().toISOString(),
-    );
-    const action = editing ? 'Edited' : 'Created';
-    await saveUser(appUser, user.id, action);
-    setEditing(null);
-    setShowNew(false);
-    resetForm();
+    if (!user || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await saveUser({
+        id: editing?.id,
+        name: form.name.trim(),
+        email: form.email.trim(),
+        role: form.role,
+        team: form.team.trim(),
+        active: form.active,
+        permissions: form.permissions.size > 0 ? Array.from(form.permissions) : undefined,
+        viewCapOverride: form.viewCapOverride ? parseInt(form.viewCapOverride, 10) : null,
+        initialPassword: editing ? undefined : form.initialPassword,
+      });
+      close();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save that user.');
+    } finally {
+      setBusy(false);
+    }
   };
 
-  // Soft-delete: deactivate keeps the account listed with its full history for
-  // past employees; we never hard-delete (Security Playbook — auditability).
+  /**
+   * Soft-delete: deactivating keeps the account and its history for past
+   * employees. We never hard-delete — the audit trail has to stay attributable.
+   */
   const setActive = async (u: AppUser, active: boolean) => {
     if (!user) return;
-    if (active === false && !window.confirm(`Deactivate ${u.name}? They keep their history but can no longer sign in.`)) return;
-    await saveUser(u.copyWith({ active }), user.id, active ? 'Reactivated' : 'Deactivated');
+    if (!active && !window.confirm(`Deactivate ${u.name}? They keep their history, are signed out immediately, and can no longer sign in.`)) return;
+    setError(null);
+    try {
+      await setUserActive(u, active);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not change that account.');
+    }
   };
 
   const togglePermission = (p: Permission) => {
@@ -121,8 +162,22 @@ export function UsersScreen() {
         </button>
       </div>
 
+      {error && !showNew && !editing && (
+        <div className="card" style={{ marginBottom: 12, borderColor: 'var(--error)', color: 'var(--error)', fontSize: '0.875rem' }}>
+          {error}
+        </div>
+      )}
+
+      {resetFor && (
+        <ResetPasswordDialog
+          target={resetFor}
+          onClose={() => setResetFor(null)}
+          onReset={async (pw) => { await resetUserPassword(resetFor.id, pw); setResetFor(null); }}
+        />
+      )}
+
       {(showNew || editing) && (
-        <div className="modal-overlay" onClick={() => { setShowNew(false); setEditing(null); }}>
+        <div className="modal-overlay" onClick={close}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
             <h3 style={{ fontWeight: 600, marginBottom: 16 }}>
               {editing ? 'Edit User' : 'New User'}
@@ -140,6 +195,21 @@ export function UsersScreen() {
                 <input className="input" type="email" value={form.email}
                   onChange={e => setForm(p => ({ ...p, email: e.target.value }))} />
               </div>
+
+              {!editing && (
+                <div>
+                  <label style={{ fontSize: '0.8125rem', display: 'block', marginBottom: 4 }}>
+                    Initial password
+                  </label>
+                  <input className="input" type="text" value={form.initialPassword}
+                    onChange={e => setForm(p => ({ ...p, initialPassword: e.target.value }))}
+                    placeholder="At least 10 characters" />
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 4 }}>
+                    Give this to them directly. They must change it when they first sign in.
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label style={{ fontSize: '0.8125rem', display: 'block', marginBottom: 4 }}>Role</label>
                 <select className="input" value={form.role}
@@ -171,10 +241,14 @@ export function UsersScreen() {
                 </div>
               </div>
 
+              {error && (
+                <div style={{ fontSize: '0.8125rem', color: 'var(--error)' }}>{error}</div>
+              )}
+
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <button className="btn" onClick={() => { setShowNew(false); setEditing(null); }}>Cancel</button>
-                <button className="btn btn-primary" onClick={handleSave}>
-                  {editing ? 'Save changes' : 'Create user'}
+                <button className="btn" onClick={close}>Cancel</button>
+                <button className="btn btn-primary" onClick={handleSave} disabled={busy}>
+                  {busy ? 'Saving…' : editing ? 'Save changes' : 'Create user'}
                 </button>
               </div>
             </div>
@@ -214,6 +288,9 @@ export function UsersScreen() {
                 <td>
                   <div style={{ display: 'flex', gap: 4 }}>
                     <button className="btn btn-sm btn-ghost" onClick={() => openEdit(u)}>Edit</button>
+                    {u.id !== user?.id && (
+                      <button className="btn btn-sm btn-ghost" onClick={() => setResetFor(u)}>Reset password</button>
+                    )}
                     {u.id !== user?.id && u.active && (
                       <button className="btn btn-sm btn-ghost" style={{ color: 'var(--error)' }} onClick={() => setActive(u, false)}>Deactivate</button>
                     )}
@@ -226,6 +303,48 @@ export function UsersScreen() {
             ))}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+function ResetPasswordDialog({ target, onClose, onReset }: {
+  target: AppUser;
+  onClose: () => void;
+  onReset: (password: string) => Promise<void>;
+}) {
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await onReset(password);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not reset that password.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+        <h3 style={{ fontWeight: 600, marginBottom: 8 }}>Reset password</h3>
+        <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: 16 }}>
+          Set a new password for <b>{target.name}</b>. They'll be signed out everywhere and
+          must change it when they next sign in.
+        </p>
+        <input className="input" type="text" value={password} autoFocus
+          onChange={e => setPassword(e.target.value)} placeholder="At least 10 characters" />
+        {error && <div style={{ fontSize: '0.8125rem', color: 'var(--error)', marginTop: 8 }}>{error}</div>}
+        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={submit} disabled={busy || password.length === 0}>
+            {busy ? 'Resetting…' : 'Reset password'}
+          </button>
+        </div>
       </div>
     </div>
   );

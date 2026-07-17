@@ -55,7 +55,7 @@ function ImportAndFiles() {
                   <td>
                     {user.can(Permission.manageData) && (
                       <button className="btn btn-sm btn-ghost" style={{ color: 'var(--error)' }}
-                        onClick={() => { if (window.confirm(`Delete "${d.name}" and all its records?`)) deleteDataset(d, user.id); }}>
+                        onClick={() => { if (window.confirm(`Delete "${d.name}" and all its records?`)) void deleteDataset(d); }}>
                         Delete
                       </button>
                     )}
