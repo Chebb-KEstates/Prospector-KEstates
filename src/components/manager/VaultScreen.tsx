@@ -63,6 +63,7 @@ export function VaultScreen() {
 
       {module === DataModule.owners ? (
         <PropertyTable
+          prefsKey="vault"
           properties={properties}
           onSelect={handleViewProperty}
         />

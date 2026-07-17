@@ -111,6 +111,8 @@ export class Property implements ProspectFields {
   callAttempts = 0;
   nextFollowUpAt?: string;
   dncAt?: string;
+  /** Any unmapped columns from the upload, kept verbatim so the table can show them. */
+  extra: Record<string, string> = {};
 
   constructor(
     public id: string,
@@ -177,7 +179,7 @@ export class Property implements ProspectFields {
       assignmentNote: this.assignmentNote, cooldownUntil: this.cooldownUntil,
       portfolioSince: this.portfolioSince, lastOutcome: this.lastOutcome,
       lastCalledAt: this.lastCalledAt, callAttempts: this.callAttempts,
-      nextFollowUpAt: this.nextFollowUpAt, dncAt: this.dncAt,
+      nextFollowUpAt: this.nextFollowUpAt, dncAt: this.dncAt, extra: this.extra,
     };
   }
 
@@ -214,6 +216,8 @@ export class Property implements ProspectFields {
     p.callAttempts = (j.callAttempts as number) ?? 0;
     p.nextFollowUpAt = j.nextFollowUpAt as string | undefined;
     p.dncAt = j.dncAt as string | undefined;
+    p.extra = Object.fromEntries(
+      Object.entries((j.extra as Record<string, unknown>) ?? {}).map(([k, v]) => [k, String(v)]));
     return p;
   }
 }

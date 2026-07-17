@@ -124,6 +124,10 @@ export abstract class ImportPipeline {
       const i = byField.get(f);
       return (i == null || i >= row.length) ? null : row[i];
     };
+    // Columns the user didn't map to a known field, but that carry a real header —
+    // kept verbatim per row so the table stays flexible to any upload.
+    const extraCols = params.columns.filter(c =>
+      c.field === ImportField.ignore && !!c.header && !/^Column \d+$/.test(c.header));
     const dataRows = params.sheet.rows.slice(params.headerRow + 1);
     let invalid = 0, inFileDup = 0;
 
@@ -134,11 +138,17 @@ export abstract class ImportPipeline {
       txDate?: string; txValue?: number; party: string;
       ownerName: string; phone?: string; nationality?: string;
       rentStart?: string; rentEnd?: string; rentAmount?: number;
+      extra: Record<string, string>;
     }
 
     const parsed: ParsedRow[] = [];
     for (const row of dataRows) {
       if (row.every(c => c == null)) continue;
+      const extra: Record<string, string> = {};
+      for (const c of extraCols) {
+        const s = str(c.index < row.length ? row[c.index] : null);
+        if (s) extra[c.header] = s;
+      }
       const community = str(cell(row, ImportField.community)) ?? params.communityFallback;
       const cluster = str(cell(row, ImportField.cluster));
       const building = str(cell(row, ImportField.building));
@@ -162,6 +172,7 @@ export abstract class ImportPipeline {
         rentStart: this.dateOf(cell(row, ImportField.rentStart)),
         rentEnd: this.dateOf(cell(row, ImportField.rentEnd)),
         rentAmount: num(cell(row, ImportField.rentAmount)),
+        extra,
       });
     }
 
@@ -172,7 +183,7 @@ export abstract class ImportPipeline {
     if (params.type === DataSetType.register) {
       for (const r of parsed) {
         if (units.has(r.unitKey)) inFileDup++;
-        units.set(r.unitKey, new Property(
+        const prop = new Property(
           nextId(), kOrgId, params.datasetId, PropertyState.pool,
           r.unitKey, r.community, r.cluster, r.building, r.unitNumber,
           r.plotNumber, r.propertyType, r.beds, r.sizeSqft, r.plotSqft,
@@ -180,7 +191,9 @@ export abstract class ImportPipeline {
           r.rentStart, r.rentEnd, r.rentAmount,
           new OwnerInfo(r.ownerName, r.phone, r.nationality),
           at, at,
-        ));
+        );
+        prop.extra = r.extra;
+        units.set(r.unitKey, prop);
       }
     } else {
       const groups = new Map<string, number[]>();
@@ -205,7 +218,7 @@ export abstract class ImportPipeline {
             lastDate = r.txDate; lastValue = r.txValue;
           }
         }
-        units.set(key, new Property(
+        const prop = new Property(
           nextId(), kOrgId, params.datasetId, PropertyState.pool,
           key, ownerRow.community, ownerRow.cluster, ownerRow.building,
           ownerRow.unitNumber, ownerRow.plotNumber, ownerRow.propertyType,
@@ -214,7 +227,10 @@ export abstract class ImportPipeline {
           ownerRow.rentStart, ownerRow.rentEnd, ownerRow.rentAmount,
           new OwnerInfo(ownerRow.ownerName, ownerRow.phone, ownerRow.nationality),
           at, at,
-        ));
+        );
+        // Merge extra across the unit's rows (later rows win).
+        prop.extra = Object.assign({}, ...rows.map(r => r.extra));
+        units.set(key, prop);
       }
     }
 
@@ -240,6 +256,7 @@ export abstract class ImportPipeline {
         rentStart: candidate.rentStart,
         rentEnd: candidate.rentEnd,
         rentAmount: candidate.rentAmount,
+        extra: { ...existing.extra, ...candidate.extra },
         updatedAt: at,
       }));
     }

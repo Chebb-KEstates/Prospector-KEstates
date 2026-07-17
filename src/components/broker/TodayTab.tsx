@@ -94,7 +94,7 @@ export function TodayTab() {
               </button>
             ))}
           </div>
-          <PropertyTable properties={filtered} onSelect={openOwnerCall} />
+          <PropertyTable prefsKey="broker_today" hideOwner properties={filtered} onSelect={openOwnerCall} />
         </>
       ) : (
         <BuyerTable />

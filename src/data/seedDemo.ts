@@ -113,6 +113,13 @@ export async function seedDemoData(): Promise<void> {
       p.lastCalledAt = lastCalledAt;
       p.portfolioSince = portfolioSince;
       p.nextFollowUpAt = nextFollowUpAt;
+      // Demo "extra" columns — the kind of unmapped fields a real upload carries,
+      // to show the table adapting flexibly to arbitrary data.
+      p.extra = {
+        Developer: ['Emaar', 'DAMAC', 'Sobha', 'Nakheel'][Math.floor(r() * 4)],
+        Floor: `${1 + Math.floor(r() * 40)}`,
+        View: ['Community', 'Golf', 'Sea', 'Burj'][Math.floor(r() * 4)],
+      };
       unitSeq++;
       properties.push(p);
     }
