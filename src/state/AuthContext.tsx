@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { AppUser } from '../types/user';
 import { auth } from '../data/api';
-import { ApiError, onAuthLost } from '../data/apiClient';
+import { ApiError, onAuthLost, setCsrfToken } from '../data/apiClient';
 
 /**
  * Authentication.
@@ -66,6 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => onAuthLost(() => {
     setUser(null);
     setMustChange(false);
+    setCsrfToken(null);
   }), []);
 
   const signIn = useCallback(async (email: string, password: string): Promise<string | null> => {

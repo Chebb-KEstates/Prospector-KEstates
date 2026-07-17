@@ -6,8 +6,8 @@
  *  1. `credentials: 'include'` — the session is an httpOnly cookie the JS
  *     cannot read. There is no token in localStorage to steal.
  *
- *  2. The CSRF token is read from a readable cookie and echoed in a header on
- *     every mutation (double-submit). The server rejects a mismatch.
+ *  2. The CSRF token is kept in memory (set from the login/session response)
+ *     and echoed in a header on every mutation. The server rejects a mismatch.
  *
  *  3. Errors arrive as `{ error: { code, message } }` and become `ApiError`.
  *     `message` is written server-side to be shown to a user as-is, which is
@@ -15,7 +15,6 @@
  */
 
 const BASE = process.env.REACT_APP_API_URL ?? 'http://localhost:4000';
-const CSRF_COOKIE = 'prospector_csrf';
 const CSRF_HEADER = 'x-csrf-token';
 
 export class ApiError extends Error {
@@ -37,10 +36,20 @@ export class ApiError extends Error {
   get isConflict(): boolean { return this.status === 409; }
 }
 
-function readCookie(name: string): string | null {
-  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
-  return match ? decodeURIComponent(match[1]) : null;
-}
+/**
+ * The CSRF token, held in memory rather than read from the readable cookie.
+ *
+ * The double-submit cookie only works when the frontend and API are the same
+ * site — a page can read a cookie set by its own origin, never one set by a
+ * different origin, regardless of SameSite. This deployment has the frontend
+ * and API on unrelated domains, so `document.cookie` can never see
+ * `prospector_csrf` here even though the browser dutifully sends it back to
+ * the API. The server already echoes the same token in the JSON body of
+ * login/session/change-password; AuthContext feeds it in via `setCsrfToken`
+ * and every mutation reads it from here instead.
+ */
+let csrfToken: string | null = null;
+export function setCsrfToken(token: string | null): void { csrfToken = token; }
 
 /** Listeners for "you've been signed out" — AuthContext subscribes. */
 type AuthLostHandler = () => void;
@@ -94,8 +103,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   const headers: Record<string, string> = {};
   if (options.body !== undefined) headers['content-type'] = 'application/json';
   if (!isSafe) {
-    const csrf = readCookie(CSRF_COOKIE);
-    if (csrf) headers[CSRF_HEADER] = csrf;
+    if (csrfToken) headers[CSRF_HEADER] = csrfToken;
   }
 
   let lastError: unknown;
@@ -190,8 +198,7 @@ export async function upload<T>(path: string, file: File, fields: Record<string,
   form.append('file', file);
 
   const headers: Record<string, string> = {};
-  const csrf = readCookie(CSRF_COOKIE);
-  if (csrf) headers[CSRF_HEADER] = csrf;
+  if (csrfToken) headers[CSRF_HEADER] = csrfToken;
 
   const res = await fetch(buildUrl(path), {
     method: 'POST',

@@ -1,4 +1,4 @@
-import { get, post, patch, del, upload, tzOffsetMinutes } from './apiClient';
+import { get, post, patch, del, upload, tzOffsetMinutes, setCsrfToken } from './apiClient';
 import {
   Property, Lead, CallLog, BatchRequest, DataSet, AuditEntry, VaultSettings,
   PropertyState, CallOutcome, DataSetType, DataModule, RequestStatus,
@@ -55,18 +55,29 @@ function toUser(j: UserPayload): AppUser {
 export const auth = {
   async session(): Promise<{ user: AppUser | null; mustChangePassword: boolean }> {
     const r = await get<SessionResponse>('/api/auth/session');
+    setCsrfToken(r.csrfToken);
     return { user: r.user ? toUser(r.user) : null, mustChangePassword: r.mustChangePassword };
   },
 
   async login(email: string, password: string): Promise<{ user: AppUser; mustChangePassword: boolean }> {
     const r = await post<SessionResponse>('/api/auth/login', { email, password });
+    setCsrfToken(r.csrfToken);
     return { user: toUser(r.user!), mustChangePassword: r.mustChangePassword };
   },
 
-  logout: () => post<{ ok: true }>('/api/auth/logout'),
+  async logout(): Promise<{ ok: true }> {
+    const r = await post<{ ok: true }>('/api/auth/logout');
+    setCsrfToken(null);
+    return r;
+  },
 
-  changePassword: (currentPassword: string, newPassword: string) =>
-    post<{ ok: true }>('/api/auth/change-password', { currentPassword, newPassword }),
+  async changePassword(currentPassword: string, newPassword: string): Promise<{ ok: true }> {
+    const r = await post<{ ok: true; csrfToken: string }>(
+      '/api/auth/change-password', { currentPassword, newPassword },
+    );
+    setCsrfToken(r.csrfToken);
+    return r;
+  },
 };
 
 // ── Users ──────────────────────────────────────────────────────────────────
