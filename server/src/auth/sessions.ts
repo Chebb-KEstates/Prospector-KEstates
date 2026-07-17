@@ -103,11 +103,23 @@ export async function sweepExpiredSessions(): Promise<number> {
   return (res as { affectedRows?: number }).affectedRows ?? 0;
 }
 
+/**
+ * `SameSite=Strict` cookies are never sent on a cross-site fetch — not even a
+ * same-tab XHR the page itself makes. That's fine when the frontend and API
+ * share a site (plain `localhost` dev), but it silently drops the cookie on
+ * every request when they're exposed on different hostnames (a reverse proxy,
+ * or a cloud dev environment that forwards each port to its own subdomain) —
+ * login succeeds, the very next request 401s, and the app bounces to /login.
+ * `SameSite=None` is required for that case, and browsers only honour `None`
+ * alongside `Secure`, so the two toggle together with `COOKIE_SECURE`.
+ */
+const sameSite = env.cookieSecure ? ('none' as const) : ('strict' as const);
+
 export function sessionCookieOptions(expiresAt: Date) {
   return {
     httpOnly: true,
     secure: env.cookieSecure,
-    sameSite: 'strict' as const,
+    sameSite,
     path: '/',
     expires: expiresAt,
   };
@@ -122,7 +134,7 @@ export function csrfCookieOptions(expiresAt: Date) {
   return {
     httpOnly: false,
     secure: env.cookieSecure,
-    sameSite: 'strict' as const,
+    sameSite,
     path: '/',
     expires: expiresAt,
   };
