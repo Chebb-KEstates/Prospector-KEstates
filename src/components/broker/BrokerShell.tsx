@@ -9,6 +9,7 @@ import { MarbleBackground } from '../common/MarbleBackground';
 import { Icon, IconName } from '../common/Icon';
 import { BrokerHome } from './BrokerHome';
 import { TodayTab } from './TodayTab';
+import { PoolTab } from './PoolTab';
 import { PropertyTable } from '../manager/PropertyTable';
 import { PropertyState } from '../../types/models';
 import { CallSessionView } from './CallSessionView';
@@ -119,9 +120,7 @@ function BrokerShellInner() {
               <>
                 {activeTab === 'home' && <BrokerHome onGo={(t) => setActiveTab(t as Tab)} />}
                 {activeTab === 'today' && <TodayTab />}
-                {activeTab === 'pool' && (
-                  <PropertyTable prefsKey="broker_pool" teaser properties={properties.filter(p => p.state === PropertyState.pool)} />
-                )}
+                {activeTab === 'pool' && <PoolTab />}
                 {activeTab === 'portfolio' && (
                   <PropertyTable prefsKey="broker_portfolio" hideOwner properties={assignedTo(user.id).filter(p => p.state === PropertyState.portfolio)} />
                 )}

@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { useAuth } from '../../state/AuthContext';
 import { PropertyState } from '../../types/models';
-import { StateChip } from '../common/StateChip';
+import { PropertyTable } from './PropertyTable';
 import { RequestsScreen } from './RequestsScreen';
 
 export function AssignmentsScreen() {
@@ -91,56 +91,14 @@ export function AssignmentsScreen() {
         )}
       </div>
 
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th style={{ width: 40 }}>
-                <input type="checkbox" onChange={e => {
-                  if (e.target.checked) setSelected(new Set(currentList.map(p => p.id)));
-                  else setSelected(new Set());
-                }} checked={selected.size === currentList.length && currentList.length > 0} />
-              </th>
-              <th>Owner</th>
-              <th>Phone</th>
-              <th>Community</th>
-              <th>Unit</th>
-              <th>State</th>
-              <th>Assigned to</th>
-              <th>Last called</th>
-              <th>Attempts</th>
-            </tr>
-          </thead>
-          <tbody>
-            {currentList.length === 0 ? (
-              <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--text-tertiary)' }}>
-                No{' '}{tab}{' '}properties.
-              </td></tr>
-            ) : (
-              currentList.map(p => (
-                <tr key={p.id} className={selected.has(p.id) ? 'selected' : ''}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => toggleSelect(p.id)}>
-                  <td onClick={e => e.stopPropagation()}>
-                    <input type="checkbox" checked={selected.has(p.id)}
-                      onChange={() => toggleSelect(p.id)} />
-                  </td>
-                  <td style={{ fontWeight: 500 }}>{p.owner.name || '—'}</td>
-                  <td style={{ fontVariant: 'tabular-nums', color: 'var(--text-secondary)' }}>
-                    {p.owner.phone ?? '—'}
-                  </td>
-                  <td>{p.community}</td>
-                  <td style={{ color: 'var(--text-secondary)' }}>{p.unitLabel}</td>
-                  <td><StateChip state={p.state} /></td>
-                  <td>{p.assignedTo ? (userById(p.assignedTo)?.name ?? p.assignedTo) : '—'}</td>
-                  <td style={{ fontSize: '0.75rem' }}>{p.lastCalledAt ? new Date(p.lastCalledAt).toLocaleDateString() : '—'}</td>
-                  <td>{p.callAttempts}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      {/* The shared table — masks phones, and brings filters / columns / sort /
+          pagination / multi-select. Never hand-roll a list UI. */}
+      <PropertyTable
+        prefsKey={tab === 'pool' ? 'mgr_pool' : 'mgr_assigned'}
+        properties={currentList}
+        checkedIds={selected}
+        onCheckedChanged={setSelected}
+      />
       </>}
     </div>
   );
