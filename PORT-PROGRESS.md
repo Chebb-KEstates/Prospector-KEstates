@@ -32,9 +32,16 @@ Parity spec: `Prospector/prospector/docs/React Parity Checklist.md`
 - Dialer embeds in workspace with Minimize; Call reveals grouped number (+971 …) + 8 owner-vocab outcomes
 - Selecting an outcome does NOT auto-advance; gold "Save & next" appears — the requested Batch-8 behaviour
 
+## QA + improvement pass (2026-07-17) — done
+- Watermark: was rendering twice + uneven → single even SVG tiling of identity (faithful to Flutter)
+- Dialer coverflow: rebuilt (per-tile distance transform, no overlap glitch)
+- Data table: full platform — filter bar, Columns dialog (show/hide + drag-reorder), density, sort, pagination, multi-select, per-screen persistence, teaser/hideOwner
+- Flexible upload: Property gained `extra`; import keeps unmapped columns; owner AND lead tables render `extra` as dynamic columns
+- Earlier: single-call popup, manager full-number reveal, Team metric fixes, teaser Pool
+
 ## Deferred polish (lower value, safe to leave for the developer)
-- Columns dialog (show/hide + drag-reorder) + density toggle + per-screen layout persistence on the table
-- Teaser Pool (owner hidden, tap-to-request) and checkbox quick-assign in the vault
+- Lead table: give it the SAME full column-platform (columns dialog/density/persistence) as the owner table — currently has search + sort + dynamic extra columns only
+- Teaser Pool tap-to-request flow (teaser is read-only for now)
 - Automated tests (the Flutter app had 32; none ported yet)
 - Consider migrating CRA → Vite before go-live (CRA is deprecated)
 
