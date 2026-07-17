@@ -5,7 +5,6 @@ import { useVault } from '../../state/VaultContext';
 import { useTheme } from '../../state/ThemeContext';
 import { CallSessionProvider, useCallSession } from '../../state/CallSessionContext';
 import { AccountSheet } from '../common/AccountSheet';
-import { Watermark } from '../common/Watermark';
 import { MarbleBackground } from '../common/MarbleBackground';
 import { Icon, IconName } from '../common/Icon';
 import { BrokerHome } from './BrokerHome';
@@ -51,7 +50,6 @@ function BrokerShellInner() {
       background: resolved === 'dark' ? 'transparent' : 'var(--bg)', position: 'relative',
     }}>
       {resolved === 'dark' && <MarbleBackground />}
-      <Watermark />
 
       <div style={{ position: 'relative', zIndex: 1, display: 'flex', flex: 1 }}>
         {/* Sidebar */}

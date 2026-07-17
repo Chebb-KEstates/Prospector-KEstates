@@ -4,7 +4,6 @@ import { useAuth } from '../../state/AuthContext';
 import { useVault } from '../../state/VaultContext';
 import { Permission } from '../../types/user';
 import { AccountSheet } from '../common/AccountSheet';
-import { Watermark } from '../common/Watermark';
 import { MarbleBackground } from '../common/MarbleBackground';
 import { useTheme } from '../../state/ThemeContext';
 import { HomeScreen } from './HomeScreen';
@@ -48,7 +47,6 @@ export function ManagerShell() {
       position: 'relative',
     }}>
       {resolved === 'dark' && <MarbleBackground />}
-      <Watermark />
 
       <div style={{
         position: 'relative', zIndex: 1,

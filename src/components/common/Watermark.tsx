@@ -2,13 +2,14 @@ import React, { useMemo } from 'react';
 import { useAuth } from '../../state/AuthContext';
 
 /**
- * Faint diagonal identity watermark over every data screen (Security Playbook §2.6):
- * a leaked screenshot becomes traceable to the signed-in account. It tiles the user's
- * name + email + the current date across the whole viewport at a low-but-photographable
- * opacity — subtle enough never to fight the content, present enough to survive a photo.
+ * Faint diagonal identity watermark over every screen (Security Playbook §2.6):
+ * a leaked screenshot becomes traceable to the signed-in account. Rendered ONCE
+ * (in App.tsx) — never stack instances or the opacity doubles.
  *
- * Screenshots cannot be blocked in a browser (the OS owns that key); this watermark IS
- * the deterrent. It must carry identity — a fixed label would defeat its only purpose.
+ * Faithful to the Flutter painter: the signed-in identity repeated on an even
+ * grid, rotated ~24° up-slope, at ~4.5% opacity — subtle enough never to fight
+ * the content, present enough to survive a photo. Implemented as an SVG <pattern>
+ * so the tiling is perfectly even and GPU-cheap.
  */
 export function Watermark() {
   const { user } = useAuth();
@@ -21,60 +22,24 @@ export function Watermark() {
 
   if (!label) return null;
 
-  // A tiled grid of the label on a rotated plane that over-covers the viewport.
-  const cols = 4;
-  const rows = 9;
-  const cells: React.ReactNode[] = [];
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      cells.push(
-        <span
-          key={`${r}-${c}`}
-          style={{
-            whiteSpace: 'nowrap',
-            fontSize: '12px',
-            fontWeight: 600,
-            letterSpacing: '1.2px',
-            color: 'var(--text)',
-          }}
-        >
-          {label}
-        </span>,
-      );
-    }
-  }
+  // Tile width tracks the label length so labels repeat evenly without clipping
+  // (mirrors the Flutter painter's dx=300 / dy=130 regular grid).
+  const tileW = Math.round(label.length * 7.1 + 46);
+  const tileH = 132;
 
   return (
-    <div
-      aria-hidden
-      style={{
-        position: 'fixed',
-        inset: 0,
-        pointerEvents: 'none',
-        zIndex: 9999,
-        overflow: 'hidden',
-        opacity: 0.05,
-        userSelect: 'none',
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          top: '-25%',
-          left: '-25%',
-          width: '150%',
-          height: '150%',
-          transform: 'rotate(-24deg)',
-          display: 'grid',
-          gridTemplateColumns: `repeat(${cols}, 1fr)`,
-          gridAutoRows: '96px',
-          alignItems: 'center',
-          justifyItems: 'center',
-          columnGap: '40px',
-        }}
-      >
-        {cells}
-      </div>
+    <div aria-hidden style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 9999, overflow: 'hidden' }}>
+      <svg width="100%" height="100%" style={{ display: 'block', color: 'var(--text)' }}>
+        <defs>
+          <pattern id="wm-identity" width={tileW} height={tileH} patternUnits="userSpaceOnUse" patternTransform="rotate(-24)">
+            <text x="0" y={tileH / 2} fill="currentColor" fillOpacity={0.05}
+              style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '1.4px' }}>
+              {label}
+            </text>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#wm-identity)" />
+      </svg>
     </div>
   );
 }
