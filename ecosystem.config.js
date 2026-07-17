@@ -1,13 +1,13 @@
 module.exports = {
   apps: [
     {
-      name: "frontend",
+      name: "prospector-frontend",
       cwd: __dirname,
       script: "npm",
       args: "start",
     },
     {
-      name: "backend",
+      name: "prospector-backend",
       cwd: __dirname + "/server",
       script: "npm",
       args: "run dev",
