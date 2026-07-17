@@ -38,8 +38,10 @@ export abstract class ImportPipeline {
     if (h.length === 0) return ImportField.ignore;
     const has = (s: string) => h.includes(s);
 
-    if (has('buildingname')) return ImportField.building;
+    // Order matters: "Building No" is a vendor row-id we ignore, but a plain
+    // "Building" / "Building Name" is the building itself.
     if (has('buildingno')) return ImportField.ignore;
+    if (has('building')) return ImportField.building;
     if (has('country') || has('nationality')) return ImportField.nationality;
     if (has('rentalamount') || has('rentamount') || has('annualrent')) return ImportField.rentAmount;
     if (has('rentstart')) return ImportField.rentStart;
