@@ -39,11 +39,14 @@ Parity spec: `Prospector/prospector/docs/React Parity Checklist.md`
 - Flexible upload: Property gained `extra`; import keeps unmapped columns; owner AND lead tables render `extra` as dynamic columns
 - Earlier: single-call popup, manager full-number reveal, Team metric fixes, teaser Pool
 
-## Deferred polish (lower value, safe to leave for the developer)
-- Lead table: give it the SAME full column-platform (columns dialog/density/persistence) as the owner table — currently has search + sort + dynamic extra columns only
-- Teaser Pool tap-to-request flow (teaser is read-only for now)
-- Automated tests (the Flutter app had 32; none ported yet)
-- Consider migrating CRA → Vite before go-live (CRA is deprecated)
+## Finishing pass (2026-07-17) — done
+- **Pool request flow**: `submitRequest` existed but nothing called it — brokers could not request data, so the manager's Requests tab could never populate. Built `PoolTab` (tick units in the teaser pool → note → submit hand-picked request; shows your pending requests). Verified end-to-end through to Approve/Deny.
+- **Security fix**: AssignmentsScreen hand-rolled a table that rendered owner phones UNMASKED. Replaced with the shared `PropertyTable` (masked + full platform).
+- **One table language**: extracted `common/tableLayout` (`useTableLayout` + `ColumnsDialog`); both the owner and lead tables now share ONE implementation. Lead table gained the full platform (filters, columns dialog, density, sort, pagination, persistence, dynamic extra columns).
+- **Tests**: 38 passing (dispositions, masking/format, import pipeline + dedupe + flexible extra columns + owner grouping). They caught a real bug: a plain `Building` header was never auto-mapped.
+
+## Remaining recommendation (a decision, not a task)
+- Consider migrating CRA → Vite before go-live (CRA is deprecated/unmaintained since 2023). Deliberately NOT done: the stack was chosen to match the existing React project.
 
 ## Notes
 - No real owner data ever enters this project. `src/data/seedDemo.ts` is synthetic.

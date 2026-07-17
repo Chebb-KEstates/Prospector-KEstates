@@ -79,4 +79,4 @@ enforced on the server, not just the client.
 |---------|-------------|
 | `npm start` | Development server |
 | `npm run build` | Production build to `build/` |
-| `npm test` | Tests |
+| `npm test` | Tests (38 passing — dispositions, masking, import pipeline, dedupe, owner grouping) |
