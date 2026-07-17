@@ -94,17 +94,16 @@ export async function saveLeads(
     const chunk = leads.slice(i, i + CHUNK);
     await db.query(
       `INSERT INTO leads (${WRITE_COLS}) VALUES ${chunk.map(() => PLACEHOLDERS).join(', ')}
-       AS new
        ON DUPLICATE KEY UPDATE
-         dataset_id = new.dataset_id, state = new.state,
-         enquiry_date = new.enquiry_date, name = new.name, phone = new.phone,
-         email = new.email, project = new.project, source = new.source,
-         extra = new.extra, updated_at = new.updated_at,
-         assigned_to = new.assigned_to, assigned_at = new.assigned_at,
-         assignment_note = new.assignment_note, cooldown_until = new.cooldown_until,
-         portfolio_since = new.portfolio_since, last_outcome = new.last_outcome,
-         last_called_at = new.last_called_at, call_attempts = new.call_attempts,
-         next_follow_up_at = new.next_follow_up_at, dnc_at = new.dnc_at`,
+         dataset_id = VALUES(dataset_id), state = VALUES(state),
+         enquiry_date = VALUES(enquiry_date), name = VALUES(name), phone = VALUES(phone),
+         email = VALUES(email), project = VALUES(project), source = VALUES(source),
+         extra = VALUES(extra), updated_at = VALUES(updated_at),
+         assigned_to = VALUES(assigned_to), assigned_at = VALUES(assigned_at),
+         assignment_note = VALUES(assignment_note), cooldown_until = VALUES(cooldown_until),
+         portfolio_since = VALUES(portfolio_since), last_outcome = VALUES(last_outcome),
+         last_called_at = VALUES(last_called_at), call_attempts = VALUES(call_attempts),
+         next_follow_up_at = VALUES(next_follow_up_at), dnc_at = VALUES(dnc_at)`,
       chunk.flatMap(writeParams),
     );
     onProgress?.(Math.min(i + CHUNK, leads.length), leads.length);

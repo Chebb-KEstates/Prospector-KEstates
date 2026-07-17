@@ -164,26 +164,25 @@ export async function saveProperties(
     const sql = `
       INSERT INTO properties (${WRITE_COLS})
       VALUES ${chunk.map(() => PLACEHOLDERS).join(', ')}
-      AS new
       ON DUPLICATE KEY UPDATE
-        dataset_id = new.dataset_id, state = new.state,
-        community = new.community, cluster = new.cluster, building = new.building,
-        unit_number = new.unit_number, plot_number = new.plot_number,
-        property_type = new.property_type, beds = new.beds,
-        size_sqft = new.size_sqft, plot_sqft = new.plot_sqft,
-        last_transaction_date = new.last_transaction_date,
-        last_transaction_value = new.last_transaction_value,
-        tx_count = new.tx_count, rent_start = new.rent_start,
-        rent_end = new.rent_end, rent_amount = new.rent_amount,
-        owner_name = new.owner_name, owner_phone = new.owner_phone,
-        owner_phones = new.owner_phones,
-        owner_nationality = new.owner_nationality, owner_key = new.owner_key,
-        extra = new.extra, updated_at = new.updated_at,
-        assigned_to = new.assigned_to, assigned_at = new.assigned_at,
-        assignment_note = new.assignment_note, cooldown_until = new.cooldown_until,
-        portfolio_since = new.portfolio_since, last_outcome = new.last_outcome,
-        last_called_at = new.last_called_at, call_attempts = new.call_attempts,
-        next_follow_up_at = new.next_follow_up_at, dnc_at = new.dnc_at`;
+        dataset_id = VALUES(dataset_id), state = VALUES(state),
+        community = VALUES(community), cluster = VALUES(cluster), building = VALUES(building),
+        unit_number = VALUES(unit_number), plot_number = VALUES(plot_number),
+        property_type = VALUES(property_type), beds = VALUES(beds),
+        size_sqft = VALUES(size_sqft), plot_sqft = VALUES(plot_sqft),
+        last_transaction_date = VALUES(last_transaction_date),
+        last_transaction_value = VALUES(last_transaction_value),
+        tx_count = VALUES(tx_count), rent_start = VALUES(rent_start),
+        rent_end = VALUES(rent_end), rent_amount = VALUES(rent_amount),
+        owner_name = VALUES(owner_name), owner_phone = VALUES(owner_phone),
+        owner_phones = VALUES(owner_phones),
+        owner_nationality = VALUES(owner_nationality), owner_key = VALUES(owner_key),
+        extra = VALUES(extra), updated_at = VALUES(updated_at),
+        assigned_to = VALUES(assigned_to), assigned_at = VALUES(assigned_at),
+        assignment_note = VALUES(assignment_note), cooldown_until = VALUES(cooldown_until),
+        portfolio_since = VALUES(portfolio_since), last_outcome = VALUES(last_outcome),
+        last_called_at = VALUES(last_called_at), call_attempts = VALUES(call_attempts),
+        next_follow_up_at = VALUES(next_follow_up_at), dnc_at = VALUES(dnc_at)`;
     await db.query(sql, chunk.flatMap(writeParams));
     onProgress?.(Math.min(i + CHUNK, properties.length), properties.length);
   }

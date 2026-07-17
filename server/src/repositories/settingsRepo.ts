@@ -34,17 +34,16 @@ export async function saveSettings(s: VaultSettings, cx?: PoolConnection): Promi
         max_no_answer_attempts, assignment_expiry_days, portfolio_stale_days,
         daily_view_cap, wifi_lock_enabled, office_ip, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     AS new
      ON DUPLICATE KEY UPDATE
-       not_interested_cooldown_days = new.not_interested_cooldown_days,
-       listed_cooldown_days         = new.listed_cooldown_days,
-       max_no_answer_attempts       = new.max_no_answer_attempts,
-       assignment_expiry_days       = new.assignment_expiry_days,
-       portfolio_stale_days         = new.portfolio_stale_days,
-       daily_view_cap               = new.daily_view_cap,
-       wifi_lock_enabled            = new.wifi_lock_enabled,
-       office_ip                    = new.office_ip,
-       updated_at                   = new.updated_at`,
+       not_interested_cooldown_days = VALUES(not_interested_cooldown_days),
+       listed_cooldown_days         = VALUES(listed_cooldown_days),
+       max_no_answer_attempts       = VALUES(max_no_answer_attempts),
+       assignment_expiry_days       = VALUES(assignment_expiry_days),
+       portfolio_stale_days         = VALUES(portfolio_stale_days),
+       daily_view_cap               = VALUES(daily_view_cap),
+       wifi_lock_enabled            = VALUES(wifi_lock_enabled),
+       office_ip                    = VALUES(office_ip),
+       updated_at                   = VALUES(updated_at)`,
     [
       kOrgId,
       s.notInterestedCooldownDays, s.listedCooldownDays, s.maxNoAnswerAttempts,
