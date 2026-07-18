@@ -5,10 +5,12 @@ import {
 } from '../../../src/types/user';
 import {
   Property, OwnerInfo, PropertyState, CallOutcome, VaultSettings, kOrgId,
+  DataSet, DataSetType, DataModule,
 } from '../../../src/types/models';
 import { ImportPipeline } from '../../../src/logic/importPipeline';
 import { insertUser, findUserByEmail, countManagers } from '../repositories/userRepo';
 import { saveProperties, countTotal } from '../repositories/propertyRepo';
+import { insertDataset } from '../repositories/datasetRepo';
 import { saveSettings, loadSettings } from '../repositories/settingsRepo';
 import { hashPassword, validatePassword } from '../auth/password';
 import { newPropertyId } from '../domain/ids';
@@ -53,6 +55,14 @@ const COMMUNITIES = [
 
 const TYPES = ['Villa', 'Townhouse', 'Apartment'];
 
+/**
+ * The demo data belongs to a real data set, so it can be deleted from the
+ * "Data sets" screen like any import. The reference seed left dataset_id NULL,
+ * which meant the synthetic rows showed up everywhere but had no set to remove
+ * them by — the manager could see 98 units and no way to clear them.
+ */
+const DEMO_DATASET_ID = 'ds-demo-synthetic';
+
 function buildDemoProperties(): Property[] {
   const now = new Date().toISOString();
   const out: Property[] = [];
@@ -79,7 +89,7 @@ function buildDemoProperties(): Property[] {
         const txDate = new Date(Date.now() - daysAgo * 24 * 3600_000).toISOString();
 
         const p = new Property(
-          newPropertyId(), kOrgId, '', state, unitKey, community.name,
+          newPropertyId(), kOrgId, DEMO_DATASET_ID, state, unitKey, community.name,
           cluster, building, unitNumber, undefined,
           TYPES[n % TYPES.length],
           (n % 4) + 1,
@@ -165,8 +175,27 @@ async function seedDemoData(log: (m: string) => void): Promise<void> {
   }
 
   const properties = buildDemoProperties();
+
+  // The dataset row must exist before the properties that point at it — there's
+  // a FK from properties.dataset_id → datasets.id. With it in place the whole
+  // demo set is deletable from Control → Import & Files → Data sets.
+  const demoDataset = new DataSet(
+    DEMO_DATASET_ID,
+    'Demo data (synthetic)',
+    'Seed',
+    DataSetType.register,
+    DataModule.owners,
+    'seed',
+    'Demo communities',
+    new Date().toISOString(),
+    undefined,
+    properties.length,
+    properties.filter(p => p.callable).length,
+    0,
+  );
+  await insertDataset(demoDataset, null);
   await saveProperties(properties);
-  log(`  seeded ${properties.length} SYNTHETIC properties`);
+  log(`  seeded ${properties.length} SYNTHETIC properties (data set "${demoDataset.name}")`);
 
   const brokers = demoUsers.filter(u => u.role === UserRole.broker);
   if (brokers.length > 0) {

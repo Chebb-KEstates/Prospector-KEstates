@@ -114,7 +114,17 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
 
   const bump = useCallback(() => setRevision(r => r + 1), []);
   const mounted = useRef(true);
-  useEffect(() => () => { mounted.current = false; }, []);
+  // Set true on every mount, not only false on cleanup. Under React 18
+  // StrictMode the mount effect runs mount → unmount → remount; if we only ever
+  // set this false (on the simulated unmount) it stays false forever, and every
+  // `if (mounted.current) setX(...)` guard below silently no-ops — leaving
+  // users, datasets, settings and requests permanently empty even though their
+  // requests all return 200. Resetting it true on (re)mount keeps the guard
+  // honest across StrictMode and any real remount.
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const reloadDatasets = useCallback(async () => {
     // Only manageData may list data sets; anyone else would get a 403.
