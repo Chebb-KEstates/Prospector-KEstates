@@ -4,6 +4,7 @@ import { StateChip, OutcomeChip } from '../common/StateChip';
 import { Icon } from '../common/Icon';
 import { useTableLayout, ColumnsDialog } from '../common/tableLayout';
 import { usePropertyPage, usePropertyFacetsOrEmpty } from '../../data/hooks';
+import { useVault } from '../../state/VaultContext';
 import { fmtDate, fmtDateTime, fmtAed, fmtArea, fmtInt } from '../../utils/format';
 
 /**
@@ -120,18 +121,21 @@ interface Props {
   prefsKey?: string;
   checkedIds?: Set<string>;
   onCheckedChanged?: (ids: Set<string>) => void;
+  /** Manager view: show the "Assigned to" column and a filter-by-broker control. */
+  showAssignee?: boolean;
 }
 
-const PAGE_SIZE = 50;
+const PAGE_SIZES = [10, 25, 50, 100, 250];
 
 export function PropertyTable({
   scope, assignedTo, datasetId, fixedState,
   forcedOutcome, dueOnly, interestedOnly,
   onSelect, selectedId, teaser, hideOwner, prefsKey,
-  checkedIds, onCheckedChanged,
+  checkedIds, onCheckedChanged, showAssignee,
 }: Props) {
   const ownerHidden = !!teaser || !!hideOwner;
   const selectable = !!checkedIds && !!onCheckedChanged;
+  const { brokers, userById } = useVault();
 
   // ── Filters ──
   const [search, setSearch] = useState('');
@@ -144,9 +148,11 @@ export function PropertyTable({
   const [txFrom, setTxFrom] = useState('');
   const [txTo, setTxTo] = useState('');
   const [callableOnly, setCallableOnly] = useState(false);
+  const [assigneeFilter, setAssigneeFilter] = useState('');
   const [sortKey, setSortKey] = useState<ColKey>(PINNED);
   const [asc, setAsc] = useState(true);
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
   const [showCols, setShowCols] = useState(false);
 
   const facets = usePropertyFacetsOrEmpty(
@@ -154,7 +160,11 @@ export function PropertyTable({
   );
 
   const query = useMemo(() => ({
-    scope, assignedTo, datasetId,
+    scope,
+    // A fixed `assignedTo` (broker views) wins; otherwise the manager's
+    // filter-by-broker control drives it.
+    assignedTo: assignedTo || assigneeFilter || undefined,
+    datasetId,
     search: search.trim() || undefined,
     community: community || undefined,
     cluster: cluster || undefined,
@@ -170,10 +180,10 @@ export function PropertyTable({
     sortKey: sortKey === PINNED ? undefined : sortKey,
     asc,
     page,
-    pageSize: PAGE_SIZE,
-  }), [scope, assignedTo, datasetId, search, community, cluster, fixedState, state,
+    pageSize,
+  }), [scope, assignedTo, assigneeFilter, datasetId, search, community, cluster, fixedState, state,
        beds, nationality, outcome, forcedOutcome, dueOnly, interestedOnly,
-       txFrom, txTo, callableOnly, sortKey, asc, page]);
+       txFrom, txTo, callableOnly, sortKey, asc, page, pageSize]);
 
   const { rows, total, loading, initialLoading, error } = usePropertyPage(query);
 
@@ -213,6 +223,14 @@ export function PropertyTable({
         });
       }
     }
+    if (showAssignee) {
+      cols.push({
+        key: 'assignee', label: 'Assigned to', flex: 2,
+        render: p => p.assignedTo
+          ? <span>{userById(p.assignedTo)?.name ?? '—'}</span>
+          : <span style={{ color: 'var(--text-tertiary)' }}>Unassigned</span>,
+      });
+    }
     for (const k of extraKeys) {
       cols.push({
         key: `extra:${k}`, label: k, flex: 2, sortable: true,
@@ -220,23 +238,26 @@ export function PropertyTable({
       });
     }
     return cols;
-  }, [ownerHidden, extraKeys, phoneLabels]);
+  }, [ownerHidden, extraKeys, phoneLabels, showAssignee, userById]);
 
   const unitCol: ColDef = useMemo(() => ({
     key: PINNED, label: 'Unit', flex: 3, sortable: true, render: () => null,
   }), []);
   const colByKey = useMemo(() => new Map([unitCol, ...allCols].map(c => [c.key, c])), [allCols, unitCol]);
   const available = useMemo(() => allCols.map(c => c.key), [allCols]);
-  const defaultVisible = teaser ? DEFAULT_VISIBLE.teaser : hideOwner ? DEFAULT_VISIBLE.hideOwner : DEFAULT_VISIBLE.normal;
+  const defaultVisible = teaser ? DEFAULT_VISIBLE.teaser
+    : hideOwner ? DEFAULT_VISIBLE.hideOwner
+    : showAssignee ? [...DEFAULT_VISIBLE.normal, 'assignee']
+    : DEFAULT_VISIBLE.normal;
 
   const { order, setOrder, visible, setVisible, dense, setDense, persist, reset, visibleCols, loaded } =
     useTableLayout(available, defaultVisible, prefsKey);
 
-  const anyFilter = search.trim() || community || cluster || state || beds || nationality || outcome || txFrom || txTo || callableOnly;
+  const anyFilter = search.trim() || community || cluster || state || beds || nationality || outcome || txFrom || txTo || callableOnly || assigneeFilter;
   const clearFilters = () => {
     setSearch(''); setCommunity(''); setCluster(''); setState(''); setBeds('');
     setNationality(''); setOutcome(''); setTxFrom(''); setTxTo('');
-    setCallableOnly(false); setPage(0);
+    setCallableOnly(false); setAssigneeFilter(''); setPage(0);
   };
 
   // Any filter change must reset to page 0 — otherwise you can be stranded on
@@ -244,9 +265,9 @@ export function PropertyTable({
   // switching a quick chip also returns to the first page.
   useEffect(() => { setPage(0); },
     [search, community, cluster, state, beds, nationality, outcome, txFrom, txTo,
-     callableOnly, sortKey, asc, forcedOutcome, dueOnly, interestedOnly, scope]);
+     callableOnly, assigneeFilter, pageSize, sortKey, asc, forcedOutcome, dueOnly, interestedOnly, scope]);
 
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pages = Math.max(1, Math.ceil(total / pageSize));
   const pg = Math.min(page, pages - 1);
 
   const sortOn = (k: ColKey) => {
@@ -330,6 +351,12 @@ export function PropertyTable({
             {facets.outcomes.map(o => <option key={o} value={o}>{CallOutcomeLabel[o]}</option>)}
           </select>
         )}
+        {showAssignee && brokers.length > 0 && (
+          <select className="input" style={sel} value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}>
+            <option value="">All brokers</option>
+            {brokers.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        )}
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
           Purchased
           <input className="input" type="date" style={{ width: 140, padding: '5px 8px' }} value={txFrom} onChange={e => setTxFrom(e.target.value)} />
@@ -408,6 +435,14 @@ export function PropertyTable({
             <span style={{ fontSize: '0.75rem', color: 'var(--primary)' }}>· {fmtInt(checkedIds!.size)} selected</span>
           )}
           <div style={{ flex: 1 }} />
+          <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 5, marginRight: 4 }}>
+            View
+            <select className="input" style={{ padding: '4px 6px', width: 'auto' }} value={pageSize}
+              onChange={e => setPageSize(parseInt(e.target.value, 10))}>
+              {PAGE_SIZES.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            per page
+          </label>
           <button className="btn btn-icon btn-sm" disabled={pg === 0} onClick={() => setPage(pg - 1)}><Icon name="chevronLeft" size={16} /></button>
           <span style={{ fontSize: '0.75rem' }}>Page {pg + 1} of {pages}</span>
           <button className="btn btn-icon btn-sm" disabled={pg >= pages - 1} onClick={() => setPage(pg + 1)}><Icon name="chevronRight" size={16} /></button>

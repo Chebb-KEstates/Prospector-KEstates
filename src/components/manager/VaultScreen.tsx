@@ -71,7 +71,7 @@ export function VaultScreen() {
       )}
 
       {module === DataModule.owners ? (
-        <PropertyTable prefsKey="vault" scope="all" onSelect={handleViewProperty} />
+        <PropertyTable prefsKey="vault" scope="all" showAssignee onSelect={handleViewProperty} />
       ) : (
         <LeadTable prefsKey="vault_leads" scope="all" onSelect={id => setDetailLead(id)} />
       )}

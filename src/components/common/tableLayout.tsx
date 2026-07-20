@@ -7,7 +7,9 @@ import { Icon } from './Icon';
  * owner table and the lead table share ONE implementation (one table language).
  */
 export function useTableLayout(available: string[], defaultVisible: string[], prefsKey?: string) {
-  const storageKey = prefsKey ? `prospector.table.${prefsKey}.v2` : null;
+  // v3: added the "Assigned to" column + page-size control — bump so the new
+  // default columns show instead of an older persisted set hiding them.
+  const storageKey = prefsKey ? `prospector.table.${prefsKey}.v3` : null;
   const [order, setOrder] = useState<string[]>(available);
   const [visible, setVisible] = useState<Set<string>>(() => new Set(defaultVisible.filter(k => available.includes(k))));
   const [dense, setDense] = useState(false);
