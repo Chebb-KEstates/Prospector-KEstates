@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CallStop, CallUnit } from '../../state/CallSessionContext';
 import { CallOutcome, CallOutcomeLabel, CallOutcomeBuyerLabel } from '../../types/models';
 import type { PhoneEntry } from '../../types/models';
@@ -6,14 +6,7 @@ import { StateChip } from '../common/StateChip';
 import { Icon } from '../common/Icon';
 import { fmtDate, timeAgo } from '../../utils/format';
 import { ApiError } from '../../data/apiClient';
-
-function outcomeColor(o: CallOutcome): string {
-  if (o === CallOutcome.interestedSell || o === CallOutcome.interestedRent) return 'var(--success)';
-  if (o === CallOutcome.callbackLater) return 'var(--info)';
-  if (o === CallOutcome.unreachable || o === CallOutcome.dnc) return 'var(--error)';
-  if (o === CallOutcome.notInterested || o === CallOutcome.alreadyListed) return 'var(--warning)';
-  return 'var(--text-secondary)';
-}
+import { outcomeColor, ToneChip, sectionLabel, UnitDetailDialog } from './callVisuals';
 
 /** How positive an outcome is — used to pick one representative result for a
  *  multi-property call so the session's reached/interested stats stay right. */
@@ -33,32 +26,6 @@ function representative(outcomes: CallOutcome[]): CallOutcome {
   return outcomes.reduce((best, o) => (rank(o) > rank(best) ? o : best), outcomes[0]);
 }
 
-type Tone = 'good' | 'warn' | 'info' | 'neutral';
-function toneColor(t: Tone): string {
-  if (t === 'good') return 'var(--success)';
-  if (t === 'warn') return 'var(--warning)';
-  if (t === 'info') return 'var(--info)';
-  return 'var(--text-secondary)';
-}
-
-/** A soft tinted pill — the shared look for signal and rental chips. */
-function ToneChip({ tone, children }: { tone: Tone; children: React.ReactNode }) {
-  const c = toneColor(tone);
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px',
-      borderRadius: 999, fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap',
-      color: c, background: `color-mix(in srgb, ${c} 14%, transparent)`,
-      border: `1px solid color-mix(in srgb, ${c} 32%, transparent)`,
-    }}>{children}</span>
-  );
-}
-
-const sectionLabel: React.CSSProperties = {
-  fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase',
-  letterSpacing: '0.05em', color: 'var(--text-secondary)', marginBottom: 6,
-};
-
 /**
  * The rich, all-in-view call card. Order:
  *   identity + nationality → seller-signal chips → portfolio (each property with
@@ -68,12 +35,18 @@ const sectionLabel: React.CSSProperties = {
  *   owner (so "interested" tags only the property it's about) → notes → gold
  *   "Save & next". Keyed by stop id in the parent, so switching caller resets it.
  */
-export function CallCard({ stop, onComplete, onSkip, onReveal }: {
+export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
   stop: CallStop;
   onComplete: (outcome: CallOutcome) => void;
   onSkip: () => void;
   /** Fired after a successful reveal — callers use it to refresh a cap counter. */
   onReveal?: () => void;
+  /**
+   * True once the number is revealed and no result has been saved yet. The
+   * dialer uses this to lock navigation, so a broker can't reveal a number and
+   * move on without logging — the reveal is only worthwhile if it's recorded.
+   */
+  onLockChange?: (locked: boolean) => void;
 }) {
   const hasPhone = !!stop.phoneMasked;
   const [revealed, setRevealed] = useState(!hasPhone);
@@ -108,7 +81,16 @@ export function CallCard({ stop, onComplete, onSkip, onReveal }: {
     : (outcome ? [['self', outcome]] : []);
   const anyChosen = chosen.length > 0;
   const anyCallback = chosen.some(([, o]) => o === CallOutcome.callbackLater);
-  const canSave = anyChosen && (!anyCallback || !!followUpAt) && !saving;
+  // Someone was actually reached → feedback is required (avoids a bare "log &
+  // move on"). No-answer / unreachable need no note.
+  const reached = chosen.some(([, o]) => o !== CallOutcome.noAnswer && o !== CallOutcome.unreachable);
+  const needFeedback = reached;
+  const hasNote = note.trim().length > 0;
+  const canSave = anyChosen && (!anyCallback || !!followUpAt) && (!needFeedback || hasNote) && !saving;
+
+  // The card is "locked" once a number is revealed: the broker must log a
+  // result before the dialer will let them move to the next caller.
+  useEffect(() => { onLockChange?.(revealed); }, [revealed, onLockChange]);
 
   const reveal = async () => {
     if (revealing) return;
@@ -379,10 +361,11 @@ export function CallCard({ stop, onComplete, onSkip, onReveal }: {
         </div>
       )}
 
-      {/* Notes */}
+      {/* Notes — feedback is required once someone was reached */}
       {revealed && (
-        <textarea className="input" placeholder="Notes / what was said…" value={note}
-          onChange={e => setNote(e.target.value)} rows={2} style={{ resize: 'vertical' }} />
+        <textarea className="input" value={note} rows={2} style={{ resize: 'vertical' }}
+          placeholder={needFeedback ? 'Feedback / what was said… (required)' : 'Notes / what was said…'}
+          onChange={e => setNote(e.target.value)} />
       )}
 
       {/* Save & next — appears once a result is chosen */}
@@ -395,11 +378,26 @@ export function CallCard({ stop, onComplete, onSkip, onReveal }: {
           }}>
             <Icon name="check" size={18} /> {saving ? 'Saving…' : 'Save & next'}
           </button>
+          {!canSave && !saving && (
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: 6, textAlign: 'center' }}>
+              {anyCallback && !followUpAt ? 'Pick a call-back date to save.'
+                : needFeedback && !hasNote ? 'Add feedback to save this call.'
+                : ''}
+            </div>
+          )}
           {saveError && <ErrorBox>{saveError}</ErrorBox>}
         </div>
       )}
 
-      <button className="btn btn-ghost btn-sm" onClick={onSkip} style={{ alignSelf: 'flex-start' }}>Skip</button>
+      {/* Skip only before the number is revealed. Once revealed, the broker must
+          log a result — no slipping past a number they've already spent a view on. */}
+      {!revealed ? (
+        <button className="btn btn-ghost btn-sm" onClick={onSkip} style={{ alignSelf: 'flex-start' }}>Skip this owner</button>
+      ) : !anyChosen && (
+        <div style={{ fontSize: '0.72rem', color: 'var(--gold-dark)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="alert" size={13} /> Log a result to finish — the call is counted once you save.
+        </div>
+      )}
     </div>
   );
 }
@@ -412,104 +410,6 @@ function ErrorBox({ children }: { children: React.ReactNode }) {
       border: '1px solid color-mix(in srgb, var(--error) 45%, transparent)',
       color: 'var(--error)',
     }}>{children}</div>
-  );
-}
-
-/**
- * The per-property popup: one unit's full detail, its own call feedback, and an
- * editable notes field saved to the record. Opened by clicking a property in the
- * portfolio.
- */
-function UnitDetailDialog({ unit, ownerName, nationality, initialNotes, canEdit, label, onSave, onClose }: {
-  unit: CallUnit;
-  ownerName: string;
-  nationality?: string;
-  initialNotes: string;
-  canEdit: boolean;
-  label: (o: CallOutcome) => string;
-  onSave: (notes: string) => Promise<void>;
-  onClose: () => void;
-}) {
-  const [notes, setNotes] = useState(initialNotes);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const dirty = notes.trim() !== initialNotes.trim();
-
-  const save = async () => {
-    setSaving(true); setError(null);
-    try {
-      await onSave(notes.trim());
-      setSaved(true);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Could not save the notes. Try again.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 460, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-          <div style={{ minWidth: 0 }}>
-            <h3 style={{ fontWeight: 600, fontSize: '1.05rem' }} className="truncate">{unit.label}</h3>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }} className="truncate">{unit.location}</div>
-          </div>
-          <StateChip state={unit.state} />
-        </div>
-
-        <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--surface-2)', fontSize: '0.8125rem', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {unit.facts.length > 0 && <div style={{ color: 'var(--text-secondary)' }}>{unit.facts.join(' · ')}</div>}
-          {unit.rental && <div><ToneChip tone={unit.rental.tone}>{unit.rental.label}</ToneChip></div>}
-          {unit.lastSale && <div style={{ color: 'var(--text-secondary)' }}>Last sale: <b>{unit.lastSale}</b></div>}
-          <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', paddingTop: 4, borderTop: '1px solid var(--border-light)' }}>
-            Owner: {ownerName}{nationality ? ` · ${nationality}` : ''}
-          </div>
-        </div>
-
-        <div>
-          <div style={sectionLabel}>Call feedback{unit.history.length > 0 ? ` (${unit.history.length})` : ''}</div>
-          {unit.history.length === 0 ? (
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>No calls logged for this property yet.</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 180, overflow: 'auto' }}>
-              {unit.history.map((h, i) => (
-                <div key={i} style={{ display: 'flex', gap: 8, fontSize: '0.75rem' }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 4, flexShrink: 0, background: outcomeColor(h.outcome) }} />
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600 }}>{label(h.outcome)}
-                      <span style={{ fontWeight: 400, color: 'var(--text-secondary)' }}> · {fmtDate(h.at)} · {timeAgo(h.at)}</span>
-                    </div>
-                    {h.note && <div style={{ color: 'var(--text-secondary)' }}>“{h.note}”</div>}
-                    {h.by && <div style={{ color: 'var(--text-tertiary)' }}>{h.by}</div>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div>
-          <div style={sectionLabel}>Notes on this property</div>
-          <textarea className="input" rows={4} style={{ resize: 'vertical', width: '100%' }}
-            placeholder={canEdit ? 'Add notes saved to this record…' : 'No notes.'}
-            value={notes} disabled={!canEdit || saving}
-            onChange={e => { setNotes(e.target.value); setSaved(false); }} />
-          {error && <div style={{ color: 'var(--error)', fontSize: '0.75rem', marginTop: 4 }}>{error}</div>}
-        </div>
-
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="btn" onClick={onClose}>Close</button>
-          {canEdit && (
-            <button className="btn btn-primary" onClick={save} disabled={!dirty || saving}>
-              {saving ? 'Saving…' : 'Save notes'}
-            </button>
-          )}
-          {saved && !dirty && <span style={{ fontSize: '0.75rem', color: 'var(--success)' }}>Saved ✓</span>}
-        </div>
-      </div>
-    </div>
   );
 }
 

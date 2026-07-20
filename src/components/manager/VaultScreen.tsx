@@ -3,7 +3,7 @@ import { useVault } from '../../state/VaultContext';
 import { DataModule, DataModuleLabel } from '../../types/models';
 import { PropertyTable } from './PropertyTable';
 import { LeadTable } from './LeadTable';
-import { PropertyDetail } from './PropertyDetail';
+import { PropertyPopup } from './PropertyPopup';
 import { LeadDetail } from './LeadDetail';
 import { ApiError } from '../../data/apiClient';
 import { Icon } from '../common/Icon';
@@ -33,9 +33,6 @@ export function VaultScreen() {
     }
   };
 
-  if (detailProperty) {
-    return <PropertyDetail propertyId={detailProperty} onBack={() => setDetailProperty(null)} />;
-  }
   if (detailLead) {
     return <LeadDetail leadId={detailLead} onBack={() => setDetailLead(null)} />;
   }
@@ -74,6 +71,10 @@ export function VaultScreen() {
         <PropertyTable prefsKey="vault" scope="all" showAssignee onSelect={handleViewProperty} />
       ) : (
         <LeadTable prefsKey="vault_leads" scope="all" onSelect={id => setDetailLead(id)} />
+      )}
+
+      {detailProperty && (
+        <PropertyPopup propertyId={detailProperty} onClose={() => setDetailProperty(null)} />
       )}
     </div>
   );

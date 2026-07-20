@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { PropertyState } from '../../types/models';
 import { PropertyTable } from './PropertyTable';
+import { PropertyPopup } from './PropertyPopup';
 import { RequestsScreen } from './RequestsScreen';
 import { ApiError } from '../../data/apiClient';
 import { Icon } from '../common/Icon';
@@ -15,12 +16,24 @@ import { Icon } from '../common/Icon';
  * tab is open.
  */
 export function AssignmentsScreen() {
-  const { brokers, assign, reclaim, pendingRequests } = useVault();
+  const { brokers, assign, reclaim, pendingRequests, recordView } = useVault();
   const [tab, setTab] = useState<'pool' | 'assigned' | 'requests'>('pool');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [assignBroker, setAssignBroker] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  const [detail, setDetail] = useState<string | null>(null);
+
+  // Row click opens the owner popup — an audited, cap-counted view, same as the
+  // Data Vault. The checkbox still selects for assign/reclaim.
+  const openDetail = async (id: string) => {
+    try {
+      await recordView(id, `Viewed owner detail ${id}`);
+      setDetail(id);
+    } catch (err) {
+      setMessage({ kind: 'error', text: err instanceof ApiError ? err.message : 'Could not open that record.' });
+    }
+  };
 
   const handleAssign = async () => {
     if (!assignBroker || selected.size === 0 || busy) return;
@@ -135,10 +148,14 @@ export function AssignmentsScreen() {
           prefsKey={tab === 'pool' ? 'mgr_pool' : 'mgr_assigned'}
           scope="all"
           fixedState={tab === 'pool' ? PropertyState.pool : PropertyState.assigned}
+          showAssignee={tab === 'assigned'}
           checkedIds={selected}
           onCheckedChanged={setSelected}
+          onSelect={openDetail}
         />
       </>}
+
+      {detail && <PropertyPopup propertyId={detail} onClose={() => setDetail(null)} />}
     </div>
   );
 }

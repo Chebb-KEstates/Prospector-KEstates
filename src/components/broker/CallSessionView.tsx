@@ -40,18 +40,24 @@ export function CallSessionView() {
     return () => ro.disconnect();
   }, []);
 
-  // Arrow-key navigation.
+  // Locked while the active card has revealed a number but not logged a result —
+  // so a broker can't reveal a number and move on without recording the call.
+  const [locked, setLocked] = useState(false);
+  useEffect(() => { setLocked(false); }, [session?.index]);
+
+  // Arrow-key navigation — disabled while locked.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Don't hijack arrow keys while the broker is typing notes / in a field.
       const el = document.activeElement;
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      if (locked) return;
       if (e.key === 'ArrowRight') next();
       if (e.key === 'ArrowLeft') prev();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [next, prev]);
+  }, [next, prev, locked]);
 
   if (!session || !user) return null;
   const { stops, index } = session;
@@ -84,8 +90,8 @@ export function CallSessionView() {
 
       {/* Coverflow */}
       <div style={{ display: 'flex', alignItems: 'stretch', gap: 6, flex: 1, minHeight: 0 }}>
-        <button className="btn btn-icon" onClick={prev} disabled={index === 0}
-          style={{ alignSelf: 'center', opacity: index === 0 ? 0.35 : 1 }} aria-label="Previous caller">
+        <button className="btn btn-icon" onClick={prev} disabled={index === 0 || locked}
+          style={{ alignSelf: 'center', opacity: (index === 0 || locked) ? 0.35 : 1 }} aria-label="Previous caller">
           <Icon name="chevronLeft" size={22} />
         </button>
 
@@ -99,7 +105,7 @@ export function CallSessionView() {
               `rotateY(${-offset * 22}deg) scale(${1 - Math.abs(offset) * 0.16})`;
             return (
               <div key={stop.id}
-                onClick={() => { if (!isActive) setIndex(i); }}
+                onClick={() => { if (!isActive && !locked) setIndex(i); }}
                 style={{
                   position: 'absolute', top: 0, bottom: 0, left: '50%',
                   width: cardW, transform, transformStyle: 'preserve-3d',
@@ -107,26 +113,32 @@ export function CallSessionView() {
                   opacity: Math.max(0.35, 1 - Math.abs(offset) * 0.42),
                   zIndex: 10 - Math.abs(offset),
                   transition: 'transform .42s cubic-bezier(.22,.61,.36,1), opacity .42s',
-                  cursor: isActive ? 'default' : 'pointer',
+                  cursor: isActive ? 'default' : locked ? 'not-allowed' : 'pointer',
                   pointerEvents: Math.abs(offset) > 1 ? 'none' : 'auto',
                 }}>
                 {isActive
-                  ? <CallCard key={stop.id} stop={stop} onComplete={(o) => logged(o)} onSkip={next} />
+                  ? <CallCard key={stop.id} stop={stop} onComplete={(o) => logged(o)} onSkip={next} onLockChange={setLocked} />
                   : <PreviewTile stop={stop} side={offset < 0 ? 'left' : 'right'} done={i < worked} />}
               </div>
             );
           })}
         </div>
 
-        <button className="btn btn-icon" onClick={next} disabled={index === total - 1}
-          style={{ alignSelf: 'center', opacity: index === total - 1 ? 0.35 : 1 }} aria-label="Next caller">
+        <button className="btn btn-icon" onClick={next} disabled={index === total - 1 || locked}
+          style={{ alignSelf: 'center', opacity: (index === total - 1 || locked) ? 0.35 : 1 }} aria-label="Next caller">
           <Icon name="chevronRight" size={22} />
         </button>
       </div>
 
-      <div style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-tertiary)', display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center' }}>
-        <Icon name="chevronLeft" size={13} /> Use the arrows to move through your list <Icon name="chevronRight" size={13} />
-      </div>
+      {locked ? (
+        <div style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--gold-dark)', display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center' }}>
+          <Icon name="alert" size={13} /> Log this call to continue — the number is only worth revealing if the call is recorded.
+        </div>
+      ) : (
+        <div style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-tertiary)', display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center' }}>
+          <Icon name="chevronLeft" size={13} /> Use the arrows to move through your list <Icon name="chevronRight" size={13} />
+        </div>
+      )}
     </div>
   );
 }
