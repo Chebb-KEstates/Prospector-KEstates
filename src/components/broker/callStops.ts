@@ -1,4 +1,4 @@
-import { CallStop, CallHistoryEntry, AssetRow } from '../../state/CallSessionContext';
+import { CallStop, CallHistoryEntry, AssetRow, CallUnit, CallSignal } from '../../state/CallSessionContext';
 import { Property, Lead, PropertyState, CallLog } from '../../types/models';
 import { AppUser } from '../../types/user';
 import { groupByOwner, ownerKeyOf } from '../../logic/ownerGrouping';
@@ -31,6 +31,36 @@ export interface StopDeps {
   logLeadCall: (lead: Lead, outcome: any, note?: string, followUpAt?: string) => Promise<void>;
 }
 
+/** A rental read for one property — vacant is an opening, a lease ending soon is a nudge. */
+function rentalOf(p: Property): CallUnit['rental'] {
+  const status = (p.extra?.['Rental status'] ?? '').toLowerCase();
+  const rented = !!p.rentEnd || /new|renew|rented|leased|tenant/.test(status);
+  if (rented) {
+    const amt = p.rentAmount ? ` · ${fmtAed(p.rentAmount)}/yr` : '';
+    const end = p.rentEnd ? ` · ends ${fmtDate(p.rentEnd)}` : '';
+    return { label: `Rented${amt}${end}`, tone: leaseSoon(p.rentEnd) ? 'warn' : 'info' };
+  }
+  if (/no rental|vacant|none|empty/.test(status)) return { label: 'Vacant', tone: 'good' };
+  return undefined;
+}
+
+/** Whole years since a date, floored; null if unparseable. */
+function yearsOwned(date?: string): number | null {
+  if (!date) return null;
+  const t = new Date(date).getTime();
+  if (isNaN(t)) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / (365.25 * 24 * 3600 * 1000)));
+}
+
+/** A lease ending within ~4 months — a real reason to call now. */
+function leaseSoon(end?: string): boolean {
+  if (!end) return false;
+  const t = new Date(end).getTime();
+  if (isNaN(t)) return false;
+  const days = (t - Date.now()) / (24 * 3600 * 1000);
+  return days >= 0 && days <= 120;
+}
+
 /** One stop for an owner and all of their units. */
 export function buildOwnerStop(
   units: Property[],
@@ -39,13 +69,52 @@ export function buildOwnerStop(
 ): CallStop {
   const g0 = units[0];
   const owner = g0.owner;
+
+  // Rich per-property lines: beds/type/size + imported extras (layout, floor)
+  // and a rental read.
+  const richUnits: CallUnit[] = units.map((p: Property) => {
+    const facts: string[] = [];
+    if (p.beds != null) facts.push(`${p.beds} bed`);
+    if (p.propertyType) facts.push(p.propertyType);
+    if (p.sizeSqft != null) facts.push(fmtArea(p.sizeSqft));
+    const layout = p.extra?.['Layout'];
+    if (layout) facts.push(layout);
+    const floor = p.extra?.['Floor'];
+    if (floor) facts.push(`Floor ${floor}`);
+    return {
+      label: p.unitLabel,
+      location: [p.community, p.cluster].filter(Boolean).join(' · '),
+      facts,
+      rental: rentalOf(p),
+    };
+  });
+
+  // Seller signals — the "why call now" at a glance.
+  const signals: CallSignal[] = [];
+  if (units.length > 1) signals.push({ label: `${units.length} properties`, tone: 'good' });
+  const years = yearsOwned(g0.lastTransactionDate);
+  if (years != null) {
+    signals.push(years < 1
+      ? { label: 'Bought < 1 yr ago', tone: 'neutral' }
+      : { label: `Owned ${years} yr${years === 1 ? '' : 's'}`, tone: years >= 4 ? 'good' : 'info' });
+  }
+  const vacant = richUnits.filter(u => u.rental?.tone === 'good').length;
+  const rented = richUnits.filter(u => u.rental && u.rental.tone !== 'good').length;
+  if (vacant > 0) signals.push({ label: units.length > 1 ? `${vacant} vacant` : 'Vacant', tone: 'good' });
+  else if (rented > 0) signals.push({ label: units.length > 1 ? `${rented} rented` : 'Rented', tone: 'info' });
+  const soon = units.map(u => u.rentEnd).filter((e): e is string => !!e && leaseSoon(e)).sort()[0];
+  if (soon) signals.push({ label: `Lease ends ${fmtDate(soon)}`, tone: 'warn' });
+
+  const lastSale = g0.lastTransactionValue != null
+    ? `${fmtAed(g0.lastTransactionValue)}${g0.lastTransactionDate ? ` · ${fmtDate(g0.lastTransactionDate)}` : ''}`
+    : undefined;
+
+  // `assets` stays as the buyer-lead / fallback shape.
   const assets: AssetRow[] = units.map((p: Property) => ({
     label: p.unitLabel,
     value: [p.community, p.beds != null ? `${p.beds} bed` : null, p.propertyType].filter(Boolean).join(' · '),
   }));
-  if (g0?.lastTransactionValue != null) {
-    assets.push({ label: 'Last sale', value: `${fmtAed(g0.lastTransactionValue)} · ${fmtDate(g0.lastTransactionDate)}` });
-  }
+  if (lastSale) assets.push({ label: 'Last sale', value: lastSale });
   if (g0?.sizeSqft != null) assets.push({ label: 'Size', value: fmtArea(g0.sizeSqft) });
 
   return {
@@ -59,8 +128,12 @@ export function buildOwnerStop(
     // same rule the client's recordView(…, false) applied at this point.
     reveal: async () => (await api.properties.reveal(g0.id, false)).phones,
     subtitle: `${units.length} unit${units.length === 1 ? '' : 's'} · ${g0.community}`,
-    assetsTitle: `Assets (${units.length})`,
+    assetsTitle: `Portfolio (${units.length})`,
     assets,
+    nationality: owner.nationality || undefined,
+    signals,
+    units: richUnits,
+    lastSale,
     state: g0?.state ?? PropertyState.assigned,
     note: units.map(p => p.assignmentNote).find(Boolean),
     history: history(calls, deps.nameOf),

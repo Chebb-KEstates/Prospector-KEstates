@@ -12,6 +12,20 @@ export interface CallHistoryEntry {
 
 export interface AssetRow { label: string; value: string; }
 
+/** How a chip reads at a glance: an opportunity, a warning, info, or plain. */
+export type ChipTone = 'good' | 'warn' | 'info' | 'neutral';
+
+/** A computed "why this owner is worth calling" chip (portfolio, tenure, vacancy…). */
+export interface CallSignal { label: string; tone: ChipTone; }
+
+/** One property in the owner's portfolio, richly described for the caller. */
+export interface CallUnit {
+  label: string;                              // "Unit 13"
+  location: string;                           // "Dubai Hills Estate · Maple 1"
+  facts: string[];                            // ["5 bed", "Townhouse", "2,734 sqft", "Type 2E", "Floor G+1"]
+  rental?: { label: string; tone: ChipTone }; // "Vacant" / "Rented · ends 12 Sep 2026"
+}
+
 /**
  * A single stop in a calling session — one owner (with all their units) or one
  * buyer lead. Carries everything the rich card renders, plus two closures that
@@ -46,6 +60,14 @@ export interface CallStop {
   subtitle: string;
   assetsTitle: string;
   assets: AssetRow[];
+  /**
+   * Richer, owner-only fields the card prefers when present. Buyer-lead stops
+   * leave them undefined, and the card falls back to `assets`.
+   */
+  nationality?: string;
+  signals?: CallSignal[];
+  units?: CallUnit[];
+  lastSale?: string;
   state: PropertyState;
   note?: string;
   history: CallHistoryEntry[];

@@ -15,6 +15,27 @@ function outcomeColor(o: CallOutcome): string {
   return 'var(--text-secondary)';
 }
 
+type Tone = 'good' | 'warn' | 'info' | 'neutral';
+function toneColor(t: Tone): string {
+  if (t === 'good') return 'var(--success)';
+  if (t === 'warn') return 'var(--warning)';
+  if (t === 'info') return 'var(--info)';
+  return 'var(--text-secondary)';
+}
+
+/** A soft tinted pill — the shared look for signal and rental chips. */
+function ToneChip({ tone, children }: { tone: Tone; children: React.ReactNode }) {
+  const c = toneColor(tone);
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px',
+      borderRadius: 999, fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap',
+      color: c, background: `color-mix(in srgb, ${c} 14%, transparent)`,
+      border: `1px solid color-mix(in srgb, ${c} 32%, transparent)`,
+    }}>{children}</span>
+  );
+}
+
 /**
  * The rich, all-in-view call card (ported from call_flow.dart). Order:
  * small identity + flag → summarised record box → Call (reveals number) →
@@ -105,28 +126,64 @@ export function CallCard({ stop, onComplete, onSkip, onReveal }: {
       {/* Identity */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{
-          width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
+          width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
           background: 'var(--surface-2)', display: 'flex', alignItems: 'center',
-          justifyContent: 'center', fontSize: 18,
+          justifyContent: 'center', fontSize: 20,
         }}>{stop.flag}</div>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: '1.05rem', fontWeight: 600 }} className="truncate">{stop.name}</div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }} className="truncate">{stop.subtitle}</div>
+          <div style={{ fontSize: '1.05rem', fontWeight: 600, lineHeight: 1.2 }} className="truncate">{stop.name}</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }} className="truncate">
+            {[stop.nationality, stop.subtitle].filter(Boolean).join(' · ')}
+          </div>
         </div>
         <StateChip state={stop.state} />
       </div>
 
-      {/* Summarised record box */}
+      {/* Seller signals — the "why call now" at a glance */}
+      {stop.signals && stop.signals.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {stop.signals.map((s, i) => <ToneChip key={i} tone={s.tone}>{s.label}</ToneChip>)}
+        </div>
+      )}
+
+      {/* Portfolio */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--surface-2)' }}>
-        <div style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', marginBottom: 6 }}>
+        <div style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)', marginBottom: 8 }}>
           {stop.assetsTitle}
         </div>
-        {stop.assets.slice(0, 6).map((a, i) => (
-          <div key={i} style={{ display: 'flex', gap: 8, justifyContent: 'space-between', padding: '3px 0', fontSize: '0.8125rem' }}>
-            <span className="truncate" style={{ color: 'var(--text-secondary)' }}>{a.label}</span>
-            <span className="truncate" style={{ textAlign: 'right', fontWeight: 500 }}>{a.value}</span>
+
+        {stop.units && stop.units.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {stop.units.slice(0, 6).map((u, i) => (
+              <div key={i} style={{ padding: '7px 0', borderTop: i > 0 ? '1px solid var(--border-light)' : undefined }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+                  <span style={{ fontWeight: 600, fontSize: '0.8125rem' }} className="truncate">{u.label}</span>
+                  {u.rental && <ToneChip tone={u.rental.tone}>{u.rental.label}</ToneChip>}
+                </div>
+                {u.location && <div className="truncate" style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{u.location}</div>}
+                {u.facts.length > 0 && <div className="truncate" style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{u.facts.join(' · ')}</div>}
+              </div>
+            ))}
+            {stop.units.length > 6 && (
+              <div style={{ paddingTop: 6, fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>+{stop.units.length - 6} more</div>
+            )}
           </div>
-        ))}
+        ) : (
+          stop.assets.slice(0, 6).map((a, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, justifyContent: 'space-between', padding: '3px 0', fontSize: '0.8125rem' }}>
+              <span className="truncate" style={{ color: 'var(--text-secondary)' }}>{a.label}</span>
+              <span className="truncate" style={{ textAlign: 'right', fontWeight: 500 }}>{a.value}</span>
+            </div>
+          ))
+        )}
+
+        {stop.lastSale && (
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: '0.8125rem' }}>
+            <span style={{ color: 'var(--text-secondary)' }}>Last sale</span>
+            <span style={{ fontWeight: 600 }} className="truncate">{stop.lastSale}</span>
+          </div>
+        )}
+
         {stop.note && (
           <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-light)', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
             <b>Internal note:</b> {stop.note}
