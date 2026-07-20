@@ -299,10 +299,29 @@ export function ImportWizard() {
               <Stat label="Invalid rows" value={dryRun.invalidRows} />
               <Stat label="New properties" value={dryRun.newCount} color="var(--success)" />
               <Stat label="Updated" value={dryRun.updatedCount} color="var(--info)" />
-              <Stat label="Callable" value={dryRun.callable} />
+              <Stat label="Callable" value={dryRun.callable} color={dryRun.callable === 0 ? 'var(--warning)' : undefined} />
               <Stat label="Duplicate rows" value={dryRun.inFileDuplicates} />
             </div>
           </div>
+
+          {/* Guard against importing a contactless file (e.g. a property-only
+              export) — 0 callable means no "Owner mobile" column was mapped. */}
+          {dryRun.callable === 0 && (dryRun.newCount + dryRun.updatedCount) > 0 && (
+            <div className="card" style={{
+              marginBottom: 16, display: 'flex', gap: 10, alignItems: 'flex-start',
+              borderColor: 'var(--warning)', background: 'color-mix(in srgb, var(--warning) 8%, transparent)',
+            }}>
+              <Icon name="alert" size={18} style={{ color: 'var(--warning)', flexShrink: 0, marginTop: 1 }} />
+              <div style={{ fontSize: '0.8125rem' }}>
+                <div style={{ fontWeight: 600, color: 'var(--warning)' }}>No phone numbers — nothing here will be callable</div>
+                <div style={{ color: 'var(--text-secondary)', marginTop: 2 }}>
+                  None of these {dryRun.newCount + dryRun.updatedCount} records have an owner mobile, so brokers
+                  won't be able to call them. Go back and map an “Owner mobile” column, or import a file that
+                  includes owner contacts.
+                </div>
+              </div>
+            </div>
+          )}
 
           {dryRun.sample.length > 0 && (
             <div className="card" style={{ marginBottom: 16 }}>
