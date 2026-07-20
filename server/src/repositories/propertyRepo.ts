@@ -266,6 +266,11 @@ export interface PropertyFilter {
   dueOnly?: boolean;
   /** Last outcome was interested (sell or rent) — the "Interested" chip. */
   interestedOnly?: boolean;
+  /**
+   * Tenancy signal: 'vacant' (no rental), 'rented', or 'leaseSoon' (lease ends
+   * within ~90 days). Derived from rent_end plus the imported "Rental status".
+   */
+  tenancy?: 'vacant' | 'rented' | 'leaseSoon';
 }
 
 export interface PropertyQuery extends PropertyFilter {
@@ -335,6 +340,21 @@ function buildWhere(f: PropertyFilter): { sql: string; params: unknown[] } {
   if (f.dueOnly) where.push('next_follow_up_at IS NOT NULL AND next_follow_up_at <= NOW(3)');
   if (f.interestedOnly) {
     where.push(`last_outcome IN ('${CallOutcome.interestedSell}', '${CallOutcome.interestedRent}')`);
+  }
+
+  // Tenancy — a lease ending soon or a vacant unit is a live selling signal.
+  // Read from rent_end plus the imported "Rental status" extra; all literals,
+  // so no user input reaches the SQL.
+  if (f.tenancy) {
+    const status = `LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(extra, '$."Rental status"')), ''))`;
+    const rented = `(rent_end IS NOT NULL OR rent_amount IS NOT NULL OR ${status} REGEXP 'new|renew|rented|leased|tenant')`;
+    if (f.tenancy === 'vacant') {
+      where.push(`(${status} REGEXP 'no rental|vacant' OR NOT ${rented})`);
+    } else if (f.tenancy === 'rented') {
+      where.push(rented);
+    } else if (f.tenancy === 'leaseSoon') {
+      where.push('rent_end IS NOT NULL AND rent_end >= NOW(3) AND rent_end <= (NOW(3) + INTERVAL 90 DAY)');
+    }
   }
 
   // The client compared against a parsed date with no time component; a bare

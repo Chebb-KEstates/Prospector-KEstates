@@ -116,6 +116,8 @@ export interface PropertyQuery {
   dueOnly?: boolean;
   /** Last outcome was interested (sell or rent) — the "Interested" chip. */
   interestedOnly?: boolean;
+  /** Tenancy signal filter. */
+  tenancy?: 'vacant' | 'rented' | 'leaseSoon';
   assignedTo?: string; datasetId?: string;
   scope?: 'all' | 'mine' | 'pool';
   sortKey?: string; asc?: boolean; page?: number; pageSize?: number;

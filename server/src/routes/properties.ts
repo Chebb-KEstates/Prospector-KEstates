@@ -45,6 +45,7 @@ const listQuerySchema = {
     callableOnly: { type: 'boolean' },
     dueOnly: { type: 'boolean' },
     interestedOnly: { type: 'boolean' },
+    tenancy: { type: 'string', enum: ['vacant', 'rented', 'leaseSoon'] },
     assignedTo: { type: 'string', maxLength: 64 },
     datasetId: { type: 'string', maxLength: 64 },
     scope: { type: 'string', enum: ['all', 'mine', 'pool'] },
@@ -61,6 +62,7 @@ interface ListQuery {
   state?: PropertyState | ''; beds?: number; nationality?: string;
   outcome?: string; txFrom?: string; txTo?: string; callableOnly?: boolean;
   dueOnly?: boolean; interestedOnly?: boolean;
+  tenancy?: 'vacant' | 'rented' | 'leaseSoon';
   assignedTo?: string; datasetId?: string;
   scope?: 'all' | 'mine' | 'pool';
   sortKey?: string; asc?: boolean; page?: number; pageSize?: number;
@@ -135,6 +137,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
       callableOnly: q.callableOnly,
       dueOnly: q.dueOnly,
       interestedOnly: q.interestedOnly,
+      tenancy: q.tenancy,
       datasetId: q.datasetId,
       assignedTo: scope.assignedTo,
       states: scope.states,

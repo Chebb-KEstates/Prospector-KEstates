@@ -148,6 +148,7 @@ export function PropertyTable({
   const [txFrom, setTxFrom] = useState('');
   const [txTo, setTxTo] = useState('');
   const [callableOnly, setCallableOnly] = useState(false);
+  const [tenancy, setTenancy] = useState<'' | 'vacant' | 'rented' | 'leaseSoon'>('');
   const [assigneeFilter, setAssigneeFilter] = useState('');
   const [sortKey, setSortKey] = useState<ColKey>(PINNED);
   const [asc, setAsc] = useState(true);
@@ -177,13 +178,14 @@ export function PropertyTable({
     txFrom: txFrom || undefined,
     txTo: txTo || undefined,
     callableOnly: callableOnly || undefined,
+    tenancy: tenancy || undefined,
     sortKey: sortKey === PINNED ? undefined : sortKey,
     asc,
     page,
     pageSize,
   }), [scope, assignedTo, assigneeFilter, datasetId, search, community, cluster, fixedState, state,
        beds, nationality, outcome, forcedOutcome, dueOnly, interestedOnly,
-       txFrom, txTo, callableOnly, sortKey, asc, page, pageSize]);
+       txFrom, txTo, callableOnly, tenancy, sortKey, asc, page, pageSize]);
 
   const { rows, total, loading, initialLoading, error } = usePropertyPage(query);
 
@@ -253,11 +255,11 @@ export function PropertyTable({
   const { order, setOrder, visible, setVisible, dense, setDense, persist, reset, visibleCols, loaded } =
     useTableLayout(available, defaultVisible, prefsKey);
 
-  const anyFilter = search.trim() || community || cluster || state || beds || nationality || outcome || txFrom || txTo || callableOnly || assigneeFilter;
+  const anyFilter = search.trim() || community || cluster || state || beds || nationality || outcome || txFrom || txTo || callableOnly || tenancy || assigneeFilter;
   const clearFilters = () => {
     setSearch(''); setCommunity(''); setCluster(''); setState(''); setBeds('');
     setNationality(''); setOutcome(''); setTxFrom(''); setTxTo('');
-    setCallableOnly(false); setAssigneeFilter(''); setPage(0);
+    setCallableOnly(false); setTenancy(''); setAssigneeFilter(''); setPage(0);
   };
 
   // Any filter change must reset to page 0 — otherwise you can be stranded on
@@ -265,7 +267,7 @@ export function PropertyTable({
   // switching a quick chip also returns to the first page.
   useEffect(() => { setPage(0); },
     [search, community, cluster, state, beds, nationality, outcome, txFrom, txTo,
-     callableOnly, assigneeFilter, pageSize, sortKey, asc, forcedOutcome, dueOnly, interestedOnly, scope]);
+     callableOnly, tenancy, assigneeFilter, pageSize, sortKey, asc, forcedOutcome, dueOnly, interestedOnly, scope]);
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const pg = Math.min(page, pages - 1);
@@ -363,6 +365,12 @@ export function PropertyTable({
           –
           <input className="input" type="date" style={{ width: 140, padding: '5px 8px' }} value={txTo} onChange={e => setTxTo(e.target.value)} />
         </label>
+        <select className="input" style={sel} value={tenancy} onChange={e => setTenancy(e.target.value as typeof tenancy)}>
+          <option value="">Any tenancy</option>
+          <option value="vacant">Vacant</option>
+          <option value="rented">Rented</option>
+          <option value="leaseSoon">Lease ending ≤ 90d</option>
+        </select>
         <button className={`btn btn-sm ${callableOnly ? 'btn-primary' : ''}`} onClick={() => setCallableOnly(v => !v)}>Callable</button>
         <div style={{ flex: 1 }} />
         {/* A quiet spinner: the old in-memory filter was instant, so a loud
