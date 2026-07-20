@@ -5,13 +5,17 @@ export enum ImportField {
   cluster = 'cluster',
   building = 'building',
   unitNumber = 'unitNumber',
+  unitCode = 'unitCode',
   plotNumber = 'plotNumber',
   propertyType = 'propertyType',
+  layout = 'layout',
+  floor = 'floor',
   beds = 'beds',
   sizeSqft = 'sizeSqft',
   plotSqft = 'plotSqft',
   transactionDate = 'transactionDate',
   transactionValue = 'transactionValue',
+  saleType = 'saleType',
   partyType = 'partyType',
   ownerName = 'ownerName',
   phone = 'phone',
@@ -19,6 +23,7 @@ export enum ImportField {
   rentStart = 'rentStart',
   rentEnd = 'rentEnd',
   rentAmount = 'rentAmount',
+  rentalStatus = 'rentalStatus',
   ignore = 'ignore',
 }
 
@@ -27,13 +32,17 @@ export const ImportFieldLabel: Record<ImportField, string> = {
   [ImportField.cluster]: 'Sub-community / project',
   [ImportField.building]: 'Building name',
   [ImportField.unitNumber]: 'Unit number',
+  [ImportField.unitCode]: 'Unit code / reference',
   [ImportField.plotNumber]: 'Plot / pre-reg number',
   [ImportField.propertyType]: 'Property type',
+  [ImportField.layout]: 'Layout / floor plan',
+  [ImportField.floor]: 'Floor',
   [ImportField.beds]: 'Bedrooms',
   [ImportField.sizeSqft]: 'Built-up area (sq ft)',
   [ImportField.plotSqft]: 'Plot area (sq ft)',
   [ImportField.transactionDate]: 'Transaction date',
   [ImportField.transactionValue]: 'Transaction value (AED)',
+  [ImportField.saleType]: 'Sale type (Initial / Resale)',
   [ImportField.partyType]: 'Party type (Buyer/Seller)',
   [ImportField.ownerName]: 'Owner name',
   [ImportField.phone]: 'Owner mobile',
@@ -41,8 +50,25 @@ export const ImportFieldLabel: Record<ImportField, string> = {
   [ImportField.rentStart]: 'Rent start',
   [ImportField.rentEnd]: 'Rent end',
   [ImportField.rentAmount]: 'Annual rent (AED)',
+  [ImportField.rentalStatus]: 'Rental status',
   [ImportField.ignore]: '— ignore —',
 };
+
+/**
+ * Descriptive columns we keep as first-class, mappable fields but store in the
+ * flexible `extra` JSON rather than dedicated model/DB columns. They appear in
+ * the mapping dropdown, auto-map, and show up in the data table's column list —
+ * without a schema change. The string is the canonical key written to `extra`,
+ * so the same concept from differently-named vendor sheets unifies under one
+ * column (e.g. "Layout" and "Floor Plan" both land in `extra['Layout']`).
+ */
+export const EXTRA_BACKED_FIELDS: [ImportField, string][] = [
+  [ImportField.unitCode, 'Unit code'],
+  [ImportField.layout, 'Layout'],
+  [ImportField.floor, 'Floor'],
+  [ImportField.saleType, 'Sale type'],
+  [ImportField.rentalStatus, 'Rental status'],
+];
 
 export class ParsedSheet {
   constructor(

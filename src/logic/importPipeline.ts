@@ -1,6 +1,6 @@
 import { Property, OwnerInfo, DataSetType, kOrgId, PropertyState } from '../types/models';
 import type { PhoneEntry } from '../types/models';
-import { ImportField, ColumnSpec, ParsedSheet, DryRunResult } from './importModels';
+import { ImportField, ColumnSpec, ParsedSheet, DryRunResult, EXTRA_BACKED_FIELDS } from './importModels';
 
 export abstract class ImportPipeline {
   static detectHeaderRow(rows: unknown[][]): number {
@@ -25,6 +25,18 @@ export abstract class ImportPipeline {
         values.filter(v => v != null && String(v).trim().length > 0).slice(0, 3).map(v => String(v)),
       ));
     }
+    // Two columns both read as the master community (e.g. "Development" AND
+    // "Community")? The later/weaker one is really the sub-community — demote it
+    // to cluster when cluster is still free, so both survive instead of one
+    // being dropped as a duplicate below.
+    const communityCols = specs.filter(s => s.field === ImportField.community);
+    if (communityCols.length > 1 && !specs.some(s => s.field === ImportField.cluster)) {
+      const isMaster = (hdr: string) => /master|development/i.test(hdr);
+      const master = communityCols.find(s => isMaster(s.header)) ?? communityCols[0];
+      const demote = communityCols.find(s => s !== master);
+      if (demote) demote.field = ImportField.cluster;
+    }
+
     const seen = new Set<ImportField>();
     for (const s of specs) {
       if (s.field === ImportField.ignore) continue;
@@ -44,23 +56,36 @@ export abstract class ImportPipeline {
     if (has('buildingno')) return ImportField.ignore;
     if (has('building')) return ImportField.building;
     if (has('country') || has('nationality')) return ImportField.nationality;
+    // Rental STATUS ("New" / "Renewed" / "No Rental") before amount/dates so it
+    // isn't swallowed by the "rental…" rules below.
+    if (has('rentalstatus') || has('rentstatus') || has('tenancystatus')) return ImportField.rentalStatus;
     if (has('rentalamount') || has('rentamount') || has('annualrent')) return ImportField.rentAmount;
     if (has('rentstart')) return ImportField.rentStart;
     if (has('rentend')) return ImportField.rentEnd;
+    // Sale type ("Initial Sale" / "Resale") is a descriptive tag — check before
+    // the generic property-"type" rule so it doesn't become the property type.
+    if (has('saletype') || has('salestype') || has('transactiontype')) return ImportField.saleType;
     if (has('procedureparty') || has('partytype') || has('buyerseller')) return ImportField.partyType;
     if (has('procedurevalue') || has('transactionvalue') || has('worth') || has('price')) return ImportField.transactionValue;
     if (has('regis') || has('transactiondate') || has('instancedate')) return ImportField.transactionDate;
-    if (has('masterproject') || has('mastercommunity')) return ImportField.community;
+    // Master community first — "Development" and "Master Community/Project" are
+    // the top level. A plain "Community" stays master for template/DLD sheets; a
+    // SECOND community-like column is demoted to sub-community in buildColumns.
+    if (has('masterproject') || has('mastercommunity') || has('development')) return ImportField.community;
     if (has('subcommunity') || has('projectlnd') || has('project') || has('cluster')) return ImportField.cluster;
     if (has('community')) return ImportField.community;
     if (has('plotpre') || has('preregno') || has('plotno') || has('plotnumber')) return ImportField.plotNumber;
+    // Unit CODE ("DE Maple-V-1") is a reference/identifier, not the unit number.
+    if (has('unitcode') || has('unitref') || has('unitid')) return ImportField.unitCode;
     if (has('unitnumber') || has('unitno') || h === 'unit') return ImportField.unitNumber;
-    if (has('propertytype') || has('usagetype')) return ImportField.propertyType;
+    if (has('propertytype') || has('usagetype') || has('unittype') || h === 'type') return ImportField.propertyType;
+    if (has('layout') || has('floorplan') || has('typecode')) return ImportField.layout;
+    if (has('floor') || has('storey')) return ImportField.floor;
     if (has('bed')) return ImportField.beds;
     if (h === 'plot' || has('plotsize') || has('plotarea')) return ImportField.plotSqft;
     if (has('bua') || has('builtup') || has('actualarea') || h === 'size' || h === 'area' || has('sizesqft')) return ImportField.sizeSqft;
     if (has('mobile') || has('phone') || has('contactno') || h === 'tel') return ImportField.phone;
-    if (has('name')) return ImportField.ownerName;
+    if (has('name') || h === 'owner' || has('ownername')) return ImportField.ownerName;
     return ImportField.ignore;
   }
 
@@ -174,6 +199,13 @@ export abstract class ImportPipeline {
       for (const c of extraCols) {
         const s = str(c.index < row.length ? row[c.index] : null);
         if (s) extra[c.header] = s;
+      }
+      // Named-but-extra-backed fields (Unit code, Layout, Floor, Sale type,
+      // Rental status): mapped to a canonical key so they show as their own
+      // column without a dedicated model field.
+      for (const [f, key] of EXTRA_BACKED_FIELDS) {
+        const s = str(cell(row, f));
+        if (s) extra[key] = s;
       }
       // Every number on the row, labelled by its column header, de-duped.
       const phones: PhoneEntry[] = [];

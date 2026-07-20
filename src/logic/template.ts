@@ -2,10 +2,11 @@ import * as XLSX from 'xlsx';
 import { saveFile } from './downloadFile';
 
 export const kTemplateHeaders = [
-  'Community', 'Sub-Community', 'Building Name', 'Unit Number', 'Plot No',
-  'Property Type', 'Beds', 'BUA (sqft)', 'Plot Size (sqft)', 'Transaction Date',
-  'Transaction Value', 'Rent Start', 'Rent End', 'Rental Amount',
-  'Owner Name', 'Mobile', 'Nationality',
+  'Community', 'Sub-Community', 'Building Name', 'Unit Number', 'Unit Code',
+  'Plot No', 'Property Type', 'Layout', 'Floor', 'Beds', 'BUA (sqft)',
+  'Plot Size (sqft)', 'Transaction Date', 'Transaction Value', 'Sale Type',
+  'Rent Start', 'Rent End', 'Rental Amount', 'Rental Status',
+  'Owner Name', 'Mobile 1', 'Mobile 2', 'Mobile 3', 'Nationality',
 ];
 
 export function buildTemplateXlsx(): Uint8Array {

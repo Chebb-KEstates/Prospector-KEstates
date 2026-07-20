@@ -263,3 +263,76 @@ describe('owner grouping', () => {
     expect(groupByOwner([a, b])).toHaveLength(2);
   });
 });
+
+// A real vendor layout (the "Maple" export): Development + Community as the two
+// community levels, plus columns the app now names — Unit code, Layout, Floor,
+// Sale type, Rental status.
+describe('vendor sheet field types (Maple layout)', () => {
+  const headers = [
+    'Development', 'Community', 'Unit code', 'Unit #', 'Beds', 'Layout', 'BUA', 'PLOT',
+    'Floor', 'Type', 'Price Sold', 'Transaction date', 'Sale Type', 'Rental Status',
+    'Rent Start date', 'Rent End date', 'Rental Amount', 'Owner', 'Mobile 1', 'Mobile 2',
+    'Mobile 3', 'Mobile 4', 'Nationality',
+  ];
+  const row: unknown[] = [
+    'Dubai Hills Estate', 'Maple 1', 'DE Maple-V-3', 3, 4, 'Type 2E', 2461, 3114.53,
+    'G+1', 'Townhouse', 2686888, 42309, 'Initial Sale', 'New', '05/09/2025', '04/09/2026',
+    290000, 'ANEES AHMED KHAN', 971508522585, '', '', '', 'India',
+  ];
+  const rows: unknown[][] = [headers, row];
+  const columns = ImportPipeline.buildColumns(rows, 0);
+  const byHeader = new Map(columns.map(c => [c.header, c.field]));
+
+  it('reads Development as master community and Community as the sub-community', () => {
+    expect(byHeader.get('Development')).toBe(ImportField.community);
+    expect(byHeader.get('Community')).toBe(ImportField.cluster);
+  });
+
+  it('recognises the newly named descriptive columns', () => {
+    expect(byHeader.get('Unit code')).toBe(ImportField.unitCode);
+    expect(byHeader.get('Layout')).toBe(ImportField.layout);
+    expect(byHeader.get('Floor')).toBe(ImportField.floor);
+    expect(byHeader.get('Sale Type')).toBe(ImportField.saleType);
+    expect(byHeader.get('Rental Status')).toBe(ImportField.rentalStatus);
+  });
+
+  it('keeps the core columns right, distinguishing "Type" from "Sale Type"', () => {
+    expect(byHeader.get('Unit #')).toBe(ImportField.unitNumber);
+    expect(byHeader.get('Type')).toBe(ImportField.propertyType);
+    expect(byHeader.get('Owner')).toBe(ImportField.ownerName);
+    expect(byHeader.get('Mobile 1')).toBe(ImportField.phone);
+    expect(byHeader.get('BUA')).toBe(ImportField.sizeSqft);
+    expect(byHeader.get('PLOT')).toBe(ImportField.plotSqft);
+    expect(byHeader.get('Price Sold')).toBe(ImportField.transactionValue);
+    expect(byHeader.get('Nationality')).toBe(ImportField.nationality);
+  });
+
+  it('stores typed fields on the record and descriptive ones in extra', () => {
+    const res = ImportPipeline.dryRun({
+      sheet: new ParsedSheet('maple.xlsx', rows), headerRow: 0, columns,
+      type: DataSetType.register, communityFallback: 'Dubai Hills Estate',
+      datasetId: 'ds', existingByUnitKey: new Map<string, Property>(),
+    });
+    expect(res.newProperties).toHaveLength(1);
+    const p = res.newProperties[0];
+    expect(p.community).toBe('Dubai Hills Estate');
+    expect(p.cluster).toBe('Maple 1');
+    expect(p.propertyType).toBe('Townhouse');
+    expect(p.owner.name).toBe('ANEES AHMED KHAN');
+    expect(p.owner.phone).toBe('971508522585');
+    expect(p.extra['Unit code']).toBe('DE Maple-V-3');
+    expect(p.extra['Layout']).toBe('Type 2E');
+    expect(p.extra['Floor']).toBe('G+1');
+    expect(p.extra['Sale type']).toBe('Initial Sale');
+    expect(p.extra['Rental status']).toBe('New');
+  });
+
+  it('leaves a lone "Community" column as the master community', () => {
+    const r: unknown[][] = [
+      ['Community', 'Unit No', 'Owner Name', 'Mobile'],
+      ['Palm Jumeirah', '5', 'A B', '0501234567'],
+    ];
+    const bh = new Map(ImportPipeline.buildColumns(r, 0).map(c => [c.header, c.field]));
+    expect(bh.get('Community')).toBe(ImportField.community);
+  });
+});
