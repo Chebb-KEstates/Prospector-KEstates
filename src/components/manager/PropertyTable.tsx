@@ -261,17 +261,23 @@ export function PropertyTable({
     onCheckedChanged!(next);
   };
   const allChecked = selectable && rows.length > 0 && rows.every(p => checkedIds!.has(p.id));
+  // Checkbox (if any) + the pinned Unit column + every visible column.
+  const colSpan = (selectable ? 1 : 0) + 1 + visibleCols.length;
 
   if (!loaded) return null;
 
   const headerCell = (k: ColKey) => {
     const col = colByKey.get(k)!;
     const active = sortKey === k;
+    const cls = [col.sortable ? 'sortable' : '', active ? 'active' : '', col.numeric ? 'num' : '']
+      .filter(Boolean).join(' ');
     return (
-      <div key={k} onClick={() => sortOn(k)} style={{ flex: col.flex, minWidth: 0, cursor: col.sortable ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 3, color: active ? 'var(--primary)' : 'var(--text-secondary)', fontWeight: 700, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', userSelect: 'none' }}>
-        <span className="truncate">{col.label}</span>
-        {active && <Icon name={asc ? 'chevronRight' : 'chevronLeft'} size={11} style={{ transform: asc ? 'rotate(-90deg)' : 'rotate(90deg)' }} />}
-      </div>
+      <th key={k} onClick={() => sortOn(k)} className={cls || undefined}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, verticalAlign: 'middle' }}>
+          {col.label}
+          {active && <Icon name={asc ? 'chevronRight' : 'chevronLeft'} size={11} style={{ transform: asc ? 'rotate(-90deg)' : 'rotate(90deg)' }} />}
+        </span>
+      </th>
     );
   };
 
@@ -344,45 +350,55 @@ export function PropertyTable({
         {anyFilter && <button className="btn btn-sm btn-ghost" onClick={clearFilters}><Icon name="x" size={14} /> Clear</button>}
       </div>
 
-      {/* Table */}
+      {/* Table — a real <table> so columns auto-size to content and align. */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
-          <div style={{ minWidth: 720 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
-              {selectable && (
-                <input type="checkbox" checked={allChecked} onChange={() => {
-                  const next = new Set(checkedIds);
-                  rows.forEach(p => allChecked ? next.delete(p.id) : next.add(p.id));
-                  onCheckedChanged!(next);
-                }} style={{ width: 30 }} title="Select the rows on this page" />
-              )}
-              {headerCell(PINNED)}
-              {visibleCols.map(headerCell)}
-            </div>
-
-            {error ? (
-              <div style={{ textAlign: 'center', padding: 40, color: 'var(--error)' }}>{error}</div>
-            ) : initialLoading ? (
-              <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>Loading…</div>
-            ) : rows.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>No properties match these filters.</div>
-            ) : rows.map(p => {
-              const isSel = p.id === selectedId;
-              return (
-                <div key={p.id} onClick={() => onSelect?.(p.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: `${dense ? 5 : 10}px 16px`, borderBottom: '1px solid var(--border-light)', cursor: onSelect ? 'pointer' : 'default', background: isSel ? 'color-mix(in srgb, var(--primary) 8%, transparent)' : undefined }}>
-                  {selectable && <input type="checkbox" checked={checkedIds!.has(p.id)} onClick={e => e.stopPropagation()} onChange={() => toggleCheck(p.id)} style={{ width: 30 }} />}
-                  <div style={{ flex: colByKey.get(PINNED)!.flex, minWidth: 0 }}>
-                    <div className="truncate" style={{ fontWeight: 600, fontSize: '0.8125rem' }}>{p.unitLabel}</div>
-                    <div className="truncate" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{[p.community, p.cluster].filter(Boolean).join(' · ')}</div>
-                  </div>
-                  {visibleCols.map(k => {
-                    const col = colByKey.get(k)!;
-                    return <div key={k} className="truncate" style={{ flex: col.flex, minWidth: 0, fontSize: '0.8125rem', textAlign: col.numeric ? 'right' : 'left' }}>{col.render(p)}</div>;
-                  })}
-                </div>
-              );
-            })}
-          </div>
+          <table className={`vault-table${dense ? ' dense' : ''}`}>
+            <thead>
+              <tr>
+                {selectable && (
+                  <th className="checkcol">
+                    <input type="checkbox" checked={allChecked} onChange={() => {
+                      const next = new Set(checkedIds);
+                      rows.forEach(p => allChecked ? next.delete(p.id) : next.add(p.id));
+                      onCheckedChanged!(next);
+                    }} title="Select the rows on this page" />
+                  </th>
+                )}
+                {headerCell(PINNED)}
+                {visibleCols.map(headerCell)}
+              </tr>
+            </thead>
+            <tbody>
+              {error ? (
+                <tr><td colSpan={colSpan} style={{ textAlign: 'center', padding: 40, color: 'var(--error)' }}>{error}</td></tr>
+              ) : initialLoading ? (
+                <tr><td colSpan={colSpan} style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>Loading…</td></tr>
+              ) : rows.length === 0 ? (
+                <tr><td colSpan={colSpan} style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>No properties match these filters.</td></tr>
+              ) : rows.map(p => {
+                const isSel = p.id === selectedId;
+                const cls = [onSelect ? 'clickable' : '', isSel ? 'selected' : ''].filter(Boolean).join(' ');
+                return (
+                  <tr key={p.id} onClick={() => onSelect?.(p.id)} className={cls || undefined}>
+                    {selectable && (
+                      <td className="checkcol" onClick={e => e.stopPropagation()}>
+                        <input type="checkbox" checked={checkedIds!.has(p.id)} onChange={() => toggleCheck(p.id)} />
+                      </td>
+                    )}
+                    <td className="unitcol">
+                      <div className="truncate unit-main">{p.unitLabel}</div>
+                      <div className="truncate unit-sub">{[p.community, p.cluster].filter(Boolean).join(' · ')}</div>
+                    </td>
+                    {visibleCols.map(k => {
+                      const col = colByKey.get(k)!;
+                      return <td key={k} className={col.numeric ? 'num' : undefined}>{col.render(p)}</td>;
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
 
         {/* Footer */}
