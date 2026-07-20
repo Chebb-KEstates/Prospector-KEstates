@@ -20,10 +20,14 @@ export interface CallSignal { label: string; tone: ChipTone; }
 
 /** One property in the owner's portfolio, richly described for the caller. */
 export interface CallUnit {
+  id: string;                                 // property id — so an outcome can be logged for THIS unit
   label: string;                              // "Unit 13"
   location: string;                           // "Dubai Hills Estate · Maple 1"
   facts: string[];                            // ["5 bed", "Townhouse", "2,734 sqft", "Type 2E", "Floor G+1"]
   rental?: { label: string; tone: ChipTone }; // "Vacant" / "Rented · ends 12 Sep 2026"
+  lastSale?: string;                          // this property's own last transaction — "AED 3,550,000 · 28 Jun 2022"
+  state: PropertyState;                       // current state, shown in the per-unit popup
+  history: CallHistoryEntry[];                // this unit's own call history
 }
 
 /**
@@ -67,11 +71,17 @@ export interface CallStop {
   nationality?: string;
   signals?: CallSignal[];
   units?: CallUnit[];
-  lastSale?: string;
   state: PropertyState;
   note?: string;
   history: CallHistoryEntry[];
+  /** Log one outcome for the whole stop (single-unit owner, or a buyer lead). */
   log: (outcome: CallOutcome, note: string | undefined, followUpAt: string | undefined) => Promise<void>;
+  /**
+   * Log an outcome for ONE of the owner's properties. Present only on multi-unit
+   * owner stops, so the card can record "Unit 13 interested, Unit 119 not" rather
+   * than tagging every property with the same result.
+   */
+  logUnit?: (unitId: string, outcome: CallOutcome, note: string | undefined, followUpAt: string | undefined) => Promise<void>;
 }
 
 export interface CallSessionState {

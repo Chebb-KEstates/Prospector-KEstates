@@ -31,6 +31,16 @@ export interface StopDeps {
   logLeadCall: (lead: Lead, outcome: any, note?: string, followUpAt?: string) => Promise<void>;
 }
 
+/** Every call touching any of the owner's units, merged and de-duped by call id. */
+async function ownerCalls(units: Property[]): Promise<CallLog[]> {
+  const lists = await Promise.all(
+    units.map(u => api.properties.calls(u.id).catch(() => [] as CallLog[])),
+  );
+  const byId = new Map<string, CallLog>();
+  for (const list of lists) for (const c of list) byId.set(c.id, c);
+  return Array.from(byId.values());
+}
+
 /** A rental read for one property — vacant is an opening, a lease ending soon is a nudge. */
 function rentalOf(p: Property): CallUnit['rental'] {
   const status = (p.extra?.['Rental status'] ?? '').toLowerCase();
@@ -82,10 +92,18 @@ export function buildOwnerStop(
     const floor = p.extra?.['Floor'];
     if (floor) facts.push(`Floor ${floor}`);
     return {
+      id: p.id,
       label: p.unitLabel,
       location: [p.community, p.cluster].filter(Boolean).join(' · '),
       facts,
       rental: rentalOf(p),
+      // Each property's OWN last transaction, not the owner's first unit.
+      lastSale: p.lastTransactionValue != null
+        ? `${fmtAed(p.lastTransactionValue)}${p.lastTransactionDate ? ` · ${fmtDate(p.lastTransactionDate)}` : ''}`
+        : undefined,
+      state: p.state,
+      // This unit's slice of the owner's call history.
+      history: history(calls.filter(c => c.propertyIds.includes(p.id)), deps.nameOf),
     };
   });
 
@@ -133,11 +151,17 @@ export function buildOwnerStop(
     nationality: owner.nationality || undefined,
     signals,
     units: richUnits,
-    lastSale,
     state: g0?.state ?? PropertyState.assigned,
     note: units.map(p => p.assignmentNote).find(Boolean),
     history: history(calls, deps.nameOf),
     log: (outcome, note, followUpAt) => deps.logCall(units, outcome, note, followUpAt),
+    // Multi-unit owners only: log a result for one property at a time.
+    logUnit: units.length > 1
+      ? (unitId, outcome, note, followUpAt) => {
+          const p = units.find(u => u.id === unitId);
+          return deps.logCall(p ? [p] : [], outcome, note, followUpAt);
+        }
+      : undefined,
   };
 }
 
@@ -182,7 +206,7 @@ export async function ownerCallStops(mine: Property[], deps: StopDeps): Promise<
   return Promise.all(groups.map(async (g) => {
     let calls: CallLog[] = [];
     try {
-      calls = await api.properties.calls(g.properties[0].id);
+      calls = await ownerCalls(g.properties);
     } catch { /* timeline is best-effort */ }
     return buildOwnerStop(g.properties, calls, deps);
   }));
@@ -219,7 +243,7 @@ export async function ownerStopForProperty(
 
   let calls: CallLog[] = [];
   try {
-    calls = await api.properties.calls(p.id);
+    calls = await ownerCalls(units);
   } catch { /* timeline is best-effort */ }
 
   return buildOwnerStop(units, calls, deps);
