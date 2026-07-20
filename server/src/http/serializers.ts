@@ -85,6 +85,7 @@ export function serializeProperty(p: Property) {
     callAttempts: p.callAttempts,
     nextFollowUpAt: p.nextFollowUpAt,
     dncAt: p.dncAt,
+    notes: p.notes,
     extra: p.extra,
   };
 }

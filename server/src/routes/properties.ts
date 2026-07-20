@@ -3,6 +3,7 @@ import { Permission } from '../../../src/types/user';
 import { PropertyState } from '../../../src/types/models';
 import {
   queryProperties, propertyFacets, findPropertyById, findAssignedTo,
+  updatePropertyNotes,
 } from '../repositories/propertyRepo';
 import { callsForProperties } from '../repositories/callRepo';
 import {
@@ -311,6 +312,39 @@ export default async function propertyRoutes(app: FastifyInstance) {
       enforceCap: true,
       what: body.what ?? `Viewed owner detail ${id}`,
     });
+  });
+
+  /**
+   * Edit the free-text notes on a property record. A broker may annotate a unit
+   * that's assigned to them; a manager, any unit. Not gated by the reveal cap —
+   * this is writing text, not seeing a number.
+   */
+  app.patch('/api/properties/:id/notes', {
+    preHandler: [app.authenticate],
+    schema: {
+      params: {
+        type: 'object', required: ['id'],
+        properties: { id: { type: 'string', maxLength: 64 } },
+      },
+      body: {
+        type: 'object', required: ['notes'], additionalProperties: false,
+        properties: { notes: { type: 'string', maxLength: 4000 } },
+      },
+    },
+  }, async (req) => {
+    const { id } = req.params as { id: string };
+    const { notes } = req.body as { notes: string };
+    const me = req.currentUser!;
+
+    const p = await findPropertyById(id);
+    if (!p) throw notFound('That unit no longer exists.');
+    if (!me.isManager && p.assignedTo !== me.id) {
+      throw forbidden('You can only add notes to a unit assigned to you.');
+    }
+
+    await updatePropertyNotes(id, notes.trim());
+    const updated = await findPropertyById(id);
+    return serializeProperty(updated!);
   });
 
   app.post('/api/properties/assign', {

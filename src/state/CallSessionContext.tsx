@@ -28,6 +28,7 @@ export interface CallUnit {
   lastSale?: string;                          // this property's own last transaction — "AED 3,550,000 · 28 Jun 2022"
   state: PropertyState;                       // current state, shown in the per-unit popup
   history: CallHistoryEntry[];                // this unit's own call history
+  notes?: string;                             // free-text notes saved on the record
 }
 
 /**
@@ -82,6 +83,8 @@ export interface CallStop {
    * than tagging every property with the same result.
    */
   logUnit?: (unitId: string, outcome: CallOutcome, note: string | undefined, followUpAt: string | undefined) => Promise<void>;
+  /** Save the free-text notes on one property (owner stops only). */
+  saveNote?: (unitId: string, notes: string) => Promise<void>;
 }
 
 export interface CallSessionState {

@@ -62,6 +62,7 @@ export function toProperty(r: Row): Property {
   p.callAttempts = Number(r.call_attempts ?? 0);
   p.nextFollowUpAt = fromDb(r.next_follow_up_at);
   p.dncAt = fromDb(r.dnc_at);
+  p.notes = (r.notes as string) ?? undefined;
   p.extra = parseExtra(r.extra);
   p.owner.phones = parsePhones(r.owner_phones);
   return p;
@@ -105,7 +106,7 @@ const COLS = `
   owner_name, owner_phone, owner_phones, owner_nationality, extra,
   created_at, updated_at, assigned_to, assigned_at, assignment_note,
   cooldown_until, portfolio_since, last_outcome, last_called_at,
-  call_attempts, next_follow_up_at, dnc_at`;
+  call_attempts, next_follow_up_at, dnc_at, notes`;
 
 /** Params for an INSERT/REPLACE of one property. Keep in sync with `PLACEHOLDERS`. */
 function writeParams(p: Property): unknown[] {
@@ -631,4 +632,13 @@ export async function countByDataset(datasetId: string, cx?: PoolConnection): Pr
     'SELECT COUNT(*) AS n FROM properties WHERE dataset_id = ?', [datasetId],
   );
   return Number(rows[0].n);
+}
+
+/** Set the free-text notes on one property (empty string clears them). */
+export async function updatePropertyNotes(id: string, notes: string, cx?: PoolConnection): Promise<void> {
+  const db = cx ?? pool;
+  await db.query(
+    'UPDATE properties SET notes = ?, updated_at = ? WHERE id = ?',
+    [notes.length > 0 ? notes : null, toDb(new Date().toISOString()), id],
+  );
 }

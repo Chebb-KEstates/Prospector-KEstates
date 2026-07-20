@@ -92,6 +92,11 @@ export function CallCard({ stop, onComplete, onSkip, onReveal }: {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // The per-unit detail popup + a local map of notes saved this session, so
+  // reopening a unit shows the just-saved text.
+  const [openUnit, setOpenUnit] = useState<CallUnit | null>(null);
+  const [noteOverrides, setNoteOverrides] = useState<Record<string, string>>({});
+
   const current = phones[phoneIdx];
   const nextNumber = () => setPhoneIdx(i => (i + 1) % phones.length);
   const label = (o: CallOutcome) => (stop.buyer ? CallOutcomeBuyerLabel[o] : CallOutcomeLabel[o]);
@@ -156,6 +161,22 @@ export function CallCard({ stop, onComplete, onSkip, onReveal }: {
 
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14, maxHeight: '100%', overflow: 'auto' }}>
+      {openUnit && (
+        <UnitDetailDialog
+          unit={openUnit}
+          ownerName={stop.name}
+          nationality={stop.nationality}
+          initialNotes={noteOverrides[openUnit.id] ?? openUnit.notes ?? ''}
+          canEdit={!!stop.saveNote}
+          label={label}
+          onSave={async (notes) => {
+            await stop.saveNote!(openUnit.id, notes);
+            setNoteOverrides(m => ({ ...m, [openUnit.id]: notes }));
+          }}
+          onClose={() => setOpenUnit(null)}
+        />
+      )}
+
       {/* Identity */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{
@@ -186,10 +207,19 @@ export function CallCard({ stop, onComplete, onSkip, onReveal }: {
         {stop.units && stop.units.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {stop.units.slice(0, 8).map((u, i) => (
-              <div key={u.id} style={{ padding: '8px 0', borderTop: i > 0 ? '1px solid var(--border-light)' : undefined }}>
+              <div key={u.id} onClick={() => setOpenUnit(u)} title="View details, call feedback & notes"
+                style={{ padding: '8px 6px', margin: '0 -6px', borderRadius: 8, cursor: 'pointer', borderTop: i > 0 ? '1px solid var(--border-light)' : undefined }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
-                  <span style={{ fontWeight: 600, fontSize: '0.8125rem' }} className="truncate">{u.label}</span>
-                  {u.rental && <ToneChip tone={u.rental.tone}>{u.rental.label}</ToneChip>}
+                  <span style={{ fontWeight: 600, fontSize: '0.8125rem', display: 'inline-flex', alignItems: 'center', gap: 5 }} className="truncate">
+                    {u.label}
+                    {(noteOverrides[u.id] ?? u.notes) && <span title="Has notes" style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)' }} />}
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                    {u.rental && <ToneChip tone={u.rental.tone}>{u.rental.label}</ToneChip>}
+                    <Icon name="chevronRight" size={14} style={{ color: 'var(--text-tertiary)' }} />
+                  </span>
                 </div>
                 {u.location && <div className="truncate" style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{u.location}</div>}
                 {u.facts.length > 0 && <div className="truncate" style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{u.facts.join(' · ')}</div>}
@@ -382,6 +412,104 @@ function ErrorBox({ children }: { children: React.ReactNode }) {
       border: '1px solid color-mix(in srgb, var(--error) 45%, transparent)',
       color: 'var(--error)',
     }}>{children}</div>
+  );
+}
+
+/**
+ * The per-property popup: one unit's full detail, its own call feedback, and an
+ * editable notes field saved to the record. Opened by clicking a property in the
+ * portfolio.
+ */
+function UnitDetailDialog({ unit, ownerName, nationality, initialNotes, canEdit, label, onSave, onClose }: {
+  unit: CallUnit;
+  ownerName: string;
+  nationality?: string;
+  initialNotes: string;
+  canEdit: boolean;
+  label: (o: CallOutcome) => string;
+  onSave: (notes: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [notes, setNotes] = useState(initialNotes);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const dirty = notes.trim() !== initialNotes.trim();
+
+  const save = async () => {
+    setSaving(true); setError(null);
+    try {
+      await onSave(notes.trim());
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not save the notes. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 460, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+          <div style={{ minWidth: 0 }}>
+            <h3 style={{ fontWeight: 600, fontSize: '1.05rem' }} className="truncate">{unit.label}</h3>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }} className="truncate">{unit.location}</div>
+          </div>
+          <StateChip state={unit.state} />
+        </div>
+
+        <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--surface-2)', fontSize: '0.8125rem', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {unit.facts.length > 0 && <div style={{ color: 'var(--text-secondary)' }}>{unit.facts.join(' · ')}</div>}
+          {unit.rental && <div><ToneChip tone={unit.rental.tone}>{unit.rental.label}</ToneChip></div>}
+          {unit.lastSale && <div style={{ color: 'var(--text-secondary)' }}>Last sale: <b>{unit.lastSale}</b></div>}
+          <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', paddingTop: 4, borderTop: '1px solid var(--border-light)' }}>
+            Owner: {ownerName}{nationality ? ` · ${nationality}` : ''}
+          </div>
+        </div>
+
+        <div>
+          <div style={sectionLabel}>Call feedback{unit.history.length > 0 ? ` (${unit.history.length})` : ''}</div>
+          {unit.history.length === 0 ? (
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>No calls logged for this property yet.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 180, overflow: 'auto' }}>
+              {unit.history.map((h, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, fontSize: '0.75rem' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 4, flexShrink: 0, background: outcomeColor(h.outcome) }} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600 }}>{label(h.outcome)}
+                      <span style={{ fontWeight: 400, color: 'var(--text-secondary)' }}> · {fmtDate(h.at)} · {timeAgo(h.at)}</span>
+                    </div>
+                    {h.note && <div style={{ color: 'var(--text-secondary)' }}>“{h.note}”</div>}
+                    {h.by && <div style={{ color: 'var(--text-tertiary)' }}>{h.by}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div style={sectionLabel}>Notes on this property</div>
+          <textarea className="input" rows={4} style={{ resize: 'vertical', width: '100%' }}
+            placeholder={canEdit ? 'Add notes saved to this record…' : 'No notes.'}
+            value={notes} disabled={!canEdit || saving}
+            onChange={e => { setNotes(e.target.value); setSaved(false); }} />
+          {error && <div style={{ color: 'var(--error)', fontSize: '0.75rem', marginTop: 4 }}>{error}</div>}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="btn" onClick={onClose}>Close</button>
+          {canEdit && (
+            <button className="btn btn-primary" onClick={save} disabled={!dirty || saving}>
+              {saving ? 'Saving…' : 'Save notes'}
+            </button>
+          )}
+          {saved && !dirty && <span style={{ fontSize: '0.75rem', color: 'var(--success)' }}>Saved ✓</span>}
+        </div>
+      </div>
+    </div>
   );
 }
 

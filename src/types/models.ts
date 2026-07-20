@@ -140,6 +140,8 @@ export class Property implements ProspectFields {
   callAttempts = 0;
   nextFollowUpAt?: string;
   dncAt?: string;
+  /** Free-text notes on the record, edited from the per-unit detail popup. */
+  notes?: string;
   /** Any unmapped columns from the upload, kept verbatim so the table can show them. */
   extra: Record<string, string> = {};
 
@@ -187,7 +189,7 @@ export class Property implements ProspectFields {
     return '(unidentified)';
   }
 
-  copyWith(fields: Partial<Omit<Property, 'id' | 'orgId' | 'unitKey' | 'createdAt' | 'state' | 'assignedTo' | 'assignedAt' | 'assignmentNote' | 'cooldownUntil' | 'portfolioSince' | 'lastOutcome' | 'lastCalledAt' | 'callAttempts' | 'nextFollowUpAt' | 'dncAt'>> & { updatedAt?: string }): Property {
+  copyWith(fields: Partial<Omit<Property, 'id' | 'orgId' | 'unitKey' | 'createdAt' | 'state' | 'assignedTo' | 'assignedAt' | 'assignmentNote' | 'cooldownUntil' | 'portfolioSince' | 'lastOutcome' | 'lastCalledAt' | 'callAttempts' | 'nextFollowUpAt' | 'dncAt' | 'notes'>> & { updatedAt?: string }): Property {
     const p = Property.fromJson(this.toJson());
     Object.assign(p, fields);
     return p;
@@ -208,7 +210,8 @@ export class Property implements ProspectFields {
       assignmentNote: this.assignmentNote, cooldownUntil: this.cooldownUntil,
       portfolioSince: this.portfolioSince, lastOutcome: this.lastOutcome,
       lastCalledAt: this.lastCalledAt, callAttempts: this.callAttempts,
-      nextFollowUpAt: this.nextFollowUpAt, dncAt: this.dncAt, extra: this.extra,
+      nextFollowUpAt: this.nextFollowUpAt, dncAt: this.dncAt,
+      notes: this.notes, extra: this.extra,
     };
   }
 
@@ -245,6 +248,7 @@ export class Property implements ProspectFields {
     p.callAttempts = (j.callAttempts as number) ?? 0;
     p.nextFollowUpAt = j.nextFollowUpAt as string | undefined;
     p.dncAt = j.dncAt as string | undefined;
+    p.notes = j.notes as string | undefined;
     p.extra = Object.fromEntries(
       Object.entries((j.extra as Record<string, unknown>) ?? {}).map(([k, v]) => [k, String(v)]));
     return p;

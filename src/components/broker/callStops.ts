@@ -104,6 +104,7 @@ export function buildOwnerStop(
       state: p.state,
       // This unit's slice of the owner's call history.
       history: history(calls.filter(c => c.propertyIds.includes(p.id)), deps.nameOf),
+      notes: p.notes,
     };
   });
 
@@ -162,6 +163,7 @@ export function buildOwnerStop(
           return deps.logCall(p ? [p] : [], outcome, note, followUpAt);
         }
       : undefined,
+    saveNote: (unitId, notes) => api.properties.saveNotes(unitId, notes).then(() => undefined),
   };
 }
 

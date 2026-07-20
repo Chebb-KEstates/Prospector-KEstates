@@ -193,6 +193,10 @@ export const properties = {
   async undoDnc(id: string): Promise<Property> {
     return Property.fromJson(await post(`/api/properties/${id}/undo-dnc`));
   },
+
+  async saveNotes(id: string, notes: string): Promise<Property> {
+    return Property.fromJson(await patch(`/api/properties/${id}/notes`, { notes }));
+  },
 };
 
 // ── Leads ──────────────────────────────────────────────────────────────────
