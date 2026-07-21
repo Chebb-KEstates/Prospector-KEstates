@@ -116,6 +116,8 @@ export interface PropertyQuery {
   dueOnly?: boolean;
   /** Last outcome was interested (sell or rent) — the "Interested" chip. */
   interestedOnly?: boolean;
+  /** Held units within the assignment-timer "expiring soon" window. */
+  expiringSoon?: boolean;
   /** Tenancy signal filter. */
   tenancy?: 'vacant' | 'rented' | 'leaseSoon';
   assignedTo?: string; datasetId?: string;
@@ -359,7 +361,8 @@ export interface ManagerDashboard {
     pendingRequests: number;
     idleBrokers: string[];
     staleCount: number;
-    agingAssignments: number;
+    /** Held units whose assignment timer is nearly up. */
+    expiringSoon: number;
   };
   communities: string[];
   board: {
@@ -378,6 +381,8 @@ export interface BrokerDashboard {
   myReachedToday: number;
   myInterestedToday: number;
   myOnList: number;
+  /** My held units whose assignment timer is nearly up. */
+  myExpiringSoon: number;
   teamAverageCalls: number;
   poolAvailable: number;
   myPendingRequests: number;

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Property, PropertyState, PropertyStateLabel, CallOutcomeLabel } from '../../types/models';
-import { StateChip, OutcomeChip } from '../common/StateChip';
+import { StateChip, OutcomeChip, CountdownBadge } from '../common/StateChip';
 import { Icon } from '../common/Icon';
 import { useTableLayout, ColumnsDialog } from '../common/tableLayout';
 import { usePropertyPage, usePropertyFacetsOrEmpty } from '../../data/hooks';
@@ -44,7 +44,7 @@ interface ColDef {
   render: (p: Property) => React.ReactNode;
 }
 
-function baseCols(): ColDef[] {
+function baseCols(soonHours: number): ColDef[] {
   return [
     { key: 'owner', label: 'Owner', flex: 3, ownerData: true, sortable: true, render: p => p.owner.name || '—' },
     {
@@ -89,7 +89,17 @@ function baseCols(): ColDef[] {
     { key: 'outcome', label: 'Outcome', flex: 2, sortable: true, render: p => p.lastOutcome ? <OutcomeChip outcome={p.lastOutcome} /> : <span style={{ color: 'var(--text-tertiary)' }}>—</span> },
     { key: 'calledAt', label: 'Last call', flex: 2, sortable: true, render: p => <span style={{ color: 'var(--text-secondary)' }}>{fmtDateTime(p.lastCalledAt)}</span> },
     { key: 'followUp', label: 'Follow-up', flex: 2, sortable: true, render: p => <span style={{ color: 'var(--text-secondary)' }}>{fmtDate(p.nextFollowUpAt)}</span> },
-    { key: 'state', label: 'State', flex: 2, sortable: true, render: p => <StateChip state={p.state} /> },
+    {
+      key: 'state', label: 'State', flex: 2, sortable: true,
+      // The assignment timer rides alongside the state so a manager scanning the
+      // column sees both what a unit is and how long the broker has left on it.
+      render: p => (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <StateChip state={p.state} />
+          <CountdownBadge deadline={p.assignmentExpiresAt} soonHours={soonHours} />
+        </span>
+      ),
+    },
   ];
 }
 
@@ -114,6 +124,8 @@ interface Props {
   forcedOutcome?: string;
   dueOnly?: boolean;
   interestedOnly?: boolean;
+  /** Held units within the "expiring soon" window — the broker's timer chip. */
+  expiringSoon?: boolean;
   onSelect?: (id: string) => void;
   selectedId?: string;
   teaser?: boolean;
@@ -129,13 +141,13 @@ const PAGE_SIZES = [10, 25, 50, 100, 250];
 
 export function PropertyTable({
   scope, assignedTo, datasetId, fixedState,
-  forcedOutcome, dueOnly, interestedOnly,
+  forcedOutcome, dueOnly, interestedOnly, expiringSoon,
   onSelect, selectedId, teaser, hideOwner, prefsKey,
   checkedIds, onCheckedChanged, showAssignee,
 }: Props) {
   const ownerHidden = !!teaser || !!hideOwner;
   const selectable = !!checkedIds && !!onCheckedChanged;
-  const { brokers, userById } = useVault();
+  const { brokers, userById, settings } = useVault();
 
   // ── Filters ──
   const [search, setSearch] = useState('');
@@ -175,6 +187,7 @@ export function PropertyTable({
     outcome: forcedOutcome ?? (outcome || undefined),
     dueOnly: dueOnly || undefined,
     interestedOnly: interestedOnly || undefined,
+    expiringSoon: expiringSoon || undefined,
     txFrom: txFrom || undefined,
     txTo: txTo || undefined,
     callableOnly: callableOnly || undefined,
@@ -184,7 +197,7 @@ export function PropertyTable({
     page,
     pageSize,
   }), [scope, assignedTo, assigneeFilter, datasetId, search, community, cluster, fixedState, state,
-       beds, nationality, outcome, forcedOutcome, dueOnly, interestedOnly,
+       beds, nationality, outcome, forcedOutcome, dueOnly, interestedOnly, expiringSoon,
        txFrom, txTo, callableOnly, tenancy, sortKey, asc, page, pageSize]);
 
   const { rows, total, loading, initialLoading, error } = usePropertyPage(query);
@@ -212,7 +225,7 @@ export function PropertyTable({
   }, [rows]);
 
   const allCols = useMemo<ColDef[]>(() => {
-    const cols = baseCols().filter(c => !(ownerHidden && c.ownerData));
+    const cols = baseCols(settings.expiringSoonHours).filter(c => !(ownerHidden && c.ownerData));
     if (!ownerHidden) {
       for (const label of phoneLabels) {
         cols.push({
@@ -240,7 +253,7 @@ export function PropertyTable({
       });
     }
     return cols;
-  }, [ownerHidden, extraKeys, phoneLabels, showAssignee, userById]);
+  }, [ownerHidden, extraKeys, phoneLabels, showAssignee, userById, settings.expiringSoonHours]);
 
   const unitCol: ColDef = useMemo(() => ({
     key: PINNED, label: 'Unit', flex: 3, sortable: true, render: () => null,

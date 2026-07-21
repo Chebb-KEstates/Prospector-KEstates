@@ -87,7 +87,7 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
   ];
 
   // ── Alerts ──
-  const { pendingRequests: pending, idleBrokers, staleCount, agingAssignments } = data.alerts;
+  const { pendingRequests: pending, idleBrokers, staleCount, expiringSoon } = data.alerts;
   const alerts: Alert[] = [];
   if (pending > 0) {
     alerts.push({ icon: 'user', color: 'var(--info)', message: `${pending} request${pending === 1 ? '' : 's'} awaiting approval`, goTo: 'assignments' });
@@ -102,8 +102,12 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
   if (staleCount > 0) {
     alerts.push({ icon: 'clock', color: 'var(--warning)', message: `${staleCount} interested owner${staleCount === 1 ? '' : 's'} going stale in portfolios`, goTo: 'team' });
   }
-  if (agingAssignments > 0) {
-    alerts.push({ icon: 'clock', color: STEEL, message: `${agingAssignments} assigned unit${agingAssignments === 1 ? '' : 's'} never called, nearing auto-return`, goTo: 'assignments' });
+  if (expiringSoon > 0) {
+    alerts.push({
+      icon: 'clock', color: 'var(--error)',
+      message: `${expiringSoon} held unit${expiringSoon === 1 ? '' : 's'} running out of time — returning to the pool soon`,
+      goTo: 'assignments',
+    });
   }
 
   const outcomeSegments: Segment[] = (Object.values(CallOutcome) as CallOutcome[])

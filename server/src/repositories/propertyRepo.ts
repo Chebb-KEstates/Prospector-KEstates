@@ -1,7 +1,7 @@
 import type { PoolConnection } from 'mysql2/promise';
 import { pool, Row, toDb, fromDb } from '../db/pool';
 import {
-  Property, OwnerInfo, PropertyState, CallOutcome, kOrgId,
+  Property, OwnerInfo, PropertyState, CallOutcome, VaultSettings, kOrgId,
 } from '../../../src/types/models';
 import type { PhoneEntry } from '../../../src/types/models';
 import { ownerKeyOf } from '../../../src/logic/ownerGrouping';
@@ -62,6 +62,7 @@ export function toProperty(r: Row): Property {
   p.callAttempts = Number(r.call_attempts ?? 0);
   p.nextFollowUpAt = fromDb(r.next_follow_up_at);
   p.dncAt = fromDb(r.dnc_at);
+  p.assignmentExpiresAt = fromDb(r.assignment_expires_at);
   p.notes = (r.notes as string) ?? undefined;
   p.extra = parseExtra(r.extra);
   p.owner.phones = parsePhones(r.owner_phones);
@@ -106,7 +107,7 @@ const COLS = `
   owner_name, owner_phone, owner_phones, owner_nationality, extra,
   created_at, updated_at, assigned_to, assigned_at, assignment_note,
   cooldown_until, portfolio_since, last_outcome, last_called_at,
-  call_attempts, next_follow_up_at, dnc_at, notes`;
+  call_attempts, next_follow_up_at, dnc_at, assignment_expires_at, notes`;
 
 /** Params for an INSERT/REPLACE of one property. Keep in sync with `PLACEHOLDERS`. */
 function writeParams(p: Property): unknown[] {
@@ -130,7 +131,7 @@ function writeParams(p: Property): unknown[] {
     p.assignedTo ?? null, toDb(p.assignedAt), p.assignmentNote ?? null,
     toDb(p.cooldownUntil), toDb(p.portfolioSince),
     p.lastOutcome ?? null, toDb(p.lastCalledAt), p.callAttempts,
-    toDb(p.nextFollowUpAt), toDb(p.dncAt),
+    toDb(p.nextFollowUpAt), toDb(p.dncAt), toDb(p.assignmentExpiresAt),
   ];
 }
 
@@ -142,8 +143,8 @@ const WRITE_COLS = `
   owner_name, owner_phone, owner_phones, owner_nationality, owner_key, extra,
   created_at, updated_at, assigned_to, assigned_at, assignment_note,
   cooldown_until, portfolio_since, last_outcome, last_called_at,
-  call_attempts, next_follow_up_at, dnc_at`;
-const PLACEHOLDERS = `(${new Array(38).fill('?').join(', ')})`;
+  call_attempts, next_follow_up_at, dnc_at, assignment_expires_at`;
+const PLACEHOLDERS = `(${new Array(39).fill('?').join(', ')})`;
 
 /**
  * Upsert a batch. Chunked because MySQL's max_allowed_packet caps statement
@@ -183,7 +184,8 @@ export async function saveProperties(
         assignment_note = VALUES(assignment_note), cooldown_until = VALUES(cooldown_until),
         portfolio_since = VALUES(portfolio_since), last_outcome = VALUES(last_outcome),
         last_called_at = VALUES(last_called_at), call_attempts = VALUES(call_attempts),
-        next_follow_up_at = VALUES(next_follow_up_at), dnc_at = VALUES(dnc_at)`;
+        next_follow_up_at = VALUES(next_follow_up_at), dnc_at = VALUES(dnc_at),
+        assignment_expires_at = VALUES(assignment_expires_at)`;
     await db.query(sql, chunk.flatMap(writeParams));
     onProgress?.(Math.min(i + CHUNK, properties.length), properties.length);
   }
@@ -267,6 +269,13 @@ export interface PropertyFilter {
   /** Last outcome was interested (sell or rent) — the "Interested" chip. */
   interestedOnly?: boolean;
   /**
+   * Held units whose assignment deadline lands within `expiringWithinHours` —
+   * the broker's "Expiring soon" chip and the home "running out of time" list.
+   */
+  expiringSoon?: boolean;
+  /** Window (hours) for `expiringSoon`; the route fills it from settings. */
+  expiringWithinHours?: number;
+  /**
    * Tenancy signal: 'vacant' (no rental), 'rented', or 'leaseSoon' (lease ends
    * within ~90 days). Derived from rent_end plus the imported "Rental status".
    */
@@ -340,6 +349,22 @@ function buildWhere(f: PropertyFilter): { sql: string; params: unknown[] } {
   if (f.dueOnly) where.push('next_follow_up_at IS NOT NULL AND next_follow_up_at <= NOW(3)');
   if (f.interestedOnly) {
     where.push(`last_outcome IN ('${CallOutcome.interestedSell}', '${CallOutcome.interestedRent}')`);
+  }
+
+  // Held units running out of time — the deadline is within the alert window
+  // (or already past, awaiting the next sweep). Only assigned/portfolio units
+  // carry a deadline, so the state check keeps pooled/cooling rows out.
+  if (f.expiringSoon) {
+    const hours = f.expiringWithinHours != null && f.expiringWithinHours > 0 ? f.expiringWithinHours : 24;
+    // UTC_TIMESTAMP, not NOW(): the app writes UTC into these columns (the pool
+    // is opened with timezone 'Z'), while NOW() answers in the server's local
+    // zone — comparing the two skews every deadline by the UTC offset.
+    where.push(
+      `state IN ('${PropertyState.assigned}', '${PropertyState.portfolio}') ` +
+      `AND assignment_expires_at IS NOT NULL ` +
+      `AND assignment_expires_at <= (UTC_TIMESTAMP(3) + INTERVAL ? HOUR)`,
+    );
+    params.push(hours);
   }
 
   // Tenancy — a lease ending soon or a vacant unit is a live selling signal.
@@ -576,15 +601,23 @@ export async function countStalePortfolio(staleDays: number): Promise<number> {
   return Number(rows[0].n);
 }
 
-/** Assigned, never called, and within `warnDays` of auto-returning to the pool. */
-export async function countAgingAssignments(expiryDays: number, warnDays = 3): Promise<number> {
-  const threshold = Math.max(0, expiryDays - warnDays);
+/**
+ * Held units whose assignment deadline lands within `hours` (or has already
+ * passed, awaiting the next sweep) — the "running out of time" count. Pass a
+ * `brokerId` for one broker's own at-risk units; omit for the whole org.
+ */
+export async function countExpiringSoon(hours: number, brokerId?: string): Promise<number> {
+  const where = [
+    'org_id = ?',
+    `state IN ('${PropertyState.assigned}', '${PropertyState.portfolio}')`,
+    'assignment_expires_at IS NOT NULL',
+    // UTC_TIMESTAMP — these columns hold UTC (see buildWhere).
+    'assignment_expires_at <= (UTC_TIMESTAMP(3) + INTERVAL ? HOUR)',
+  ];
+  const params: unknown[] = [kOrgId, hours];
+  if (brokerId) { where.push('assigned_to = ?'); params.push(brokerId); }
   const [rows] = await pool.query<Row[]>(
-    `SELECT COUNT(*) AS n FROM properties
-     WHERE org_id = ? AND state = 'assigned'
-       AND last_called_at IS NULL AND assigned_at IS NOT NULL
-       AND assigned_at <= DATE_SUB(NOW(3), INTERVAL ? DAY)`,
-    [kOrgId, threshold],
+    `SELECT COUNT(*) AS n FROM properties WHERE ${where.join(' AND ')}`, params,
   );
   return Number(rows[0].n);
 }
@@ -655,10 +688,33 @@ export async function countByDataset(datasetId: string, cx?: PoolConnection): Pr
 }
 
 /** Set the free-text notes on one property (empty string clears them). */
-export async function updatePropertyNotes(id: string, notes: string, cx?: PoolConnection): Promise<void> {
+/**
+ * Save notes, and — because "updating a unit" is how a broker renews it —
+ * push the assignment deadline out for a held unit: a portfolio unit gets a
+ * fresh renewal window, an assigned unit a fresh SLA (still clamped to the hard
+ * cap). Pooled / cooling / dnc rows are untouched.
+ */
+export async function updatePropertyNotes(
+  id: string, notes: string, settings: VaultSettings, cx?: PoolConnection,
+): Promise<void> {
   const db = cx ?? pool;
   await db.query(
-    'UPDATE properties SET notes = ?, updated_at = ? WHERE id = ?',
-    [notes.length > 0 ? notes : null, toDb(new Date().toISOString()), id],
+    // UTC_TIMESTAMP throughout — these columns hold UTC, so NOW() would write a
+    // deadline shifted by the server's UTC offset.
+    `UPDATE properties SET
+       notes = ?, updated_at = ?,
+       assignment_expires_at = CASE
+         WHEN state = '${PropertyState.portfolio}' THEN DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? DAY)
+         WHEN state = '${PropertyState.assigned}' THEN LEAST(
+           DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? HOUR),
+           DATE_ADD(COALESCE(assigned_at, UTC_TIMESTAMP(3)), INTERVAL ? DAY))
+         ELSE assignment_expires_at
+       END
+     WHERE id = ?`,
+    [
+      notes.length > 0 ? notes : null, toDb(new Date().toISOString()),
+      settings.portfolioRenewDays, settings.assignmentSlaHours, settings.noAnswerMaxHoldDays,
+      id,
+    ],
   );
 }

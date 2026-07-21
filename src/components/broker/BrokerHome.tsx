@@ -2,14 +2,18 @@ import React, { useMemo, useState } from 'react';
 import { useAuth } from '../../state/AuthContext';
 import { useVault } from '../../state/VaultContext';
 import { useCallSession } from '../../state/CallSessionContext';
-import { PropertyState } from '../../types/models';
+import { PropertyState, Property } from '../../types/models';
 import { groupByOwner } from '../../logic/ownerGrouping';
-import { ownerCallStops, stopDeps } from './callStops';
+import { ownerCallStops, ownerStopForProperty, stopDeps } from './callStops';
+import { CallDialog } from './CallDialog';
+import { CallStop } from '../../state/CallSessionContext';
 import { fmtInt, fmtDate, greetingName } from '../../utils/format';
 import {
   HeroSlab, SlabAction, DashColumns, DashCard, StatTile, SegmentBar, ProgressLine, Segment,
 } from '../common/Dash';
 import { Icon } from '../common/Icon';
+import { CountdownBadge } from '../common/StateChip';
+import { useNow } from '../../utils/useNow';
 import { useMyProperties, useBrokerDashboard } from '../../data/hooks';
 
 /**
@@ -35,6 +39,8 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
   const { rows: mine } = useMyProperties();
   const { data: dash } = useBrokerDashboard();
   const [starting, setStarting] = useState(false);
+  const [callStop, setCallStop] = useState<CallStop | null>(null);
+  const nowMs = useNow(60_000);
 
   const groups = useMemo(() => groupByOwner(mine), [mine]);
   const callable = useMemo(() => mine.filter(p => p.callable), [mine]);
@@ -53,6 +59,17 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
     () => mine.filter(p => p.state === PropertyState.portfolio).length,
     [mine],
   );
+
+  // Held units whose clock is nearly up — the "running out of time" list. Sorted
+  // soonest-first so the unit about to slip is at the top. Ticks with `nowMs`.
+  const expiringSoon = useMemo(() => {
+    const soonMs = vault.settings.expiringSoonHours * 3_600_000;
+    return mine
+      .filter(p => (p.state === PropertyState.assigned || p.state === PropertyState.portfolio) && p.assignmentExpiresAt)
+      .map(p => ({ p, ms: new Date(p.assignmentExpiresAt as string).getTime() - nowMs }))
+      .filter(x => x.ms <= soonMs)
+      .sort((a, b) => a.ms - b.ms);
+  }, [mine, vault.settings.expiringSoonHours, nowMs]);
 
   if (!user) return null;
 
@@ -103,14 +120,21 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
     }
   };
 
+  const openCall = async (p: Property) => {
+    if (!p.callable) return;
+    setCallStop(await ownerStopForProperty(p, deps));
+  };
+
   return (
     <div style={{ maxWidth: 1500, margin: '0 auto' }}>
+      {callStop && <CallDialog stop={callStop} onClose={() => setCallStop(null)} />}
       <HeroSlab
         title={`Good ${partOfDay(now)}, ${greetingName(user.name)}`}
         subtitle={fmtDate(now.toISOString())}
         stats={[
           { value: `${callsToday}`, label: 'calls today' },
           { value: fmtInt(mine.length), label: 'on your list' },
+          { value: `${expiringSoon.length}`, label: 'expiring soon' },
           { value: `${dueNext.length}`, label: 'due follow-ups' },
           { value: fmtInt(portfolio), label: 'in portfolio' },
         ]}
@@ -132,6 +156,39 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
       <div style={{ height: 16 }} />
 
       <DashColumns>
+        <DashCard title="Running out of time" icon="clock" flush
+          trailing={<button className="btn btn-ghost btn-sm" onClick={() => onGo?.('today')}>Work list</button>}>
+          {expiringSoon.length === 0 ? (
+            <div style={{ padding: '4px 16px 12px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+              Nothing slipping — everything on your list has time on the clock.
+            </div>
+          ) : (
+            <>
+              {expiringSoon.slice(0, 6).map(({ p }, i) => (
+                <div key={p.id} onClick={() => openCall(p)} title={p.callable ? 'Call this owner now' : undefined}
+                  style={{
+                    display: 'flex', gap: 10, alignItems: 'center', padding: '9px 16px',
+                    borderTop: i > 0 ? '1px solid var(--border-light)' : undefined,
+                    cursor: p.callable ? 'pointer' : 'default',
+                  }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div className="truncate" style={{ fontSize: '0.8125rem', fontWeight: 500 }}>{p.owner.name || 'Unknown owner'}</div>
+                    <div className="truncate" style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>
+                      {p.unitLabel}{p.state === PropertyState.portfolio ? ' · portfolio' : ''}
+                    </div>
+                  </div>
+                  <CountdownBadge deadline={p.assignmentExpiresAt} soonHours={vault.settings.expiringSoonHours} />
+                </div>
+              ))}
+              {expiringSoon.length > 6 && (
+                <div style={{ padding: '8px 16px', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                  +{expiringSoon.length - 6} more — call them before they return to the pool.
+                </div>
+              )}
+            </>
+          )}
+        </DashCard>
+
         <DashCard title="Your pipeline" icon="layers" trailing={<button className="btn btn-ghost btn-sm" onClick={() => onGo?.('today')}>Open</button>}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 24px', marginBottom: 14 }}>
             <StatTile value={fmtInt(mine.length)} label="assigned" color="var(--primary)" />

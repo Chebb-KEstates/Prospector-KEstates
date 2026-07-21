@@ -37,6 +37,7 @@ export function toLead(r: Row): Lead {
   l.callAttempts = Number(r.call_attempts ?? 0);
   l.nextFollowUpAt = fromDb(r.next_follow_up_at);
   l.dncAt = fromDb(r.dnc_at);
+  l.assignmentExpiresAt = fromDb(r.assignment_expires_at);
   return l;
 }
 
@@ -56,14 +57,14 @@ const COLS = `
   id, org_id, dataset_id, state, lead_key, enquiry_date, name, phone, email,
   project, source, extra, created_at, updated_at, assigned_to, assigned_at,
   assignment_note, cooldown_until, portfolio_since, last_outcome,
-  last_called_at, call_attempts, next_follow_up_at, dnc_at`;
+  last_called_at, call_attempts, next_follow_up_at, dnc_at, assignment_expires_at`;
 
 const WRITE_COLS = `
   id, org_id, dataset_id, state, lead_key, enquiry_date, name, phone, email,
   project, source, extra, created_at, updated_at, assigned_to, assigned_at,
   assignment_note, cooldown_until, portfolio_since, last_outcome,
-  last_called_at, call_attempts, next_follow_up_at, dnc_at`;
-const PLACEHOLDERS = `(${new Array(24).fill('?').join(', ')})`;
+  last_called_at, call_attempts, next_follow_up_at, dnc_at, assignment_expires_at`;
+const PLACEHOLDERS = `(${new Array(25).fill('?').join(', ')})`;
 
 function writeParams(l: Lead): unknown[] {
   return [
@@ -77,7 +78,7 @@ function writeParams(l: Lead): unknown[] {
     l.assignedTo ?? null, toDb(l.assignedAt), l.assignmentNote ?? null,
     toDb(l.cooldownUntil), toDb(l.portfolioSince),
     l.lastOutcome ?? null, toDb(l.lastCalledAt), l.callAttempts,
-    toDb(l.nextFollowUpAt), toDb(l.dncAt),
+    toDb(l.nextFollowUpAt), toDb(l.dncAt), toDb(l.assignmentExpiresAt),
   ];
 }
 
@@ -103,7 +104,8 @@ export async function saveLeads(
          assignment_note = VALUES(assignment_note), cooldown_until = VALUES(cooldown_until),
          portfolio_since = VALUES(portfolio_since), last_outcome = VALUES(last_outcome),
          last_called_at = VALUES(last_called_at), call_attempts = VALUES(call_attempts),
-         next_follow_up_at = VALUES(next_follow_up_at), dnc_at = VALUES(dnc_at)`,
+         next_follow_up_at = VALUES(next_follow_up_at), dnc_at = VALUES(dnc_at),
+         assignment_expires_at = VALUES(assignment_expires_at)`,
       chunk.flatMap(writeParams),
     );
     onProgress?.(Math.min(i + CHUNK, leads.length), leads.length);

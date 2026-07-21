@@ -24,16 +24,16 @@ const PROP_COLS = `
   unit_number, plot_number, property_type, beds, size_sqft, plot_sqft,
   last_transaction_date, last_transaction_value, tx_count,
   rent_start, rent_end, rent_amount,
-  owner_name, owner_phone, owner_nationality, extra,
+  owner_name, owner_phone, owner_phones, owner_nationality, extra,
   created_at, updated_at, assigned_to, assigned_at, assignment_note,
   cooldown_until, portfolio_since, last_outcome, last_called_at,
-  call_attempts, next_follow_up_at, dnc_at`;
+  call_attempts, next_follow_up_at, dnc_at, assignment_expires_at`;
 
 const LEAD_COLS = `
   id, org_id, dataset_id, state, lead_key, enquiry_date, name, phone, email,
   project, source, extra, created_at, updated_at, assigned_to, assigned_at,
   assignment_note, cooldown_until, portfolio_since, last_outcome,
-  last_called_at, call_attempts, next_follow_up_at, dnc_at`;
+  last_called_at, call_attempts, next_follow_up_at, dnc_at, assignment_expires_at`;
 
 export interface LogCallInput {
   propertyIds: string[];
@@ -208,7 +208,9 @@ export async function sweepLapsed(): Promise<{ properties: number; leads: number
       `SELECT ${PROP_COLS} FROM properties
        WHERE org_id = ?
          AND ((state = 'cooling' AND cooldown_until IS NOT NULL AND cooldown_until < NOW(3))
-           OR (state = 'assigned' AND last_called_at IS NULL AND assigned_at IS NOT NULL))
+           OR (state IN ('assigned', 'portfolio')
+               AND assignment_expires_at IS NOT NULL
+               AND assignment_expires_at < UTC_TIMESTAMP(3)))
        FOR UPDATE`,
       [kOrgId],
     );
@@ -220,7 +222,9 @@ export async function sweepLapsed(): Promise<{ properties: number; leads: number
       `SELECT ${LEAD_COLS} FROM leads
        WHERE org_id = ?
          AND ((state = 'cooling' AND cooldown_until IS NOT NULL AND cooldown_until < NOW(3))
-           OR (state = 'assigned' AND last_called_at IS NULL AND assigned_at IS NOT NULL))
+           OR (state IN ('assigned', 'portfolio')
+               AND assignment_expires_at IS NOT NULL
+               AND assignment_expires_at < UTC_TIMESTAMP(3)))
        FOR UPDATE`,
       [kOrgId],
     );

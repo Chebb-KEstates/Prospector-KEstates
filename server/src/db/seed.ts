@@ -202,15 +202,30 @@ async function seedDemoData(log: (m: string) => void): Promise<void> {
     // Hand the assigned/portfolio units to the demo brokers so the dialer and
     // the broker home have something to show.
     const [rows] = await pool.query<import('mysql2/promise').RowDataPacket[]>(
-      `SELECT id FROM properties WHERE org_id = ? AND state IN ('assigned','portfolio')`,
+      `SELECT id, state FROM properties WHERE org_id = ? AND state IN ('assigned','portfolio')`,
       [kOrgId],
     );
+    // Stamp the assignment timer too, exactly as a real assignment would —
+    // otherwise the seeded units carry no deadline and the countdown column
+    // looks broken on a fresh demo. Spread the deadlines so the demo shows a
+    // realistic mix, including a couple already inside the "expiring" window.
+    const settings = await loadSettings();
     let i = 0;
     for (const r of rows) {
       const broker = brokers[i % brokers.length];
+      const hours = r.state === PropertyState.portfolio
+        ? settings.portfolioRenewDays * 24
+        : settings.assignmentSlaHours;
+      // Every third unit is deliberately nearly out of time.
+      const remaining = i % 3 === 0 ? Math.min(6, hours) : hours - (i % 5);
       await pool.query(
-        'UPDATE properties SET assigned_to = ?, assigned_at = ? WHERE id = ?',
-        [broker.id, new Date(), r.id],
+        // UTC_TIMESTAMP — these columns hold UTC, so NOW() would offset the
+        // seeded deadlines by the server's local UTC offset.
+        `UPDATE properties
+         SET assigned_to = ?, assigned_at = ?,
+             assignment_expires_at = DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? HOUR)
+         WHERE id = ?`,
+        [broker.id, new Date(), remaining, r.id],
       );
       i++;
     }

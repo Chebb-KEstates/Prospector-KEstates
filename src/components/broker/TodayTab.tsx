@@ -23,9 +23,10 @@ import { useMyProperties, useMyLeads } from '../../data/hooks';
  * itself to `mine` server-side.
  */
 
-type Quick = 'all' | 'due' | 'fresh' | 'noAnswer' | 'interested';
+type Quick = 'all' | 'due' | 'fresh' | 'noAnswer' | 'interested' | 'expiring';
 const QUICKS: { key: Quick; label: string }[] = [
   { key: 'all', label: 'All' },
+  { key: 'expiring', label: '⏰ Expiring soon' },
   { key: 'due', label: 'Due follow-up' },
   { key: 'fresh', label: 'Never called' },
   { key: 'noAnswer', label: 'No answer' },
@@ -40,13 +41,14 @@ const QUICKS: { key: Quick; label: string }[] = [
  * filter can express. Without them these two chips would silently do nothing.
  */
 function quickToQuery(quick: Quick): {
-  forcedOutcome?: string; dueOnly?: boolean; interestedOnly?: boolean;
+  forcedOutcome?: string; dueOnly?: boolean; interestedOnly?: boolean; expiringSoon?: boolean;
 } {
   switch (quick) {
     case 'fresh': return { forcedOutcome: 'none' };
     case 'noAnswer': return { forcedOutcome: CallOutcome.noAnswer };
     case 'due': return { dueOnly: true };
     case 'interested': return { interestedOnly: true };
+    case 'expiring': return { expiringSoon: true };
     default: return {};
   }
 }

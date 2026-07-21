@@ -24,6 +24,11 @@ export function SettingsScreen() {
         form.dailyViewCap,
         form.wifiLockEnabled,
         form.officeIp,
+        form.assignmentSlaHours,
+        form.noAnswerExtensionHours,
+        form.noAnswerMaxHoldDays,
+        form.portfolioRenewDays,
+        form.expiringSoonHours,
       ));
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -74,13 +79,28 @@ export function SettingsScreen() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
         <div className="card">
-          <h3 style={{ fontWeight: 600, marginBottom: 16 }}>Cooldown & Expiry</h3>
+          <h3 style={{ fontWeight: 600, marginBottom: 16 }}>Cooldown</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {field('Not interested cooldown (days)', 'notInterestedCooldownDays', 'number', 'Owner stays in cooling before returning to pool')}
             {field('Already listed cooldown (days)', 'listedCooldownDays', 'number')}
-            {field('Max no-answer attempts', 'maxNoAnswerAttempts', 'number', 'Streak before auto-recycle to pool')}
-            {field('Assignment expiry (days)', 'assignmentExpiryDays', 'number', 'Uncalled assignments auto-recycle after this')}
-            {field('Portfolio staleness (days)', 'portfolioStaleDays', 'number', 'Days without call before portfolio is stale')}
+            {field('Portfolio staleness (days)', 'portfolioStaleDays', 'number', 'Days without call before a portfolio unit is flagged stale')}
+          </div>
+        </div>
+
+        {/* The assignment timer — how long a broker keeps a unit before it
+            returns to the pool for someone else. These drive the countdown in
+            the tables and the automatic recycling sweep. */}
+        <div className="card">
+          <h3 style={{ fontWeight: 600, marginBottom: 4 }}>Assignment timer</h3>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginBottom: 16 }}>
+            How long a broker holds a unit before it is released back to the pool.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {field('Time to make contact (hours)', 'assignmentSlaHours', 'number', 'Countdown when a unit is first assigned')}
+            {field('No-answer extension (hours)', 'noAnswerExtensionHours', 'number', 'Each no-answer / unreachable call resets the clock to this')}
+            {field('Maximum hold (days)', 'noAnswerMaxHoldDays', 'number', 'Hard cap from assignment — no-answers cannot extend past this')}
+            {field('Portfolio renewal (days)', 'portfolioRenewDays', 'number', 'Interested units keep this long, renewed by calling or saving notes')}
+            {field('"Running out of time" alert (hours)', 'expiringSoonHours', 'number', 'When a unit turns amber and appears on the home screen')}
           </div>
         </div>
 

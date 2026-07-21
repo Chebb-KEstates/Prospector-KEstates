@@ -4,9 +4,11 @@ import {
   Property, Lead, PropertyState, BatchRequest, RequestStatus, kOrgId,
 } from '../../../src/types/models';
 import { ownerKeyOf } from '../../../src/logic/ownerGrouping';
+import { assignmentDeadlineOnAssign } from '../../../src/logic/dispositions';
 import { toProperty, saveProperties } from '../repositories/propertyRepo';
 import { toLead, saveLeads } from '../repositories/leadRepo';
 import { lockRequestForDecision, markDecided } from '../repositories/requestRepo';
+import { loadSettings } from '../repositories/settingsRepo';
 import { writeAudit } from '../repositories/auditRepo';
 import { findUserById } from '../repositories/userRepo';
 import { conflict, notFound } from '../http/errors';
@@ -36,10 +38,10 @@ const ASSIGNABLE_COLS = `
   unit_number, plot_number, property_type, beds, size_sqft, plot_sqft,
   last_transaction_date, last_transaction_value, tx_count,
   rent_start, rent_end, rent_amount,
-  owner_name, owner_phone, owner_nationality, extra,
+  owner_name, owner_phone, owner_phones, owner_nationality, extra,
   created_at, updated_at, assigned_to, assigned_at, assignment_note,
   cooldown_until, portfolio_since, last_outcome, last_called_at,
-  call_attempts, next_follow_up_at, dnc_at`;
+  call_attempts, next_follow_up_at, dnc_at, assignment_expires_at`;
 
 export interface AssignResult {
   assigned: number;
@@ -66,6 +68,7 @@ export async function assignProperties(
   if (!broker || !broker.active) {
     throw notFound('That broker no longer has an active account.');
   }
+  const settings = await loadSettings();
 
   return transaction(async (cx) => {
     // 1. Lock the explicitly chosen rows.
@@ -105,6 +108,7 @@ export async function assignProperties(
       p.assignmentNote = note;
       p.callAttempts = 0;
       p.nextFollowUpAt = undefined;
+      p.assignmentExpiresAt = assignmentDeadlineOnAssign(now, settings);
       p.updatedAt = now;
     }
     await saveProperties(expanded, cx);
@@ -136,10 +140,12 @@ export async function reclaimProperties(propertyIds: string[], actorId: string):
     const now = new Date().toISOString();
     for (const p of batch) {
       p.state = PropertyState.pool;
+      p.assignedTo = undefined;
       p.assignedAt = undefined;
       p.assignmentNote = undefined;
       p.nextFollowUpAt = undefined;
       p.portfolioSince = undefined;
+      p.assignmentExpiresAt = undefined;
       p.updatedAt = now;
     }
     await saveProperties(batch, cx);
@@ -157,7 +163,7 @@ const LEAD_COLS = `
   id, org_id, dataset_id, state, lead_key, enquiry_date, name, phone, email,
   project, source, extra, created_at, updated_at, assigned_to, assigned_at,
   assignment_note, cooldown_until, portfolio_since, last_outcome,
-  last_called_at, call_attempts, next_follow_up_at, dnc_at`;
+  last_called_at, call_attempts, next_follow_up_at, dnc_at, assignment_expires_at`;
 
 /** Leads have no owner-linked expansion — one lead is one person. */
 export async function assignLeads(
@@ -169,6 +175,7 @@ export async function assignLeads(
   if (!broker || !broker.active) {
     throw notFound('That broker no longer has an active account.');
   }
+  const settings = await loadSettings();
 
   return transaction(async (cx) => {
     const [rows] = await cx.query<Row[]>(
@@ -186,6 +193,7 @@ export async function assignLeads(
       l.assignmentNote = note;
       l.callAttempts = 0;
       l.nextFollowUpAt = undefined;
+      l.assignmentExpiresAt = assignmentDeadlineOnAssign(now, settings);
       l.updatedAt = now;
     }
     await saveLeads(batch, cx);
@@ -214,10 +222,12 @@ export async function reclaimLeads(leadIds: string[], actorId: string): Promise<
     const now = new Date().toISOString();
     for (const l of batch) {
       l.state = PropertyState.pool;
+      l.assignedTo = undefined;
       l.assignedAt = undefined;
       l.assignmentNote = undefined;
       l.nextFollowUpAt = undefined;
       l.portfolioSince = undefined;
+      l.assignmentExpiresAt = undefined;
       l.updatedAt = now;
     }
     await saveLeads(batch, cx);
@@ -240,6 +250,7 @@ export async function reclaimLeads(leadIds: string[], actorId: string): Promise<
 export async function approveRequest(
   requestId: string, actorId: string,
 ): Promise<{ granted: number; request: BatchRequest }> {
+  const settings = await loadSettings();
   return transaction(async (cx) => {
     const req = await lockRequestForDecision(requestId, cx);
     if (!req) throw notFound('That request no longer exists.');
@@ -302,6 +313,7 @@ export async function approveRequest(
         p.assignmentNote = 'Requested batch';
         p.callAttempts = 0;
         p.nextFollowUpAt = undefined;
+        p.assignmentExpiresAt = assignmentDeadlineOnAssign(now, settings);
         p.updatedAt = now;
       }
       await saveProperties(expanded, cx);

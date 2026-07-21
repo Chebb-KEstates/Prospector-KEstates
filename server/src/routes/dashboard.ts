@@ -3,7 +3,7 @@ import { Permission } from '../../../src/types/user';
 import { PropertyState } from '../../../src/types/models';
 import {
   countByState, countCallable, countTotal, listCommunities,
-  countDistinctOwners, countStalePortfolio, countAgingAssignments,
+  countDistinctOwners, countStalePortfolio, countExpiringSoon,
   assignedCountByBroker, workedByDataset, heldByBrokerAndState, countCallableWorked,
 } from '../repositories/propertyRepo';
 import { countLeadsByState, countLeadsTotal } from '../repositories/leadRepo';
@@ -70,7 +70,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       totalCalls, owners, pending, communities, datasets,
       todayStats, todayByBroker, rolling, momentum,
       allBrokerStats, assignedCounts, worked,
-      stale, aging, users, audit,
+      stale, expiringSoon, users, audit,
     ] = await Promise.all([
       countByState(),
       countLeadsByState(),
@@ -90,7 +90,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       assignedCountByBroker(),
       workedByDataset(),
       countStalePortfolio(settings.portfolioStaleDays),
-      countAgingAssignments(settings.assignmentExpiryDays),
+      countExpiringSoon(settings.expiringSoonHours),
       listUsers(),
       listAudit({ limit: 8, offset: 0 }),
     ]);
@@ -138,7 +138,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
         pendingRequests: pending,
         idleBrokers: board.filter(b => b.quiet).map(b => b.name),
         staleCount: stale,
-        agingAssignments: aging,
+        expiringSoon,
       },
       communities,
       board,
@@ -211,14 +211,17 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     const { tzOffsetMinutes = 0 } = req.query as { tzOffsetMinutes?: number };
     const me = req.currentUser!;
     const today = dayBounds(tzOffsetMinutes);
+    const settings = await loadSettings();
 
-    const [propertyStates, allStats, todayByBroker, assignedCounts, pending] = await Promise.all([
-      countByState(),
-      brokerCallStats(),
-      brokerStatsBetween(today.from, today.to),
-      assignedCountByBroker(),
-      countPending(),
-    ]);
+    const [propertyStates, allStats, todayByBroker, assignedCounts, pending, myExpiringSoon] =
+      await Promise.all([
+        countByState(),
+        brokerCallStats(),
+        brokerStatsBetween(today.from, today.to),
+        assignedCountByBroker(),
+        countPending(),
+        countExpiringSoon(settings.expiringSoonHours, me.id),
+      ]);
 
     const mine = allStats.find(s => s.brokerId === me.id);
     const mineToday = todayByBroker.get(me.id);
@@ -235,6 +238,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       myReachedToday: mineToday?.reached ?? 0,
       myInterestedToday: mineToday?.interested ?? 0,
       myOnList: assignedCounts.get(me.id) ?? 0,
+      myExpiringSoon,
       teamAverageCalls: teamAverage,
       poolAvailable: propertyStates[PropertyState.pool],
       myPendingRequests: pending,

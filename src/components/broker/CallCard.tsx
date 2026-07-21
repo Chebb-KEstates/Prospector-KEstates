@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CallStop, CallUnit } from '../../state/CallSessionContext';
 import { CallOutcome, CallOutcomeLabel, CallOutcomeBuyerLabel } from '../../types/models';
 import type { PhoneEntry } from '../../types/models';
-import { StateChip } from '../common/StateChip';
+import { StateChip, CountdownBadge } from '../common/StateChip';
 import { Icon } from '../common/Icon';
 import { fmtDate, timeAgo } from '../../utils/format';
 import { ApiError } from '../../data/apiClient';
@@ -200,6 +200,8 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
                   </span>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                     {u.rental && <ToneChip tone={u.rental.tone}>{u.rental.label}</ToneChip>}
+                    {/* How long this unit stays theirs if they don't work it. */}
+                    <CountdownBadge deadline={u.expiresAt} />
                     <Icon name="chevronRight" size={14} style={{ color: 'var(--text-tertiary)' }} />
                   </span>
                 </div>

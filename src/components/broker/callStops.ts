@@ -105,6 +105,7 @@ export function buildOwnerStop(
       // This unit's slice of the owner's call history.
       history: history(calls.filter(c => c.propertyIds.includes(p.id)), deps.nameOf),
       notes: p.notes,
+      expiresAt: p.assignmentExpiresAt,
     };
   });
 

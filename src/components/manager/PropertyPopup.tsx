@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { CallStop, CallUnit } from '../../state/CallSessionContext';
 import { CallOutcome, CallOutcomeLabel } from '../../types/models';
-import type { PhoneEntry } from '../../types/models';
-import { StateChip } from '../common/StateChip';
+import type { PhoneEntry, Property } from '../../types/models';
+import { StateChip, CountdownBadge } from '../common/StateChip';
 import { Icon } from '../common/Icon';
 import { ApiError } from '../../data/apiClient';
 import { ToneChip, sectionLabel, UnitDetailDialog } from '../broker/callVisuals';
@@ -25,6 +25,9 @@ export function PropertyPopup({ propertyId, onClose }: { propertyId: string; onC
   );
 
   const [stop, setStop] = useState<CallStop | null>(null);
+  // Kept alongside the stop purely for the assignment timer — CallStop has no
+  // deadline of its own, and the manager wants to see the clock here too.
+  const [prop, setProp] = useState<Property | null>(null);
   const [loading, setLoading] = useState(true);
   const [openUnit, setOpenUnit] = useState<CallUnit | null>(null);
   const [noteOverrides, setNoteOverrides] = useState<Record<string, string>>({});
@@ -39,9 +42,9 @@ export function PropertyPopup({ propertyId, onClose }: { propertyId: string; onC
       try {
         const p = await api.properties.byId(propertyId);
         const s = await ownerStopForProperty(p, deps);
-        if (!cancelled) setStop(s);
+        if (!cancelled) { setProp(p); setStop(s); }
       } catch {
-        if (!cancelled) setStop(null);
+        if (!cancelled) { setProp(null); setStop(null); }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -84,7 +87,10 @@ export function PropertyPopup({ propertyId, onClose }: { propertyId: string; onC
                     {[stop.nationality, stop.subtitle].filter(Boolean).join(' · ')}
                   </div>
                 </div>
-                <StateChip state={stop.state} />
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                  <StateChip state={stop.state} />
+                  <CountdownBadge deadline={prop?.assignmentExpiresAt} soonHours={vault.settings.expiringSoonHours} />
+                </span>
                 <button className="btn btn-icon btn-sm" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button>
               </div>
 

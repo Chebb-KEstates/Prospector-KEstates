@@ -29,6 +29,7 @@ export interface CallUnit {
   state: PropertyState;                       // current state, shown in the per-unit popup
   history: CallHistoryEntry[];                // this unit's own call history
   notes?: string;                             // free-text notes saved on the record
+  expiresAt?: string;                         // assignment deadline — drives the countdown badge
 }
 
 /**

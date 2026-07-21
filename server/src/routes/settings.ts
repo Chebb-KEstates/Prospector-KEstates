@@ -34,6 +34,12 @@ export default async function settingsRoutes(app: FastifyInstance) {
           dailyViewCap: { type: 'integer', minimum: 1, maximum: 10000 },
           wifiLockEnabled: { type: 'boolean' },
           officeIp: { type: 'string', maxLength: 64 },
+          // Assignment timer. Hours 1–720 (30 days), days 1–365.
+          assignmentSlaHours: { type: 'integer', minimum: 1, maximum: 720 },
+          noAnswerExtensionHours: { type: 'integer', minimum: 1, maximum: 720 },
+          noAnswerMaxHoldDays: { type: 'integer', minimum: 1, maximum: 365 },
+          portfolioRenewDays: { type: 'integer', minimum: 1, maximum: 365 },
+          expiringSoonHours: { type: 'integer', minimum: 1, maximum: 720 },
         },
       },
     },
@@ -50,6 +56,11 @@ export default async function settingsRoutes(app: FastifyInstance) {
       body.dailyViewCap ?? current.dailyViewCap,
       body.wifiLockEnabled ?? current.wifiLockEnabled,
       body.officeIp ?? current.officeIp,
+      body.assignmentSlaHours ?? current.assignmentSlaHours,
+      body.noAnswerExtensionHours ?? current.noAnswerExtensionHours,
+      body.noAnswerMaxHoldDays ?? current.noAnswerMaxHoldDays,
+      body.portfolioRenewDays ?? current.portfolioRenewDays,
+      body.expiringSoonHours ?? current.expiringSoonHours,
     );
 
     await saveSettings(next);

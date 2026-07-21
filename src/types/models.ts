@@ -76,6 +76,12 @@ export interface ProspectFields {
   callAttempts: number;
   nextFollowUpAt?: string;
   dncAt?: string;
+  /**
+   * When this unit's hold expires and it auto-returns to the pool. Set only
+   * while `assigned` or `portfolio`; cleared otherwise. Drives the countdown in
+   * the tables and the housekeeping sweep that recycles neglected units.
+   */
+  assignmentExpiresAt?: string;
 }
 
 /** One labelled contact number, e.g. { label: 'Mobile 2', number: '971501234567' }. */
@@ -140,6 +146,7 @@ export class Property implements ProspectFields {
   callAttempts = 0;
   nextFollowUpAt?: string;
   dncAt?: string;
+  assignmentExpiresAt?: string;
   /** Free-text notes on the record, edited from the per-unit detail popup. */
   notes?: string;
   /** Any unmapped columns from the upload, kept verbatim so the table can show them. */
@@ -189,7 +196,7 @@ export class Property implements ProspectFields {
     return '(unidentified)';
   }
 
-  copyWith(fields: Partial<Omit<Property, 'id' | 'orgId' | 'unitKey' | 'createdAt' | 'state' | 'assignedTo' | 'assignedAt' | 'assignmentNote' | 'cooldownUntil' | 'portfolioSince' | 'lastOutcome' | 'lastCalledAt' | 'callAttempts' | 'nextFollowUpAt' | 'dncAt' | 'notes'>> & { updatedAt?: string }): Property {
+  copyWith(fields: Partial<Omit<Property, 'id' | 'orgId' | 'unitKey' | 'createdAt' | 'state' | 'assignedTo' | 'assignedAt' | 'assignmentNote' | 'cooldownUntil' | 'portfolioSince' | 'lastOutcome' | 'lastCalledAt' | 'callAttempts' | 'nextFollowUpAt' | 'dncAt' | 'assignmentExpiresAt' | 'notes'>> & { updatedAt?: string }): Property {
     const p = Property.fromJson(this.toJson());
     Object.assign(p, fields);
     return p;
@@ -211,6 +218,7 @@ export class Property implements ProspectFields {
       portfolioSince: this.portfolioSince, lastOutcome: this.lastOutcome,
       lastCalledAt: this.lastCalledAt, callAttempts: this.callAttempts,
       nextFollowUpAt: this.nextFollowUpAt, dncAt: this.dncAt,
+      assignmentExpiresAt: this.assignmentExpiresAt,
       notes: this.notes, extra: this.extra,
     };
   }
@@ -248,6 +256,7 @@ export class Property implements ProspectFields {
     p.callAttempts = (j.callAttempts as number) ?? 0;
     p.nextFollowUpAt = j.nextFollowUpAt as string | undefined;
     p.dncAt = j.dncAt as string | undefined;
+    p.assignmentExpiresAt = j.assignmentExpiresAt as string | undefined;
     p.notes = j.notes as string | undefined;
     p.extra = Object.fromEntries(
       Object.entries((j.extra as Record<string, unknown>) ?? {}).map(([k, v]) => [k, String(v)]));
@@ -268,6 +277,7 @@ export class Lead implements ProspectFields {
   callAttempts = 0;
   nextFollowUpAt?: string;
   dncAt?: string;
+  assignmentExpiresAt?: string;
   extra: Record<string, string> = {};
 
   constructor(
@@ -324,6 +334,7 @@ export class Lead implements ProspectFields {
       portfolioSince: this.portfolioSince, lastOutcome: this.lastOutcome,
       lastCalledAt: this.lastCalledAt, callAttempts: this.callAttempts,
       nextFollowUpAt: this.nextFollowUpAt, dncAt: this.dncAt,
+      assignmentExpiresAt: this.assignmentExpiresAt,
     };
   }
 
@@ -353,6 +364,7 @@ export class Lead implements ProspectFields {
     l.callAttempts = (j.callAttempts as number) ?? 0;
     l.nextFollowUpAt = j.nextFollowUpAt as string | undefined;
     l.dncAt = j.dncAt as string | undefined;
+    l.assignmentExpiresAt = j.assignmentExpiresAt as string | undefined;
     return l;
   }
 }
@@ -515,6 +527,12 @@ export class VaultSettings {
     public dailyViewCap = 100,
     public wifiLockEnabled = false,
     public officeIp = '',
+    // Assignment timer — the per-unit countdown that recycles neglected units.
+    public assignmentSlaHours = 48,      // fresh assignment → time to make contact
+    public noAnswerExtensionHours = 24,  // each no-answer resets the deadline to this
+    public noAnswerMaxHoldDays = 14,     // hard cap: no-answers can't hold beyond this
+    public portfolioRenewDays = 7,       // portfolio timer, renewed by working the unit
+    public expiringSoonHours = 24,       // "running out of time" threshold + amber warning
   ) {}
 
   toJson(): Record<string, unknown> {
@@ -527,6 +545,11 @@ export class VaultSettings {
       dailyViewCap: this.dailyViewCap,
       wifiLockEnabled: this.wifiLockEnabled,
       officeIp: this.officeIp,
+      assignmentSlaHours: this.assignmentSlaHours,
+      noAnswerExtensionHours: this.noAnswerExtensionHours,
+      noAnswerMaxHoldDays: this.noAnswerMaxHoldDays,
+      portfolioRenewDays: this.portfolioRenewDays,
+      expiringSoonHours: this.expiringSoonHours,
     };
   }
 
@@ -541,6 +564,11 @@ export class VaultSettings {
       _int(j.dailyViewCap, d.dailyViewCap),
       (j.wifiLockEnabled as boolean) ?? d.wifiLockEnabled,
       (j.officeIp as string) ?? d.officeIp,
+      _int(j.assignmentSlaHours, d.assignmentSlaHours),
+      _int(j.noAnswerExtensionHours, d.noAnswerExtensionHours),
+      _int(j.noAnswerMaxHoldDays, d.noAnswerMaxHoldDays),
+      _int(j.portfolioRenewDays, d.portfolioRenewDays),
+      _int(j.expiringSoonHours, d.expiringSoonHours),
     );
   }
 }

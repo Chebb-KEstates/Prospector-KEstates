@@ -6,6 +6,7 @@ import {
   updatePropertyNotes,
 } from '../repositories/propertyRepo';
 import { callsForProperties } from '../repositories/callRepo';
+import { loadSettings } from '../repositories/settingsRepo';
 import {
   assignProperties, reclaimProperties,
 } from '../services/assignmentService';
@@ -45,6 +46,7 @@ const listQuerySchema = {
     callableOnly: { type: 'boolean' },
     dueOnly: { type: 'boolean' },
     interestedOnly: { type: 'boolean' },
+    expiringSoon: { type: 'boolean' },
     tenancy: { type: 'string', enum: ['vacant', 'rented', 'leaseSoon'] },
     assignedTo: { type: 'string', maxLength: 64 },
     datasetId: { type: 'string', maxLength: 64 },
@@ -61,7 +63,7 @@ interface ListQuery {
   search?: string; community?: string; cluster?: string;
   state?: PropertyState | ''; beds?: number; nationality?: string;
   outcome?: string; txFrom?: string; txTo?: string; callableOnly?: boolean;
-  dueOnly?: boolean; interestedOnly?: boolean;
+  dueOnly?: boolean; interestedOnly?: boolean; expiringSoon?: boolean;
   tenancy?: 'vacant' | 'rented' | 'leaseSoon';
   assignedTo?: string; datasetId?: string;
   scope?: 'all' | 'mine' | 'pool';
@@ -124,6 +126,12 @@ export default async function propertyRoutes(app: FastifyInstance) {
     const pageSize = Math.min(q.pageSize ?? 50, MAX_PAGE);
     const page = q.page ?? 0;
 
+    // Only the "expiring soon" chip needs the timer window, so the settings
+    // read is paid for only when that filter is on.
+    const expiringWithinHours = q.expiringSoon
+      ? (await loadSettings()).expiringSoonHours
+      : undefined;
+
     const result = await queryProperties({
       search: q.search,
       community: q.community,
@@ -137,6 +145,8 @@ export default async function propertyRoutes(app: FastifyInstance) {
       callableOnly: q.callableOnly,
       dueOnly: q.dueOnly,
       interestedOnly: q.interestedOnly,
+      expiringSoon: q.expiringSoon,
+      expiringWithinHours,
       tenancy: q.tenancy,
       datasetId: q.datasetId,
       assignedTo: scope.assignedTo,
@@ -345,7 +355,9 @@ export default async function propertyRoutes(app: FastifyInstance) {
       throw forbidden('You can only add notes to a unit assigned to you.');
     }
 
-    await updatePropertyNotes(id, notes.trim());
+    // Saving notes is "working" a unit, so it renews the assignment timer —
+    // updatePropertyNotes needs the windows to know how far to push the deadline.
+    await updatePropertyNotes(id, notes.trim(), await loadSettings());
     const updated = await findPropertyById(id);
     return serializeProperty(updated!);
   });

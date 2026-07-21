@@ -68,6 +68,29 @@ export function timeAgo(at: string, now: Date = new Date()): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+/** Milliseconds until a deadline (negative once past); null when there's none. */
+export function remainingMs(deadline?: string, now: number = Date.now()): number | null {
+  if (!deadline) return null;
+  const t = new Date(deadline).getTime();
+  return isNaN(t) ? null : t - now;
+}
+
+/**
+ * Compact countdown label for the assignment timer: "2d 4h", "5h 12m", "18m",
+ * or "Overdue" once the deadline has passed. Coarse on purpose — minutes only
+ * matter in the last hour.
+ */
+export function formatRemaining(ms: number): string {
+  if (ms <= 0) return 'Overdue';
+  const totalMin = Math.floor(ms / 60000);
+  const days = Math.floor(totalMin / 1440);
+  const hours = Math.floor((totalMin % 1440) / 60);
+  const mins = totalMin % 60;
+  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  if (hours > 0) return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  return `${Math.max(1, mins)}m`;
+}
+
 export function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }

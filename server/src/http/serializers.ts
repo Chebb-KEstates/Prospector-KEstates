@@ -85,6 +85,7 @@ export function serializeProperty(p: Property) {
     callAttempts: p.callAttempts,
     nextFollowUpAt: p.nextFollowUpAt,
     dncAt: p.dncAt,
+    assignmentExpiresAt: p.assignmentExpiresAt,
     notes: p.notes,
     extra: p.extra,
   };
@@ -116,6 +117,7 @@ export function serializeLead(l: Lead) {
     callAttempts: l.callAttempts,
     nextFollowUpAt: l.nextFollowUpAt,
     dncAt: l.dncAt,
+    assignmentExpiresAt: l.assignmentExpiresAt,
   };
 }
 
