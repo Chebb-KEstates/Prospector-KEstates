@@ -65,11 +65,16 @@ export async function createSession(
 /**
  * Look up a live session. Expired rows are treated as absent and swept lazily.
  * Also slides `last_seen_at` so an active user isn't logged out mid-session.
+ *
+ * UTC_TIMESTAMP, not NOW(): `createSession` binds JS Dates and the pool is
+ * opened with timezone 'Z', so both columns hold UTC. NOW() answers in the
+ * server's local zone, which on a UTC+4 box retired every session four hours
+ * before its TTL was up.
  */
 export async function readSession(token: string): Promise<SessionRecord | null> {
   const [rows] = await pool.query<Row[]>(
     `SELECT user_id, csrf_token, expires_at FROM sessions
-     WHERE token_hash = ? AND expires_at > NOW(3) LIMIT 1`,
+     WHERE token_hash = ? AND expires_at > UTC_TIMESTAMP(3) LIMIT 1`,
     [hashToken(token)],
   );
   if (rows.length === 0) return null;
@@ -77,7 +82,7 @@ export async function readSession(token: string): Promise<SessionRecord | null> 
   const r = rows[0];
   // Fire-and-forget touch: never block a request on session bookkeeping.
   pool
-    .query('UPDATE sessions SET last_seen_at = NOW(3) WHERE token_hash = ?', [hashToken(token)])
+    .query('UPDATE sessions SET last_seen_at = UTC_TIMESTAMP(3) WHERE token_hash = ?', [hashToken(token)])
     .catch(() => { /* touch is best-effort */ });
 
   return {
@@ -99,7 +104,7 @@ export async function revokeAllFor(userId: string, cx?: PoolConnection): Promise
 
 /** Housekeeping — called on a timer by the server. */
 export async function sweepExpiredSessions(): Promise<number> {
-  const [res] = await pool.query('DELETE FROM sessions WHERE expires_at <= NOW(3)');
+  const [res] = await pool.query('DELETE FROM sessions WHERE expires_at <= UTC_TIMESTAMP(3)');
   return (res as { affectedRows?: number }).affectedRows ?? 0;
 }
 

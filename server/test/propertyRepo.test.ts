@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { pool, closePool } from '../src/db/pool';
 import {
   saveProperties, queryProperties, findByUnitKeys, findByOwnerKey,
-  countByState, countCallable, propertyFacets, toProperty,
+  countByState, countCallable, propertyFacets, toProperty, countStalePortfolio,
 } from '../src/repositories/propertyRepo';
 import { Property, OwnerInfo, PropertyState, kOrgId } from '../../src/types/models';
 import { ownerKeyOf } from '../../src/logic/ownerGrouping';
@@ -207,6 +207,70 @@ test('countByState returns every state, zero-filled', async () => {
   assert.equal(counts[PropertyState.pool], 1);
   assert.equal(counts[PropertyState.assigned], 1);
   assert.equal(counts[PropertyState.dnc], 0, 'absent states report 0, not undefined');
+});
+
+/**
+ * Timezone-frame regressions.
+ *
+ * The pool is opened with `timezone: 'Z'`, so every DATETIME the app writes is
+ * UTC wall-clock. MySQL's NOW(3) answers in the *session* zone instead — UTC+4
+ * on the Dubai box and on the dev Macs — so a UTC column compared against NOW(3)
+ * skews by the whole UTC offset. These two filters are pure SQL with no JS
+ * re-check, so the skew reached the screen: the "Due follow-up" chip listed
+ * units up to four hours early, and the stale-portfolio tile over-counted.
+ *
+ * Each test calibrates itself against the box it runs on, planting a timestamp
+ * half the local offset inside the window NOW(3) would wrongly sweep up. A box
+ * already running UTC has no offset to exploit, so there the tests degrade to
+ * asserting the plain invariant rather than failing to build a fixture.
+ */
+async function sessionSkewSeconds(): Promise<number> {
+  const [rows] = await pool.query<any[]>(
+    'SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(3), NOW(3)) AS skew',
+  );
+  return Number(rows[0].skew);
+}
+
+test('dueOnly reads next_follow_up_at in UTC, not the session zone', async () => {
+  await wipe();
+  const skew = await sessionSkewSeconds();
+  // Inside the buggy window where it exists; a plain hour ahead otherwise.
+  const aheadMs = skew > 0 ? (skew * 1000) / 2 : 3600_000;
+
+  const due = makeProperty({ unitNumber: '901' });
+  due.nextFollowUpAt = new Date(Date.now() - 3600_000).toISOString();
+  const notYet = makeProperty({ unitNumber: '902' });
+  notYet.nextFollowUpAt = new Date(Date.now() + aheadMs).toISOString();
+  await saveProperties([due, notYet]);
+
+  const page = await queryProperties({ dueOnly: true, limit: 50, offset: 0 });
+  assert.equal(page.total, 1, 'a follow-up still in the future is not due yet');
+  assert.equal(page.rows[0].id, due.id);
+});
+
+test('countStalePortfolio measures the stale window in UTC', async () => {
+  await wipe();
+  const skew = await sessionSkewSeconds();
+  const staleDays = 30;
+  const windowMs = staleDays * 86400_000;
+  const insideMs = skew > 0 ? (skew * 1000) / 2 : 3600_000;
+
+  // Last called just *inside* the 30-day window — not stale. Under NOW(3) the
+  // threshold slid forward by the UTC offset and swallowed it.
+  const fresh = makeProperty({ unitNumber: '903' });
+  fresh.state = PropertyState.portfolio;
+  fresh.portfolioSince = new Date(Date.now() - windowMs * 2).toISOString();
+  fresh.lastCalledAt = new Date(Date.now() - windowMs + insideMs).toISOString();
+
+  const stale = makeProperty({ unitNumber: '904' });
+  stale.state = PropertyState.portfolio;
+  stale.portfolioSince = new Date(Date.now() - windowMs * 2).toISOString();
+  stale.lastCalledAt = new Date(Date.now() - windowMs - 86400_000).toISOString();
+
+  await saveProperties([fresh, stale]);
+
+  assert.equal(await countStalePortfolio(staleDays), 1,
+    'only the unit past the window counts as stale');
 });
 
 test.after(async () => {

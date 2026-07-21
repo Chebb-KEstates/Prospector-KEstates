@@ -362,7 +362,10 @@ function buildWhere(f: PropertyFilter): { sql: string; params: unknown[] } {
   // The broker's quick chips. `dueOnly` compares against the server's clock,
   // where the client compared against the browser's — a difference of at most
   // clock skew, and the server is the one that owns "now" for cooldowns anyway.
-  if (f.dueOnly) where.push('next_follow_up_at IS NOT NULL AND next_follow_up_at <= NOW(3)');
+  // UTC_TIMESTAMP, not NOW(): next_follow_up_at is written by the app as UTC
+  // (the pool is opened with timezone 'Z'), and nothing re-checks this filter in
+  // JS, so NOW() would surface follow-ups a whole UTC offset early.
+  if (f.dueOnly) where.push('next_follow_up_at IS NOT NULL AND next_follow_up_at <= UTC_TIMESTAMP(3)');
   if (f.interestedOnly) {
     where.push(`last_outcome IN ('${CallOutcome.interestedSell}', '${CallOutcome.interestedRent}')`);
   }
@@ -394,7 +397,11 @@ function buildWhere(f: PropertyFilter): { sql: string; params: unknown[] } {
     } else if (f.tenancy === 'rented') {
       where.push(rented);
     } else if (f.tenancy === 'leaseSoon') {
-      where.push('rent_end IS NOT NULL AND rent_end >= NOW(3) AND rent_end <= (NOW(3) + INTERVAL 90 DAY)');
+      // UTC_TIMESTAMP — rent_end is imported through toDb() and stored as UTC.
+      where.push(
+        'rent_end IS NOT NULL AND rent_end >= UTC_TIMESTAMP(3) ' +
+        'AND rent_end <= (UTC_TIMESTAMP(3) + INTERVAL 90 DAY)',
+      );
     }
   }
 
@@ -605,13 +612,18 @@ export async function countDistinctOwners(): Promise<number> {
   return Number(rows[0].n);
 }
 
-/** Portfolio units going stale — mirrors isPortfolioStale's lastCalledAt ?? portfolioSince. */
+/**
+ * Portfolio units going stale — mirrors isPortfolioStale's lastCalledAt ?? portfolioSince.
+ *
+ * UTC_TIMESTAMP — both columns hold UTC (see buildWhere), and this count is
+ * pure SQL with no JS re-check, so NOW() would call units stale a UTC offset early.
+ */
 export async function countStalePortfolio(staleDays: number): Promise<number> {
   const [rows] = await pool.query<Row[]>(
     `SELECT COUNT(*) AS n FROM properties
      WHERE org_id = ? AND state = 'portfolio'
        AND COALESCE(last_called_at, portfolio_since) IS NOT NULL
-       AND COALESCE(last_called_at, portfolio_since) <= DATE_SUB(NOW(3), INTERVAL ? DAY)`,
+       AND COALESCE(last_called_at, portfolio_since) <= DATE_SUB(UTC_TIMESTAMP(3), INTERVAL ? DAY)`,
     [kOrgId, staleDays],
   );
   return Number(rows[0].n);

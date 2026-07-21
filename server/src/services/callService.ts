@@ -207,7 +207,7 @@ export async function sweepLapsed(): Promise<{ properties: number; leads: number
     const [propRows] = await cx.query<Row[]>(
       `SELECT ${PROP_COLS} FROM properties
        WHERE org_id = ?
-         AND ((state = 'cooling' AND cooldown_until IS NOT NULL AND cooldown_until < NOW(3))
+         AND ((state = 'cooling' AND cooldown_until IS NOT NULL AND cooldown_until < UTC_TIMESTAMP(3))
            OR (state IN ('assigned', 'portfolio')
                AND assignment_expires_at IS NOT NULL
                AND assignment_expires_at < UTC_TIMESTAMP(3)))
@@ -221,7 +221,7 @@ export async function sweepLapsed(): Promise<{ properties: number; leads: number
     const [leadRows] = await cx.query<Row[]>(
       `SELECT ${LEAD_COLS} FROM leads
        WHERE org_id = ?
-         AND ((state = 'cooling' AND cooldown_until IS NOT NULL AND cooldown_until < NOW(3))
+         AND ((state = 'cooling' AND cooldown_until IS NOT NULL AND cooldown_until < UTC_TIMESTAMP(3))
            OR (state IN ('assigned', 'portfolio')
                AND assignment_expires_at IS NOT NULL
                AND assignment_expires_at < UTC_TIMESTAMP(3)))

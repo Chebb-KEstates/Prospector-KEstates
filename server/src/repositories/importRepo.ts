@@ -179,8 +179,13 @@ export async function deleteStagingSession(id: string, cx?: PoolConnection): Pro
   await db.query('DELETE FROM import_sessions WHERE id = ?', [id]);
 }
 
-/** Housekeeping — abandoned wizards must not keep owner data lying around. */
+/**
+ * Housekeeping — abandoned wizards must not keep owner data lying around.
+ *
+ * UTC_TIMESTAMP — expires_at is bound as a JS Date and so holds UTC; NOW() threw
+ * away live staging sessions a UTC offset early, mid-wizard.
+ */
 export async function sweepExpiredImports(): Promise<number> {
-  const [res] = await pool.query('DELETE FROM import_sessions WHERE expires_at <= NOW(3)');
+  const [res] = await pool.query('DELETE FROM import_sessions WHERE expires_at <= UTC_TIMESTAMP(3)');
   return (res as { affectedRows?: number }).affectedRows ?? 0;
 }
