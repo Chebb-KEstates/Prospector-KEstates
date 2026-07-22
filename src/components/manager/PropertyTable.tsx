@@ -265,7 +265,7 @@ export function PropertyTable({
     : showAssignee ? [...DEFAULT_VISIBLE.normal, 'assignee']
     : DEFAULT_VISIBLE.normal;
 
-  const { order, setOrder, visible, setVisible, dense, setDense, persist, reset, visibleCols, loaded } =
+  const { order, setOrder, visible, setVisible, persist, reset, visibleCols, loaded } =
     useTableLayout(available, defaultVisible, prefsKey);
 
   const anyFilter = search.trim() || community || cluster || state || beds || nationality || outcome || txFrom || txTo || callableOnly || tenancy || assigneeFilter;
@@ -325,7 +325,7 @@ export function PropertyTable({
         <ColumnsDialog
           order={order} visible={visible} pinnedLabel="Unit"
           labelOf={k => colByKey.get(k)?.label ?? k}
-          onChange={(o, v) => { setOrder(o); setVisible(new Set(v)); persist(o, new Set(v), dense); }}
+          onChange={(o, v) => { setOrder(o); setVisible(new Set(v)); persist(o, new Set(v)); }}
           onReset={reset}
           onClose={() => setShowCols(false)}
         />
@@ -392,16 +392,13 @@ export function PropertyTable({
           <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>updating…</span>
         )}
         <button className="btn btn-sm" onClick={() => setShowCols(true)}><Icon name="columns" size={15} /> Columns</button>
-        <button className="btn btn-icon btn-sm" title={dense ? 'Comfortable rows' : 'Compact rows'} onClick={() => { const d = !dense; setDense(d); persist(order, visible, d); }}>
-          <Icon name="sliders" size={15} />
-        </button>
         {anyFilter && <button className="btn btn-sm btn-ghost" onClick={clearFilters}><Icon name="x" size={14} /> Clear</button>}
       </div>
 
       {/* Table — a real <table> so columns auto-size to content and align. */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
-          <table className={`vault-table${dense ? ' dense' : ''}`}>
+          <table className="vault-table dense">
             <thead>
               <tr>
                 {selectable && (

@@ -111,7 +111,7 @@ export function LeadTable({
 
   const colByKey = useMemo(() => new Map([nameCol, ...allCols].map(c => [c.key, c])), [allCols, nameCol]);
   const available = useMemo(() => allCols.map(c => c.key), [allCols]);
-  const { order, setOrder, visible, setVisible, dense, setDense, persist, reset, visibleCols, loaded } =
+  const { order, setOrder, visible, setVisible, persist, reset, visibleCols, loaded } =
     useTableLayout(available, DEFAULT_VISIBLE, prefsKey);
 
   const anyFilter = search.trim() || state || project || source || callableOnly;
@@ -153,7 +153,7 @@ export function LeadTable({
       {showCols && (
         <ColumnsDialog order={order} visible={visible} pinnedLabel="Name"
           labelOf={k => colByKey.get(k)?.label ?? k}
-          onChange={(o, v) => { setOrder(o); setVisible(new Set(v)); persist(o, new Set(v), dense); }}
+          onChange={(o, v) => { setOrder(o); setVisible(new Set(v)); persist(o, new Set(v)); }}
           onReset={reset} onClose={() => setShowCols(false)} />
       )}
 
@@ -183,9 +183,6 @@ export function LeadTable({
           <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>updating…</span>
         )}
         <button className="btn btn-sm" onClick={() => setShowCols(true)}><Icon name="columns" size={15} /> Columns</button>
-        <button className="btn btn-icon btn-sm" title={dense ? 'Comfortable rows' : 'Compact rows'} onClick={() => { const d = !dense; setDense(d); persist(order, visible, d); }}>
-          <Icon name="sliders" size={15} />
-        </button>
         {anyFilter && <button className="btn btn-sm btn-ghost" onClick={clearFilters}><Icon name="x" size={14} /> Clear</button>}
       </div>
 
@@ -211,7 +208,7 @@ export function LeadTable({
             ) : rows.length === 0 ? (
               <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary)' }}>No leads match these filters.</div>
             ) : rows.map(l => (
-              <div key={l.id} onClick={() => onSelect?.(l.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: `${dense ? 5 : 10}px 16px`, borderBottom: '1px solid var(--border-light)', cursor: onSelect ? 'pointer' : 'default', background: l.id === selectedId ? 'color-mix(in srgb, var(--primary) 8%, transparent)' : undefined }}>
+              <div key={l.id} onClick={() => onSelect?.(l.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '5px 16px', borderBottom: '1px solid var(--border-light)', cursor: onSelect ? 'pointer' : 'default', background: l.id === selectedId ? 'color-mix(in srgb, var(--primary) 8%, transparent)' : undefined }}>
                 {selectable && <input type="checkbox" checked={checkedIds!.has(l.id)} onClick={e => e.stopPropagation()} onChange={() => { const next = new Set(checkedIds); next.has(l.id) ? next.delete(l.id) : next.add(l.id); onCheckedChanged!(next); }} style={{ width: 30 }} />}
                 <div style={{ flex: nameCol.flex, minWidth: 0 }}>
                   <div className="truncate" style={{ fontWeight: 600, fontSize: '0.8125rem' }}>{l.name || '—'}</div>

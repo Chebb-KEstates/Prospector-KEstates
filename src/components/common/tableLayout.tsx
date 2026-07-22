@@ -3,8 +3,9 @@ import { Icon } from './Icon';
 
 /**
  * The shared column-layout platform behind every data table: which columns are
- * shown, in what order, at what density — remembered per screen. Extracted so the
- * owner table and the lead table share ONE implementation (one table language).
+ * shown and in what order — remembered per screen. Extracted so the owner table
+ * and the lead table share ONE implementation (one table language). Row density
+ * is no longer configurable: every table is compact.
  */
 export function useTableLayout(available: string[], defaultVisible: string[], prefsKey?: string) {
   // v3: added the "Assigned to" column + page-size control — bump so the new
@@ -12,7 +13,6 @@ export function useTableLayout(available: string[], defaultVisible: string[], pr
   const storageKey = prefsKey ? `prospector.table.${prefsKey}.v3` : null;
   const [order, setOrder] = useState<string[]>(available);
   const [visible, setVisible] = useState<Set<string>>(() => new Set(defaultVisible.filter(k => available.includes(k))));
-  const [dense, setDense] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   // Load the persisted layout once.
@@ -26,7 +26,6 @@ export function useTableLayout(available: string[], defaultVisible: string[], pr
         if (stored.length) setOrder([...stored, ...available.filter(k => !stored.includes(k))]);
         const vis = (j.visible as string[] ?? []).filter(k => available.includes(k));
         if (vis.length) setVisible(new Set(vis));
-        if (typeof j.dense === 'boolean') setDense(j.dense);
       }
     } catch { /* corrupt prefs → defaults win */ }
     setLoaded(true);
@@ -43,19 +42,19 @@ export function useTableLayout(available: string[], defaultVisible: string[], pr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [available.join('|')]);
 
-  const persist = (o: string[], v: Set<string>, d: boolean) => {
+  const persist = (o: string[], v: Set<string>) => {
     if (!storageKey) return;
-    try { localStorage.setItem(storageKey, JSON.stringify({ order: o, visible: Array.from(v), dense: d })); } catch { /* ignore */ }
+    try { localStorage.setItem(storageKey, JSON.stringify({ order: o, visible: Array.from(v) })); } catch { /* ignore */ }
   };
 
   const reset = () => {
     const o = [...available];
     const v = new Set(defaultVisible.filter(k => available.includes(k)));
-    setOrder(o); setVisible(v); persist(o, v, dense);
+    setOrder(o); setVisible(v); persist(o, v);
   };
 
   const visibleCols = order.filter(k => visible.has(k));
-  return { order, setOrder, visible, setVisible, dense, setDense, persist, reset, visibleCols, loaded };
+  return { order, setOrder, visible, setVisible, persist, reset, visibleCols, loaded };
 }
 
 /** Tick to show · drag to reorder. Shared by every table. */
