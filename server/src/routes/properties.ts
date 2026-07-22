@@ -28,7 +28,11 @@ import { forbidden, notFound, badRequest } from '../http/errors';
  *    query, so asking for them directly returns nothing rather than everything.
  */
 
-const MAX_PAGE = 200;
+// Matches the largest option in the table's page-size selector
+// (src/components/manager/PropertyTable.tsx PAGE_SIZES). Keep them equal — a
+// smaller cap here rejects the request outright ("That request was not valid")
+// the moment a manager picks the bigger option.
+const MAX_PAGE = 250;
 
 const listQuerySchema = {
   type: 'object',

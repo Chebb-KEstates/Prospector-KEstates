@@ -11,7 +11,8 @@ import { forbidden, notFound } from '../http/errors';
 
 /** Buyer leads. Mirrors properties.ts — same scoping and masking rules. */
 
-const MAX_PAGE = 200;
+// Matches the table's largest page-size option; see the note in properties.ts.
+const MAX_PAGE = 250;
 
 const listQuerySchema = {
   type: 'object',
