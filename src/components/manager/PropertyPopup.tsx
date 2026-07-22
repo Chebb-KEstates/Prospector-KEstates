@@ -101,17 +101,31 @@ export function PropertyPopup({ propertyId, onClose }: { propertyId: string; onC
                 </div>
               )}
 
-              {/* Contact — masked until revealed (audited, capped) */}
+              {/* Contact — masked until revealed (audited, capped). Once revealed,
+                  the numbers WRAP: an owner with 3-4 mobiles would otherwise have
+                  Mobile 3/4 clipped by a single-line ellipsis. Each entry stays
+                  whole (no break mid-number); the row grows to as many lines as
+                  it needs. */}
               {stop.phoneMasked && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-                  <Icon name="phone" size={15} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
-                  <span className="tabular-nums truncate" style={{ flex: 1, fontWeight: 600, letterSpacing: '0.5px' }}>
-                    {phones ? phones.map(p => `${p.label}: ${p.number}`).join('  ·  ') : stop.phoneMasked}
-                  </span>
-                  {!phones && (
-                    <button className="btn btn-sm" onClick={doReveal} disabled={revealing} style={{ flexShrink: 0 }}>
-                      <Icon name="eye" size={14} /> {revealing ? '…' : 'Reveal'}
-                    </button>
+                <div style={{ display: 'flex', alignItems: phones ? 'flex-start' : 'center', gap: 10, padding: '8px 12px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                  <Icon name="phone" size={15} style={{ color: 'var(--text-secondary)', flexShrink: 0, marginTop: phones ? 3 : 0 }} />
+                  {phones ? (
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexWrap: 'wrap', gap: '3px 14px' }}>
+                      {phones.map((p, i) => (
+                        <span key={i} className="tabular-nums" style={{ fontWeight: 600, letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>
+                          <span style={{ color: 'var(--text-tertiary)', fontWeight: 500 }}>{p.label}:</span> {p.number}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <>
+                      <span className="tabular-nums truncate" style={{ flex: 1, fontWeight: 600, letterSpacing: '0.5px' }}>
+                        {stop.phoneMasked}
+                      </span>
+                      <button className="btn btn-sm" onClick={doReveal} disabled={revealing} style={{ flexShrink: 0 }}>
+                        <Icon name="eye" size={14} /> {revealing ? '…' : 'Reveal'}
+                      </button>
+                    </>
                   )}
                 </div>
               )}
