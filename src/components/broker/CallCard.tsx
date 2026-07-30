@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CallStop, CallUnit } from '../../state/CallSessionContext';
 import { CallOutcome, CallOutcomeLabel, CallOutcomeBuyerLabel } from '../../types/models';
 import type { PhoneEntry } from '../../types/models';
-import { StateChip, CountdownBadge } from '../common/StateChip';
+import { StateChip } from '../common/StateChip';
 import { Icon } from '../common/Icon';
 import { fmtDate, timeAgo, splitOwnerNames } from '../../utils/format';
 import { ApiError } from '../../data/apiClient';
@@ -59,6 +59,7 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
   const perProperty = !!(stop.units && stop.units.length > 1 && stop.logUnit);
   const [outcome, setOutcome] = useState<CallOutcome | null>(null);         // single-property / lead
   const [unitOutcomes, setUnitOutcomes] = useState<Record<string, CallOutcome | ''>>({}); // per property
+  const [unitNotes, setUnitNotes] = useState<Record<string, string>>({});   // feedback per property
 
   const [note, setNote] = useState('');
   const [followUpAt, setFollowUpAt] = useState<string>('');
@@ -83,12 +84,18 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
     : (outcome ? [['self', outcome]] : []);
   const anyChosen = chosen.length > 0;
   const anyCallback = chosen.some(([, o]) => o === CallOutcome.callbackLater);
+  const isReached = (o: CallOutcome) => o !== CallOutcome.noAnswer && o !== CallOutcome.unreachable;
+  // Feedback text for a given result — per-property in the multi-unit view, or
+  // the single shared note otherwise.
+  const noteFor = (id: string) => (perProperty ? (unitNotes[id] ?? '') : note).trim();
   // Someone was actually reached → feedback is required (avoids a bare "log &
-  // move on"). No-answer / unreachable need no note.
-  const reached = chosen.some(([, o]) => o !== CallOutcome.noAnswer && o !== CallOutcome.unreachable);
-  const needFeedback = reached;
-  const hasNote = note.trim().length > 0;
-  const canSave = anyChosen && (!anyCallback || !!followUpAt) && (!needFeedback || hasNote) && !saving;
+  // move on"). In the multi-unit view the note is required PER reached property,
+  // so "interested on Unit 13" carries its own words instead of being copied
+  // onto every other unit. No-answer / unreachable need no note.
+  const feedbackOk = chosen.every(([id, o]) => !isReached(o) || noteFor(id).length > 0);
+  // Single-property placeholder still keys off "was anyone reached".
+  const singleNeedFeedback = !perProperty && chosen.some(([, o]) => isReached(o));
+  const canSave = anyChosen && (!anyCallback || !!followUpAt) && feedbackOk && !saving;
 
   // The card is "locked" once a number is revealed: the broker must log a
   // result before the dialer will let them move to the next caller.
@@ -124,16 +131,17 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
     setSaving(true);
     setSaveError(null);
     const fu = followUpAt ? new Date(followUpAt).toISOString() : undefined;
-    const trimmed = note.trim() || undefined;
     try {
       if (perProperty) {
-        // One log per property, each with its own result — so the vault reflects
-        // "Unit 13 interested, Unit 119 not" rather than tagging all the same.
+        // One log per property, each with its OWN result AND its own feedback —
+        // so "Unit 13 interested, said X" is saved only on Unit 13, never copied
+        // onto the owner's other units.
         for (const [unitId, o] of chosen) {
-          await stop.logUnit!(unitId, o, trimmed, o === CallOutcome.callbackLater ? fu : undefined);
+          const n = (unitNotes[unitId] ?? '').trim() || undefined;
+          await stop.logUnit!(unitId, o, n, o === CallOutcome.callbackLater ? fu : undefined);
         }
       } else {
-        await stop.log(chosen[0][1], trimmed, fu);
+        await stop.log(chosen[0][1], note.trim() || undefined, fu);
       }
       onComplete(representative(chosen.map(([, o]) => o)));
     } catch (err) {
@@ -217,8 +225,6 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
                   </span>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                     {u.rental && <ToneChip tone={u.rental.tone}>{u.rental.label}</ToneChip>}
-                    {/* How long this unit stays theirs if they don't work it. */}
-                    <CountdownBadge deadline={u.expiresAt} />
                     <Icon name="chevronRight" size={14} style={{ color: 'var(--text-tertiary)' }} />
                   </span>
                 </div>
@@ -362,8 +368,9 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {stop.units.map(u => (
               <UnitOutcomeRow key={u.id} unit={u} value={unitOutcomes[u.id] ?? ''}
-                outcomes={OUTCOMES} label={label} disabled={saving}
-                onChange={o => setUnit(u.id, o)} />
+                note={unitNotes[u.id] ?? ''} outcomes={OUTCOMES} label={label} disabled={saving}
+                onChange={o => setUnit(u.id, o)}
+                onNote={n => setUnitNotes(prev => ({ ...prev, [u.id]: n }))} />
             ))}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
@@ -385,10 +392,12 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
         </div>
       )}
 
-      {/* Notes — feedback is required once someone was reached */}
-      {revealed && (
+      {/* Notes — one shared box for a single property / lead. In the multi-unit
+          view each property gets its OWN feedback field (inside its row above),
+          so a note is never copied across the owner's other units. */}
+      {revealed && !perProperty && (
         <textarea className="input" value={note} rows={2} style={{ resize: 'vertical' }}
-          placeholder={needFeedback ? 'Feedback / what was said… (required)' : 'Notes / what was said…'}
+          placeholder={singleNeedFeedback ? 'Feedback / what was said… (required)' : 'Notes / what was said…'}
           onChange={e => setNote(e.target.value)} />
       )}
 
@@ -405,7 +414,7 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
           {!canSave && !saving && (
             <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: 6, textAlign: 'center' }}>
               {anyCallback && !followUpAt ? 'Pick a call-back date to save.'
-                : needFeedback && !hasNote ? 'Add feedback to save this call.'
+                : !feedbackOk ? (perProperty ? 'Add feedback for each property you spoke to.' : 'Add feedback to save this call.')
                 : ''}
             </div>
           )}
@@ -437,31 +446,42 @@ function ErrorBox({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** One property's outcome selector in the per-property logging view. */
-function UnitOutcomeRow({ unit, value, outcomes, label, disabled, onChange }: {
+/** One property's outcome + its own feedback, in the per-property logging view. */
+function UnitOutcomeRow({ unit, value, note, outcomes, label, disabled, onChange, onNote }: {
   unit: CallUnit;
   value: CallOutcome | '';
+  note: string;
   outcomes: CallOutcome[];
   label: (o: CallOutcome) => string;
   disabled: boolean;
   onChange: (o: CallOutcome | '') => void;
+  onNote: (note: string) => void;
 }) {
   const c = value ? outcomeColor(value) : 'var(--border)';
+  // Feedback is asked for (and required) once this property's owner was reached.
+  const reached = !!value && value !== CallOutcome.noAnswer && value !== CallOutcome.unreachable;
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between',
       padding: '6px 8px', borderRadius: 8, background: 'var(--surface-2)',
       border: `1px solid ${value ? `color-mix(in srgb, ${c} 40%, transparent)` : 'var(--border-light)'}`,
     }}>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontWeight: 600, fontSize: '0.8125rem' }} className="truncate">{unit.label}</div>
-        <div className="truncate" style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>{unit.location}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: '0.8125rem' }} className="truncate">{unit.label}</div>
+          <div className="truncate" style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>{unit.location}</div>
+        </div>
+        <select className="input" style={{ width: 'auto', minWidth: 150, padding: '5px 8px', color: value ? c : undefined }}
+          value={value} disabled={disabled} onChange={e => onChange(e.target.value as CallOutcome | '')}>
+          <option value="">Not discussed</option>
+          {outcomes.map(o => <option key={o} value={o}>{label(o)}</option>)}
+        </select>
       </div>
-      <select className="input" style={{ width: 'auto', minWidth: 150, padding: '5px 8px', color: value ? c : undefined }}
-        value={value} disabled={disabled} onChange={e => onChange(e.target.value as CallOutcome | '')}>
-        <option value="">Not discussed</option>
-        {outcomes.map(o => <option key={o} value={o}>{label(o)}</option>)}
-      </select>
+      {reached && (
+        <textarea className="input" value={note} rows={2} disabled={disabled}
+          style={{ resize: 'vertical', marginTop: 8, fontSize: '0.8125rem' }}
+          placeholder={`Feedback for ${unit.label}… (required)`}
+          onChange={e => onNote(e.target.value)} />
+      )}
     </div>
   );
 }

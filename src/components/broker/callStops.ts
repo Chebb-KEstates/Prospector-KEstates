@@ -50,8 +50,11 @@ function rentalOf(p: Property): CallUnit['rental'] {
     const end = p.rentEnd ? ` · ends ${fmtDate(p.rentEnd)}` : '';
     return { label: `Rented${amt}${end}`, tone: leaseSoon(p.rentEnd) ? 'warn' : 'info' };
   }
-  if (/no rental|vacant|none|empty/.test(status)) return { label: 'Vacant', tone: 'good' };
-  return undefined;
+  // Only call it "Vacant" when the data actually says so — that's a real opening.
+  if (/vacant|available/.test(status)) return { label: 'Vacant', tone: 'good' };
+  // Otherwise there's simply no rental on record; say that plainly rather than
+  // implying the unit is empty.
+  return { label: 'No Rental', tone: 'neutral' };
 }
 
 /** Whole years since a date, floored; null if unparseable. */
@@ -86,7 +89,13 @@ export function buildOwnerStop(
     const facts: string[] = [];
     if (p.beds != null) facts.push(`${p.beds} bed`);
     if (p.propertyType) facts.push(p.propertyType);
-    if (p.sizeSqft != null) facts.push(fmtArea(p.sizeSqft));
+    // Both areas, each labelled — a plot size matters as much as the built-up.
+    if (p.sizeSqft != null) facts.push(`BUA ${fmtArea(p.sizeSqft)}`);
+    if (p.plotSqft != null) facts.push(`Plot ${fmtArea(p.plotSqft)}`);
+    // The plot's position within the community (e.g. "S.Row, B.Park") — a real
+    // selling signal; imported as the "Location" column.
+    const locationType = p.extra?.['Location'];
+    if (locationType) facts.push(locationType);
     const layout = p.extra?.['Layout'];
     if (layout) facts.push(layout);
     const floor = p.extra?.['Floor'];
