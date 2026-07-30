@@ -4,7 +4,7 @@ import { CallOutcome, CallOutcomeLabel, CallOutcomeBuyerLabel } from '../../type
 import type { PhoneEntry } from '../../types/models';
 import { StateChip, CountdownBadge } from '../common/StateChip';
 import { Icon } from '../common/Icon';
-import { fmtDate, timeAgo } from '../../utils/format';
+import { fmtDate, timeAgo, splitOwnerNames } from '../../utils/format';
 import { ApiError } from '../../data/apiClient';
 import { outcomeColor, ToneChip, sectionLabel, UnitDetailDialog } from './callVisuals';
 
@@ -71,6 +71,8 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
   const [noteOverrides, setNoteOverrides] = useState<Record<string, string>>({});
 
   const current = phones[phoneIdx];
+  // A unit may be co-owned — the source cell holds all names, e.g. "A & B".
+  const ownerNames = splitOwnerNames(stop.name);
   const nextNumber = () => setPhoneIdx(i => (i + 1) % phones.length);
   const label = (o: CallOutcome) => (stop.buyer ? CallOutcomeBuyerLabel[o] : CallOutcomeLabel[o]);
   const OUTCOMES = Object.values(CallOutcome) as CallOutcome[];
@@ -169,11 +171,26 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: '1.05rem', fontWeight: 600, lineHeight: 1.2 }} className="truncate">{stop.name}</div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }} className="truncate">
-            {[stop.nationality, stop.subtitle].filter(Boolean).join(' · ')}
+            {[ownerNames.length > 1 ? `${ownerNames.length} owners` : null, stop.nationality, stop.subtitle].filter(Boolean).join(' · ')}
           </div>
         </div>
         <StateChip state={stop.state} />
       </div>
+
+      {/* Co-owners — the source names them in one cell; spell them out so the
+          broker knows who they might reach. The numbers are a shared pool. */}
+      {ownerNames.length > 1 && (
+        <div style={{ padding: '8px 12px', borderRadius: 10, background: 'var(--surface)', border: '1px solid var(--border-light)' }}>
+          <div style={sectionLabel}>Owners ({ownerNames.length})</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', marginTop: 3 }}>
+            {ownerNames.map((n, i) => (
+              <span key={i} style={{ fontWeight: 600, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <Icon name="user" size={13} style={{ color: 'var(--text-tertiary)' }} /> {n}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Seller signals — the "why call now" at a glance */}
       {stop.signals && stop.signals.length > 0 && (
@@ -298,6 +315,11 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
               <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
                 {phoneIdx + 1} of {phones.length} · {phones.map(p => p.label).join(' · ')}
               </span>
+            </div>
+          )}
+          {ownerNames.length > 1 && (
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: 6 }}>
+              Shared across {ownerNames.length} owners ({ownerNames.join(', ')}) — the data doesn't say which number is whose.
             </div>
           )}
         </div>

@@ -1,4 +1,26 @@
-import { maskedPhone, prettyPhone, greetingName, flagFor, fmtInt, sameDay } from './format';
+import { maskedPhone, prettyPhone, greetingName, flagFor, fmtInt, sameDay, splitOwnerNames, hasMultipleOwners } from './format';
+
+describe('splitOwnerNames (co-owners in one cell)', () => {
+  it('splits on & / "and" / slash / plus', () => {
+    expect(splitOwnerNames('AHMED KHAN & FATIMA KHAN')).toEqual(['AHMED KHAN', 'FATIMA KHAN']);
+    expect(splitOwnerNames('Ahmed and Fatima')).toEqual(['Ahmed', 'Fatima']);
+    expect(splitOwnerNames('A / B / C')).toEqual(['A', 'B', 'C']);
+    expect(splitOwnerNames('A + B')).toEqual(['A', 'B']);
+  });
+  it('leaves a single owner as one name', () => {
+    expect(splitOwnerNames('Ahmed Khan')).toEqual(['Ahmed Khan']);
+    expect(hasMultipleOwners('Ahmed Khan')).toBe(false);
+    expect(hasMultipleOwners('Ahmed & Fatima')).toBe(true);
+  });
+  it('never splits a bare comma (LASTNAME, FIRSTNAME) or a name containing "and"', () => {
+    expect(splitOwnerNames('KHAN, AHMED')).toEqual(['KHAN, AHMED']);
+    expect(splitOwnerNames('ALEXANDER SANDS')).toEqual(['ALEXANDER SANDS']);
+  });
+  it('handles blanks safely', () => {
+    expect(splitOwnerNames(undefined)).toEqual([]);
+    expect(splitOwnerNames('   ')).toEqual([]);
+  });
+});
 
 describe('phone masking (Security Playbook — lists never show a full number)', () => {
   it('masks everything except the last four digits', () => {

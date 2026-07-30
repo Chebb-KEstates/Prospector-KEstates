@@ -5,7 +5,7 @@ import { Icon } from '../common/Icon';
 import { useTableLayout, ColumnsDialog } from '../common/tableLayout';
 import { usePropertyPage, usePropertyFacetsOrEmpty } from '../../data/hooks';
 import { useVault } from '../../state/VaultContext';
-import { fmtDate, fmtDateTime, fmtAed, fmtArea, fmtInt } from '../../utils/format';
+import { fmtDate, fmtDateTime, fmtAed, fmtArea, fmtInt, splitOwnerNames } from '../../utils/format';
 
 /**
  * THE data table — the platform's foundation. One spreadsheet renders the vault
@@ -46,7 +46,23 @@ interface ColDef {
 
 function baseCols(soonHours: number): ColDef[] {
   return [
-    { key: 'owner', label: 'Owner', flex: 3, ownerData: true, sortable: true, render: p => p.owner.name || '—' },
+    {
+      key: 'owner', label: 'Owner', flex: 3, ownerData: true, sortable: true,
+      // A single cell can name several co-owners ("A & B") — show them, and flag
+      // the count so it reads as two owners, not one long name.
+      render: p => {
+        const names = splitOwnerNames(p.owner.name);
+        if (names.length <= 1) return p.owner.name || '—';
+        return (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0 }} title={names.join(' · ')}>
+            <span className="truncate">{names.join(' · ')}</span>
+            <span className="chip" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', fontSize: '0.65rem', padding: '1px 6px', flexShrink: 0 }}>
+              {names.length} owners
+            </span>
+          </span>
+        );
+      },
+    },
     {
       key: 'mobile', label: 'Mobile', flex: 2, ownerData: true, sortable: true,
       // Already masked by the server. `callable` still works because the mask is

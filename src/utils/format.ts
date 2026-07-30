@@ -47,6 +47,30 @@ export function fmtInt(v: number): string {
   return new Intl.NumberFormat('en-AE').format(v);
 }
 
+/**
+ * Some vendor sheets record co-owners in a single Owner Name cell —
+ * "AHMED KHAN & FATIMA KHAN". Split them for display so both names show.
+ *
+ * Deliberately conservative separators — "&", "/", "+", and the standalone word
+ * "and" between spaces — and NEVER a bare comma, because vendor data also writes
+ * a single person as "LASTNAME, FIRSTNAME". Returns the whole string as one name
+ * when nothing splits, so an ordinary owner is unaffected.
+ */
+export function splitOwnerNames(name?: string): string[] {
+  const raw = (name ?? '').trim();
+  if (!raw) return [];
+  const parts = raw
+    .split(/\s*&\s*|\s*\/\s*|\s+and\s+|\s*\+\s*/i)
+    .map(s => s.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts : [raw];
+}
+
+/** True when an owner cell names more than one person. */
+export function hasMultipleOwners(name?: string): boolean {
+  return splitOwnerNames(name).length > 1;
+}
+
 /** First meaningful token of a name for greetings — skips titles/articles. */
 export function greetingName(name: string): string {
   const skip = new Set(['the', 'mr', 'mrs', 'ms', 'dr', 'a', 'an']);

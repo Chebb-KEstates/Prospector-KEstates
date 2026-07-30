@@ -8,6 +8,7 @@ import { Icon } from '../common/Icon';
 import { ApiError } from '../../data/apiClient';
 import { ToneChip, sectionLabel, UnitDetailDialog } from '../broker/callVisuals';
 import { ownerStopForProperty, stopDeps } from '../broker/callStops';
+import { splitOwnerNames } from '../../utils/format';
 import * as api from '../../data/api';
 
 /**
@@ -53,6 +54,8 @@ export function PropertyPopup({ propertyId, onClose }: { propertyId: string; onC
   }, [propertyId, deps]);
 
   const label = (o: CallOutcome) => CallOutcomeLabel[o];
+  // A unit can be co-owned — the source cell holds all names, e.g. "A & B".
+  const ownerNames = splitOwnerNames(stop?.name);
 
   const doReveal = async () => {
     if (!stop || revealing) return;
@@ -84,7 +87,7 @@ export function PropertyPopup({ propertyId, onClose }: { propertyId: string; onC
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: '1.05rem', fontWeight: 600, lineHeight: 1.2 }} className="truncate">{stop.name}</div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }} className="truncate">
-                    {[stop.nationality, stop.subtitle].filter(Boolean).join(' · ')}
+                    {[ownerNames.length > 1 ? `${ownerNames.length} owners` : null, stop.nationality, stop.subtitle].filter(Boolean).join(' · ')}
                   </div>
                 </div>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -93,6 +96,22 @@ export function PropertyPopup({ propertyId, onClose }: { propertyId: string; onC
                 </span>
                 <button className="btn btn-icon btn-sm" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button>
               </div>
+
+              {/* Co-owners — the source cell holds several names in one field, so
+                  spell them out. The numbers are a shared pool (the data doesn't
+                  attribute a number to a person), which the contact note says. */}
+              {ownerNames.length > 1 && (
+                <div style={{ padding: '8px 12px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                  <div style={sectionLabel}>Owners ({ownerNames.length})</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', marginTop: 3 }}>
+                    {ownerNames.map((n, i) => (
+                      <span key={i} style={{ fontWeight: 600, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <Icon name="user" size={13} style={{ color: 'var(--text-tertiary)' }} /> {n}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Seller signals */}
               {stop.signals && stop.signals.length > 0 && (
@@ -127,6 +146,11 @@ export function PropertyPopup({ propertyId, onClose }: { propertyId: string; onC
                       </button>
                     </>
                   )}
+                </div>
+              )}
+              {phones && ownerNames.length > 1 && (
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: -4 }}>
+                  On record for {ownerNames.length} owners — the source data doesn't say which number belongs to whom.
                 </div>
               )}
               {revealError && <div style={{ color: 'var(--error)', fontSize: '0.75rem' }}>{revealError}</div>}
