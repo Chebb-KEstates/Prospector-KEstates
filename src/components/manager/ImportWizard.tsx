@@ -30,7 +30,7 @@ import { ApiError } from '../../data/apiClient';
  * once, at staging, and used for both.
  */
 export function ImportWizard() {
-  const { reloadDatasets } = useVault();
+  const { reloadDatasets, datasets } = useVault();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
@@ -46,12 +46,21 @@ export function ImportWizard() {
   const [datasetName, setDatasetName] = useState('');
   const [dataSource, setDataSource] = useState('');
   const [cost, setCost] = useState('');
+  // Create a brand-new set, or merge this file into an existing one.
+  const [mode, setMode] = useState<'new' | 'update'>('new');
+  const [targetDatasetId, setTargetDatasetId] = useState('');
   const [dryRun, setDryRun] = useState<api.OwnerDryRun | null>(null);
   const [imported, setImported] = useState(0);
+
+  // Only owner data sets can be updated with an owners file.
+  const ownerDatasets = datasets.filter(d => d.module === DataModule.owners);
+  const targetName = ownerDatasets.find(d => d.id === targetDatasetId)?.name ?? '';
+  const updating = mode === 'update';
 
   const reset = () => {
     setStep(0); setStaged(null); setDryRun(null); setError(null);
     setColumns([]); setActiveSheet(0); setHeaderRow(0); setCost('');
+    setMode('new'); setTargetDatasetId('');
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -123,12 +132,17 @@ export function ImportWizard() {
 
   const runDryRun = async () => {
     if (!staged) return;
+    if (updating && !targetDatasetId) {
+      setError('Choose which data set to update, or switch to “Create a new data set”.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       const result = await api.imports.dryRunOwners(staged.sessionId, {
         sheetIndex: activeSheet, headerRow, columns, type,
         communityFallback: communityLabel,
+        targetDatasetId: updating ? targetDatasetId : undefined,
       });
       setDryRun(result);
       setStep(2);
@@ -150,6 +164,7 @@ export function ImportWizard() {
         datasetName: datasetName.trim(),
         source: dataSource.trim(),
         cost: cost ? parseFloat(cost) : undefined,
+        targetDatasetId: updating ? targetDatasetId : undefined,
       });
       setImported(r.imported);
       await reloadDatasets();
@@ -220,24 +235,62 @@ export function ImportWizard() {
           )}
 
           <div className="card" style={{ marginBottom: 16 }}>
+            {/* New set, or merge this file into an existing one. */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                <button className="btn" onClick={() => setMode('new')}
+                  style={{ borderRadius: 0, border: 'none', background: !updating ? 'var(--primary)' : 'transparent', color: !updating ? '#fff' : 'var(--text-secondary)' }}>
+                  Create a new data set
+                </button>
+                <button className="btn" onClick={() => setMode('update')}
+                  style={{ borderRadius: 0, border: 'none', background: updating ? 'var(--primary)' : 'transparent', color: updating ? '#fff' : 'var(--text-secondary)' }}>
+                  Update an existing data set
+                </button>
+              </div>
+              {updating && (
+                <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: '0.75rem', color: 'var(--text-secondary)', maxWidth: 640 }}>
+                  <Icon name="check" size={14} style={{ color: 'var(--success)', flexShrink: 0, marginTop: 2 }} />
+                  <span>Units are matched by location and only changed values are updated. Notes, call history,
+                    portfolio and broker allocations are kept, and blank cells never overwrite existing data.</span>
+                </div>
+              )}
+            </div>
+
             <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
               <div>
                 <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Header row</label>
                 <input className="input" type="number" value={headerRow + 1} min={1} style={{ width: 80 }}
                   onChange={e => { const r = parseInt(e.target.value, 10) - 1; if (r >= 0) void changeHeaderRow(r); }} />
               </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Dataset name</label>
-                <input className="input" value={datasetName} onChange={e => setDatasetName(e.target.value)} style={{ width: 200 }} />
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Source</label>
-                <input className="input" value={dataSource} onChange={e => setDataSource(e.target.value)} style={{ width: 160 }} />
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Cost (AED)</label>
-                <input className="input" type="number" value={cost} onChange={e => setCost(e.target.value)} style={{ width: 120 }} min={0} />
-              </div>
+              {updating ? (
+                <div>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Data set to update</label>
+                  <select className="input" value={targetDatasetId} onChange={e => setTargetDatasetId(e.target.value)} style={{ minWidth: 260 }}>
+                    <option value="">Choose a data set…</option>
+                    {ownerDatasets.map(d => (
+                      <option key={d.id} value={d.id}>{d.name} · {d.totalUnits} units</option>
+                    ))}
+                  </select>
+                  {ownerDatasets.length === 0 && (
+                    <div style={{ fontSize: '0.7rem', color: 'var(--warning)', marginTop: 4 }}>No owner data sets yet — import one first.</div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Dataset name</label>
+                    <input className="input" value={datasetName} onChange={e => setDatasetName(e.target.value)} style={{ width: 200 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Source</label>
+                    <input className="input" value={dataSource} onChange={e => setDataSource(e.target.value)} style={{ width: 160 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Cost (AED)</label>
+                    <input className="input" type="number" value={cost} onChange={e => setCost(e.target.value)} style={{ width: 120 }} min={0} />
+                  </div>
+                </>
+              )}
               <div>
                 <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Community fallback</label>
                 <input className="input" value={communityLabel} onChange={e => setCommunityLabel(e.target.value)} style={{ width: 160 }} />
@@ -283,8 +336,8 @@ export function ImportWizard() {
 
           <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
             <button className="btn" onClick={reset}>← Start over</button>
-            <button className="btn btn-primary" onClick={runDryRun} disabled={busy}>
-              {busy ? 'Working…' : 'Preview import'}
+            <button className="btn btn-primary" onClick={runDryRun} disabled={busy || (updating && !targetDatasetId)}>
+              {busy ? 'Working…' : (updating ? 'Preview update' : 'Preview import')}
             </button>
           </div>
         </div>
@@ -293,16 +346,34 @@ export function ImportWizard() {
       {step === 2 && dryRun && (
         <div>
           <div className="card" style={{ marginBottom: 16 }}>
-            <h3 style={{ fontWeight: 600, marginBottom: 12 }}>Import Summary</h3>
+            <h3 style={{ fontWeight: 600, marginBottom: 12 }}>{updating ? `Update Summary — ${targetName}` : 'Import Summary'}</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12 }}>
               <Stat label="Source rows" value={dryRun.sourceRows} />
               <Stat label="Invalid rows" value={dryRun.invalidRows} />
-              <Stat label="New properties" value={dryRun.newCount} color="var(--success)" />
-              <Stat label="Updated" value={dryRun.updatedCount} color="var(--info)" />
+              <Stat label={updating ? 'New units added' : 'New properties'} value={dryRun.newCount} color="var(--success)" />
+              <Stat label={updating ? 'Units updated' : 'Updated'} value={dryRun.updatedCount} color="var(--info)" />
               <Stat label="Callable" value={dryRun.callable} color={dryRun.callable === 0 ? 'var(--warning)' : undefined} />
               <Stat label="Duplicate rows" value={dryRun.inFileDuplicates} />
             </div>
           </div>
+
+          {updating && (
+            <div className="card" style={{
+              marginBottom: 16, display: 'flex', gap: 10, alignItems: 'flex-start',
+              borderColor: 'var(--success)', background: 'color-mix(in srgb, var(--success) 8%, transparent)',
+            }}>
+              <Icon name="check" size={18} style={{ color: 'var(--success)', flexShrink: 0, marginTop: 1 }} />
+              <div style={{ fontSize: '0.8125rem' }}>
+                <div style={{ fontWeight: 600, color: 'var(--success)' }}>
+                  {dryRun.updatedCount} unit{dryRun.updatedCount === 1 ? '' : 's'} updated · {dryRun.newCount} new unit{dryRun.newCount === 1 ? '' : 's'} added
+                </div>
+                <div style={{ color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Broker notes, call history, portfolio and allocations are kept exactly as they are. Only changed
+                  values are updated and blank cells are left unchanged. No new data set is created.
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Guard against importing a contactless file (e.g. a property-only
               export) — 0 callable means no "Owner mobile" column was mapped. */}
@@ -325,7 +396,7 @@ export function ImportWizard() {
 
           {dryRun.sample.length > 0 && (
             <div className="card" style={{ marginBottom: 16 }}>
-              <h4 style={{ fontWeight: 600, marginBottom: 8, color: 'var(--success)' }}>New Properties</h4>
+              <h4 style={{ fontWeight: 600, marginBottom: 8, color: 'var(--success)' }}>{updating ? 'New units being added' : 'New Properties'}</h4>
               <table className="data-table">
                 <thead>
                   <tr><th>Owner</th><th>Community</th><th>Unit</th><th>Phone</th></tr>
@@ -353,7 +424,7 @@ export function ImportWizard() {
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn" onClick={() => setStep(1)} disabled={busy}>← Back</button>
             <button className="btn btn-primary" onClick={handleCommit} disabled={busy}>
-              {busy ? 'Importing…' : 'Commit import'}
+              {busy ? (updating ? 'Updating…' : 'Importing…') : (updating ? 'Apply update' : 'Commit import')}
             </button>
           </div>
         </div>
@@ -362,11 +433,13 @@ export function ImportWizard() {
       {step === 3 && (
         <div className="card" style={{ textAlign: 'center', padding: 48 }}>
           <div style={{ fontSize: '2rem', marginBottom: 16 }}>✓</div>
-          <h3 style={{ fontWeight: 600, marginBottom: 8 }}>Import complete</h3>
+          <h3 style={{ fontWeight: 600, marginBottom: 8 }}>{updating ? 'Update complete' : 'Import complete'}</h3>
           <p style={{ color: 'var(--text-secondary)', marginBottom: 16 }}>
-            {imported} units imported successfully.
+            {updating
+              ? `${targetName} refreshed — ${imported} units processed, everything the team added kept.`
+              : `${imported} units imported successfully.`}
           </p>
-          <button className="btn" onClick={reset}>Import another file</button>
+          <button className="btn" onClick={reset}>{updating ? 'Import or update another file' : 'Import another file'}</button>
         </div>
       )}
     </div>

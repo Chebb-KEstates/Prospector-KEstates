@@ -154,6 +154,13 @@ export abstract class ImportPipeline {
     sheet: ParsedSheet; headerRow: number; columns: ColumnSpec[];
     type: DataSetType; communityFallback: string; datasetId: string;
     existingByUnitKey: Map<string, Property>; now?: string;
+    /**
+     * Update mode: a matched unit KEEPS its own `datasetId` instead of being
+     * re-tagged to `params.datasetId`. New units still take `params.datasetId`
+     * (the set being updated). Off by default, so a fresh import re-tags as
+     * before.
+     */
+    keepExistingDataset?: boolean;
   }): DryRunResult {
     const at = params.now ?? new Date().toISOString();
     const byField = new Map<ImportField, number>();
@@ -316,26 +323,36 @@ export abstract class ImportPipeline {
       const newerTx = candidate.lastTransactionDate != null &&
         (existing.lastTransactionDate == null ||
           candidate.lastTransactionDate > existing.lastTransactionDate);
+      // BLANK = NO CHANGE. copyWith ends in Object.assign, which COPIES an
+      // explicit `undefined` rather than skipping it — so passing a blank cell
+      // straight through wipes the field. Every scalar therefore falls back to
+      // the existing value when the incoming cell is empty, and the owner is
+      // merged field-by-field. This is what lets an "update" sheet carry only
+      // the changed columns without erasing everything it leaves blank.
+      const mergedOwner = new OwnerInfo(
+        candidate.owner.name.length > 0 ? candidate.owner.name : existing.owner.name,
+        candidate.owner.phone ?? existing.owner.phone,
+        candidate.owner.nationality ?? existing.owner.nationality,
+      );
+      mergedOwner.phones = candidate.owner.phones.length > 0 ? candidate.owner.phones : existing.owner.phones;
       updated.push(existing.copyWith({
-        datasetId: candidate.datasetId,
-        owner: (candidate.owner.name.length > 0 || candidate.owner.phone != null)
-          ? candidate.owner : existing.owner,
-        propertyType: candidate.propertyType,
-        beds: candidate.beds,
-        sizeSqft: candidate.sizeSqft,
-        plotSqft: candidate.plotSqft,
+        // Update mode keeps the unit in its own set; a fresh import re-tags it.
+        datasetId: params.keepExistingDataset ? existing.datasetId : candidate.datasetId,
+        owner: mergedOwner,
+        propertyType: candidate.propertyType ?? existing.propertyType,
+        beds: candidate.beds ?? existing.beds,
+        sizeSqft: candidate.sizeSqft ?? existing.sizeSqft,
+        plotSqft: candidate.plotSqft ?? existing.plotSqft,
         // Keep the existing transaction history unless the incoming file has a
-        // newer one. These must name the existing value explicitly: copyWith
-        // ends in Object.assign, which COPIES an explicit `undefined` rather
-        // than skipping it — passing undefined here wiped the field, blanking
-        // the vault's "Last transaction" column (and resetting txCount to 0 via
-        // fromJson's `?? 0`) on every re-import of a vendor register.
+        // newer one (blanking it also reset txCount to 0 via fromJson's `?? 0`).
         lastTransactionDate: newerTx ? candidate.lastTransactionDate : existing.lastTransactionDate,
         lastTransactionValue: newerTx ? candidate.lastTransactionValue : existing.lastTransactionValue,
         txCount: Math.max(candidate.txCount, existing.txCount),
-        rentStart: candidate.rentStart,
-        rentEnd: candidate.rentEnd,
-        rentAmount: candidate.rentAmount,
+        rentStart: candidate.rentStart ?? existing.rentStart,
+        rentEnd: candidate.rentEnd ?? existing.rentEnd,
+        rentAmount: candidate.rentAmount ?? existing.rentAmount,
+        // extra only carries non-empty cells (see the extra-building loop), so a
+        // blank never lands here; new columns add, existing keys survive.
         extra: { ...existing.extra, ...candidate.extra },
         updatedAt: at,
       }));

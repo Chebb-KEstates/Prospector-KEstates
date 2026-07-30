@@ -12,7 +12,7 @@ import {
 } from '../repositories/importRepo';
 import { findByUnitKeys, saveProperties } from '../repositories/propertyRepo';
 import { findByLeadKeys, saveLeads } from '../repositories/leadRepo';
-import { insertDataset } from '../repositories/datasetRepo';
+import { insertDataset, findDatasetById, refreshDatasetStats } from '../repositories/datasetRepo';
 import { writeAudit } from '../repositories/auditRepo';
 import { newImportSessionId, newDatasetId } from '../domain/ids';
 import { env } from '../config/env';
@@ -195,11 +195,16 @@ export async function dryRunOwners(input: {
   columns: ColumnSpec[];
   type: DataSetType;
   communityFallback: string;
+  /** Update mode preview: matched units keep their own set (mirrors commit). */
+  targetDatasetId?: string;
 }): Promise<OwnerDryRunSummary> {
   const session = await requireOwnedSession(input.sessionId, input.userId);
   if (session.module !== DataModule.owners) {
     throw badRequest('That import is a buyer-leads file.');
   }
+
+  const updateMode = input.targetDatasetId != null && input.targetDatasetId.length > 0;
+  const datasetId = updateMode ? input.targetDatasetId! : input.sessionId;
 
   const rows = await loadStagedSheet(input.sessionId, input.sheetIndex);
   const sheet = new ParsedSheet(session.sheetNames[input.sheetIndex] ?? 'Sheet1', rows);
@@ -215,7 +220,7 @@ export async function dryRunOwners(input: {
   const probe = ImportPipeline.dryRun({
     sheet, headerRow: input.headerRow, columns: input.columns,
     type: input.type, communityFallback: input.communityFallback,
-    datasetId: input.sessionId,
+    datasetId,
     existingByUnitKey: new Map(),
   });
   const touchedKeys = probe.newProperties.map(p => p.unitKey);
@@ -224,10 +229,9 @@ export async function dryRunOwners(input: {
   const result = ImportPipeline.dryRun({
     sheet, headerRow: input.headerRow, columns: input.columns,
     type: input.type, communityFallback: input.communityFallback,
-    // The dataset id is the staging id — one id, used for the rows now and the
-    // DataSet row at commit.
-    datasetId: input.sessionId,
+    datasetId,
     existingByUnitKey,
+    keepExistingDataset: updateMode,
   });
 
   return {
@@ -265,6 +269,12 @@ export interface CommitOwnersInput {
   datasetName: string;
   source: string;
   cost?: number;
+  /**
+   * Update mode: merge into this existing data set instead of creating a new
+   * one. Matched units keep their notes / calls / state / allocations and their
+   * own set; genuinely new units join this set; blank cells never overwrite.
+   */
+  targetDatasetId?: string;
 }
 
 /**
@@ -284,52 +294,63 @@ export async function commitOwners(input: CommitOwnersInput): Promise<{
   const rows = await loadStagedSheet(input.sessionId, input.sheetIndex);
   const sheet = new ParsedSheet(session.sheetNames[input.sheetIndex] ?? 'Sheet1', rows);
 
+  // Update mode targets an existing set: validate it before touching anything.
+  const updateMode = input.targetDatasetId != null && input.targetDatasetId.length > 0;
+  const target = updateMode ? await findDatasetById(input.targetDatasetId!) : null;
+  if (updateMode && (!target || target.module !== DataModule.owners)) {
+    throw notFound('That data set no longer exists — refresh and pick it again.');
+  }
+  // Create-new mints its own id (the staging id); update merges into the target.
+  const datasetId = updateMode ? input.targetDatasetId! : input.sessionId;
+
   const probe = ImportPipeline.dryRun({
     sheet, headerRow: input.headerRow, columns: input.columns,
     type: input.type, communityFallback: input.communityFallback,
-    datasetId: input.sessionId, existingByUnitKey: new Map(),
+    datasetId, existingByUnitKey: new Map(),
   });
   const existingByUnitKey = await findByUnitKeys(probe.newProperties.map(p => p.unitKey));
 
   const result = ImportPipeline.dryRun({
     sheet, headerRow: input.headerRow, columns: input.columns,
     type: input.type, communityFallback: input.communityFallback,
-    datasetId: input.sessionId, existingByUnitKey,
+    datasetId, existingByUnitKey,
+    // In update mode a matched unit keeps its own set; new units join `datasetId`.
+    keepExistingDataset: updateMode,
   });
 
   const all: Property[] = [...result.newProperties, ...result.updatedProperties];
 
-  // ── The fix ──────────────────────────────────────────────────────────────
-  // ONE id: the same value already stamped on every row above.
-  const datasetId = input.sessionId;
-
-  const dataset = new DataSet(
-    datasetId,
-    input.datasetName,
-    input.source,
-    result.type,
-    DataModule.owners,
-    session.fileName,
-    input.communityFallback,
-    new Date().toISOString(),
-    input.cost,
-    result.uniqueUnits,
-    result.callable,
-    result.updatedProperties.length,
-  );
-
   await transaction(async (cx) => {
-    await insertDataset(dataset, input.userId, cx);
-    // `updatedProperties` were built by copyWith from existing rows and keep
-    // their original ids, so the upsert updates them in place; new rows insert.
-    await saveProperties(all, cx);
+    if (updateMode) {
+      // Merge in place: matched rows update by id (notes/state/allocations are
+      // preserved by copyWith), new rows insert into the target set. Then the
+      // set's counts are recomputed — no second data set is created.
+      await saveProperties(all, cx);
+      await refreshDatasetStats(datasetId, result.updatedProperties.length, session.fileName, cx);
+      await writeAudit({
+        actorId: input.userId,
+        action: 'import',
+        detail: `Updated data set "${target!.name}" — ${result.updatedProperties.length} updated, ${result.newProperties.length} added`,
+      }, cx);
+    } else {
+      const dataset = new DataSet(
+        datasetId, input.datasetName, input.source, result.type,
+        DataModule.owners, session.fileName, input.communityFallback,
+        new Date().toISOString(), input.cost,
+        result.uniqueUnits, result.callable, result.updatedProperties.length,
+      );
+      await insertDataset(dataset, input.userId, cx);
+      // `updatedProperties` were built by copyWith from existing rows and keep
+      // their original ids, so the upsert updates them in place; new rows insert.
+      await saveProperties(all, cx);
+      await writeAudit({
+        actorId: input.userId,
+        action: 'import',
+        detail: `Imported "${dataset.name}" — ${dataset.totalUnits} units`,
+      }, cx);
+    }
     await markCommitted(input.sessionId, cx);
     await dropStagedRows(input.sessionId, cx);
-    await writeAudit({
-      actorId: input.userId,
-      action: 'import',
-      detail: `Imported "${dataset.name}" — ${dataset.totalUnits} units`,
-    }, cx);
   });
 
   return { datasetId, imported: all.length };

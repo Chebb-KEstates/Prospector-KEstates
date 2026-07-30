@@ -152,6 +152,7 @@ export default async function importRoutes(app: FastifyInstance) {
           columns: columnSpecSchema,
           type: { type: 'string', enum: Object.values(DataSetType) },
           communityFallback: { type: 'string', maxLength: 255 },
+          targetDatasetId: { type: 'string', maxLength: 64 },
         },
       },
     },
@@ -159,7 +160,7 @@ export default async function importRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const body = req.body as {
       sheetIndex?: number; headerRow: number; columns: unknown[];
-      type?: DataSetType; communityFallback?: string;
+      type?: DataSetType; communityFallback?: string; targetDatasetId?: string;
     };
     const userId = req.currentUser!.id;
     const sheetIndex = body.sheetIndex ?? 0;
@@ -170,6 +171,7 @@ export default async function importRoutes(app: FastifyInstance) {
         columns: sanitizeOwnerColumns(body.columns),
         type: body.type,
         communityFallback: body.communityFallback ?? '',
+        targetDatasetId: body.targetDatasetId,
       });
     }
     return dryRunLeads({
@@ -183,8 +185,11 @@ export default async function importRoutes(app: FastifyInstance) {
     schema: {
       params: { type: 'object', required: ['id'], properties: { id: { type: 'string', maxLength: 64 } } },
       body: {
+        // datasetName is required only for a NEW set; an update carries a
+        // targetDatasetId and reuses the existing set's name. Validated in the
+        // handler because JSON-schema can't express "one or the other".
         type: 'object',
-        required: ['headerRow', 'columns', 'datasetName'],
+        required: ['headerRow', 'columns'],
         additionalProperties: false,
         properties: {
           sheetIndex: { type: 'integer', minimum: 0, maximum: 100 },
@@ -192,9 +197,10 @@ export default async function importRoutes(app: FastifyInstance) {
           columns: columnSpecSchema,
           type: { type: 'string', enum: Object.values(DataSetType) },
           communityFallback: { type: 'string', maxLength: 255 },
-          datasetName: { type: 'string', minLength: 1, maxLength: 255 },
+          datasetName: { type: 'string', maxLength: 255 },
           source: { type: 'string', maxLength: 255 },
           cost: { type: 'number', minimum: 0, maximum: 1e12 },
+          targetDatasetId: { type: 'string', maxLength: 64 },
         },
       },
     },
@@ -203,10 +209,17 @@ export default async function importRoutes(app: FastifyInstance) {
     const body = req.body as {
       sheetIndex?: number; headerRow: number; columns: unknown[];
       type?: DataSetType; communityFallback?: string;
-      datasetName: string; source?: string; cost?: number;
+      datasetName?: string; source?: string; cost?: number;
+      targetDatasetId?: string;
     };
     const userId = req.currentUser!.id;
     const sheetIndex = body.sheetIndex ?? 0;
+    const updateMode = !!body.targetDatasetId;
+
+    // A new set needs a name; an update takes it from the set it targets.
+    if (!updateMode && (body.datasetName ?? '').trim().length === 0) {
+      throw badRequest('Give the data set a name, or choose an existing set to update.');
+    }
 
     if (body.type) {
       return commitOwners({
@@ -214,15 +227,16 @@ export default async function importRoutes(app: FastifyInstance) {
         columns: sanitizeOwnerColumns(body.columns),
         type: body.type,
         communityFallback: body.communityFallback ?? '',
-        datasetName: body.datasetName.trim(),
+        datasetName: (body.datasetName ?? '').trim(),
         source: body.source ?? '',
         cost: body.cost,
+        targetDatasetId: body.targetDatasetId,
       });
     }
     return commitLeads({
       sessionId: id, userId, sheetIndex, headerRow: body.headerRow,
       columns: sanitizeLeadColumns(body.columns),
-      datasetName: body.datasetName.trim(),
+      datasetName: (body.datasetName ?? '').trim(),
       source: body.source ?? '',
     });
   });

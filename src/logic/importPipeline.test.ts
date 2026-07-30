@@ -1,6 +1,6 @@
 import { ImportPipeline } from './importPipeline';
 import { ImportField, ColumnSpec, ParsedSheet } from './importModels';
-import { DataSetType, Property } from '../types/models';
+import { DataSetType, Property, PropertyState } from '../types/models';
 import { ownerKeyOf, groupByOwner } from './ownerGrouping';
 
 describe('phone normalisation', () => {
@@ -147,6 +147,100 @@ describe('re-import keeps transaction history', () => {
     property.txCount = 4;
     const updated = run(rowsWith('2024-05-01', 1_500_000), byKey).updatedProperties[0];
     expect(updated.txCount).toBe(4);
+  });
+});
+
+// The "Update an existing data set" feature: a revised sheet must change only
+// what's different, add new columns, and NEVER erase on a blank — while the
+// team's work (notes / calls / state / allocations) rides through untouched.
+describe('update import — blank keeps, changes merge, work is preserved', () => {
+  const importOne = (rows: unknown[][], datasetId = 'ds-seed') => ImportPipeline.dryRun({
+    sheet: new ParsedSheet('f.xlsx', rows), headerRow: 0,
+    columns: ImportPipeline.buildColumns(rows, 0), type: DataSetType.register,
+    communityFallback: 'Dubai Hills', datasetId, existingByUnitKey: new Map<string, Property>(),
+  }).newProperties[0];
+
+  // A unit already in the vault, worked by a broker.
+  const seeded = () => {
+    const p = importOne([
+      ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile', 'Bedrooms', 'Type', 'View'],
+      ['Dubai Hills', 'T1', '101', 'Amir Haddad', '0501234567', '3', 'Apartment', 'Golf'],
+    ], 'ds-original');
+    p.notes = 'call back Tuesday';
+    p.assignedTo = 'u-sara';
+    p.state = PropertyState.assigned;
+    return { p, byKey: new Map([[p.unitKey, p]]) };
+  };
+
+  const update = (rows: unknown[][], byKey: Map<string, Property>, keepExistingDataset: boolean) =>
+    ImportPipeline.dryRun({
+      sheet: new ParsedSheet('f.xlsx', rows), headerRow: 0,
+      columns: ImportPipeline.buildColumns(rows, 0), type: DataSetType.register,
+      communityFallback: 'Dubai Hills', datasetId: 'ds-target',
+      existingByUnitKey: byKey, keepExistingDataset,
+    });
+
+  it('changes what differs, keeps blanks, adds a new column, keeps old columns', () => {
+    const { byKey } = seeded();
+    // New phone + new owner name + a new "Location" column; Bedrooms and Type
+    // columns are absent entirely, and "View" is not re-sent.
+    const u = update([
+      ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile', 'Location'],
+      ['Dubai Hills', 'T1', '101', 'Amir H. Haddad', '0559999999', 'Near park'],
+    ], byKey, true).updatedProperties[0];
+
+    expect(u.owner.phone).toBe('971559999999');       // changed
+    expect(u.owner.name).toBe('Amir H. Haddad');       // changed
+    expect(u.beds).toBe(3);                            // absent column → kept
+    expect(u.propertyType).toBe('Apartment');          // absent column → kept
+    expect(u.extra.Location).toBe('Near park');        // new column added
+    expect(u.extra.View).toBe('Golf');                 // old column survived
+  });
+
+  it('a blank cell never erases an existing value', () => {
+    const { byKey } = seeded();
+    // Owner name and mobile columns present but EMPTY for this row.
+    const u = update([
+      ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile'],
+      ['Dubai Hills', 'T1', '101', '', ''],
+    ], byKey, true).updatedProperties[0];
+
+    expect(u.owner.name).toBe('Amir Haddad');          // blank → kept
+    expect(u.owner.phone).toBe('971501234567');        // blank → kept
+  });
+
+  it('keeps notes, allocation and state through an update', () => {
+    const { byKey } = seeded();
+    const u = update([
+      ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile'],
+      ['Dubai Hills', 'T1', '101', 'Amir Haddad', '0559999999'],
+    ], byKey, true).updatedProperties[0];
+
+    expect(u.notes).toBe('call back Tuesday');
+    expect(u.assignedTo).toBe('u-sara');
+    expect(u.state).toBe(PropertyState.assigned);
+  });
+
+  it('keepExistingDataset leaves a matched unit in its own set; a new unit joins the target', () => {
+    const { byKey } = seeded();
+    const res = update([
+      ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile'],
+      ['Dubai Hills', 'T1', '101', 'Amir Haddad', '0559999999'], // matched
+      ['Dubai Hills', 'T1', '999', 'New Owner', '0561112233'],   // brand new
+    ], byKey, true);
+
+    expect(res.updatedProperties[0].datasetId).toBe('ds-original'); // stayed put
+    expect(res.newProperties[0].datasetId).toBe('ds-target');       // joined target
+  });
+
+  it('without the flag (a fresh re-import) a matched unit is re-tagged', () => {
+    const { byKey } = seeded();
+    const u = update([
+      ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile'],
+      ['Dubai Hills', 'T1', '101', 'Amir Haddad', '0559999999'],
+    ], byKey, false).updatedProperties[0];
+
+    expect(u.datasetId).toBe('ds-target');
   });
 });
 

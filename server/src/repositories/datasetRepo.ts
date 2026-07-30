@@ -57,3 +57,27 @@ export async function deleteDataset(id: string, cx?: PoolConnection): Promise<vo
   const db = cx ?? pool;
   await db.query('DELETE FROM datasets WHERE id = ?', [id]);
 }
+
+/**
+ * Refresh a data set's counts after an UPDATE import (see importService).
+ * `total_units`/`callable_units` are recomputed as live counts over the rows
+ * that belong to the set — the only honest figure once units have been added or
+ * their callability changed. `updated_units` accumulates the matched rows across
+ * updates, and file_name / imported_at reflect the most recent refresh so the
+ * Data Sets list shows the set was touched.
+ */
+export async function refreshDatasetStats(
+  id: string, matchedDelta: number, fileName: string, cx?: PoolConnection,
+): Promise<void> {
+  const db = cx ?? pool;
+  await db.query(
+    `UPDATE datasets d SET
+       total_units    = (SELECT COUNT(*) FROM properties WHERE dataset_id = d.id),
+       callable_units = (SELECT COUNT(*) FROM properties WHERE dataset_id = d.id AND callable = 1),
+       updated_units  = updated_units + ?,
+       file_name      = ?,
+       imported_at    = ?
+     WHERE id = ?`,
+    [matchedDelta, fileName, toDb(new Date().toISOString()), id],
+  );
+}

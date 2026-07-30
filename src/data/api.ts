@@ -453,6 +453,8 @@ export const imports = {
   dryRunOwners: (sessionId: string, body: {
     sheetIndex?: number; headerRow: number; columns: ColumnSpec[];
     type: DataSetType; communityFallback: string;
+    /** Update an existing set instead of creating a new one. */
+    targetDatasetId?: string;
   }) => post<OwnerDryRun>(`/api/imports/${sessionId}/dry-run`, body),
 
   dryRunLeads: (sessionId: string, body: {
@@ -462,7 +464,9 @@ export const imports = {
   commitOwners: (sessionId: string, body: {
     sheetIndex?: number; headerRow: number; columns: ColumnSpec[];
     type: DataSetType; communityFallback: string;
-    datasetName: string; source?: string; cost?: number;
+    datasetName?: string; source?: string; cost?: number;
+    /** Update an existing set instead of creating a new one. */
+    targetDatasetId?: string;
   }) => post<{ datasetId: string; imported: number }>(`/api/imports/${sessionId}/commit`, body),
 
   commitLeads: (sessionId: string, body: {
