@@ -153,6 +153,9 @@ export function buildOwnerStop(
     buyer: false,
     // Already masked by the server.
     phoneMasked: owner.phone,
+    // Every number the primary owner has, still masked — lets the card show
+    // "N numbers on file" up front and reveal all of them at once.
+    phonesMasked: owner.allPhones,
     // enforceCap:false — opening the session already counted as the view, the
     // same rule the client's recordView(…, false) applied at this point. One
     // reveal returns the whole card, including each co-owner's own number.
@@ -161,8 +164,13 @@ export function buildOwnerStop(
       return { phones: r.phones, owners: r.owners ?? [] };
     },
     // Co-owners of the unit being called (masked) — drives the owner switcher.
+    // Each carries their OWN full (masked) number list, so the switcher can show
+    // per-owner counts and reveal all of that owner's numbers.
     owners: g0.allOwners.length > 1
-      ? g0.allOwners.map(o => ({ name: o.name, nationality: o.nationality, phoneMasked: o.phone }))
+      ? g0.allOwners.map(o => ({
+          name: o.name, nationality: o.nationality,
+          phoneMasked: o.phone, phonesMasked: o.allPhones,
+        }))
       : undefined,
     subtitle: `${units.length} unit${units.length === 1 ? '' : 's'} · ${g0.community}`,
     assetsTitle: `Portfolio (${units.length})`,

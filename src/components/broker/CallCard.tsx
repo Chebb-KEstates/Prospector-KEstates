@@ -52,7 +52,6 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
   const [revealed, setRevealed] = useState(!hasPhone);
   const [phones, setPhones] = useState<PhoneEntry[]>([]);
   const [revealedOwners, setRevealedOwners] = useState<OwnerNumbers[]>([]);
-  const [phoneIdx, setPhoneIdx] = useState(0);
   // Which co-owner the broker is looking at / speaking to (the switcher).
   const [activeOwner, setActiveOwner] = useState(0);
   const [revealing, setRevealing] = useState(false);
@@ -74,14 +73,21 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
   const [openUnit, setOpenUnit] = useState<CallUnit | null>(null);
   const [noteOverrides, setNoteOverrides] = useState<Record<string, string>>({});
 
-  // A co-owned unit lists each owner with their OWN number — the switcher picks
-  // which owner is in view. Single-owner units use the flat `phones`.
+  // A co-owned unit lists each owner with their OWN number(s) — the switcher
+  // picks which owner is in view. Single-owner units use the flat `phones`.
   const multiOwner = !!(stop.owners && stop.owners.length > 1);
+  // The real numbers of the owner currently in view (after reveal).
   const activePhones = multiOwner ? (revealedOwners[activeOwner]?.phones ?? []) : phones;
   const activeOwnerName = multiOwner ? stop.owners![activeOwner]?.name : undefined;
-  const current = activePhones[phoneIdx];
   const ownerNames = multiOwner ? stop.owners!.map(o => o.name) : splitOwnerNames(stop.name);
-  const nextNumber = () => setPhoneIdx(i => (i + 1) % Math.max(1, activePhones.length));
+  // How many numbers each owner has, known BEFORE reveal (masked list), so the
+  // broker is told there's more than one to try — and never misses one.
+  const ownerNumberCount = (i: number): number =>
+    (multiOwner ? stop.owners![i]?.phonesMasked : stop.phonesMasked)?.length ?? 0;
+  // Total numbers across every owner — drives the "multiple numbers" heads-up.
+  const totalNumbers = multiOwner
+    ? stop.owners!.reduce((n, _o, i) => n + ownerNumberCount(i), 0)
+    : (stop.phonesMasked?.length ?? 0);
   const label = (o: CallOutcome) => (stop.buyer ? CallOutcomeBuyerLabel[o] : CallOutcomeLabel[o]);
   const OUTCOMES = Object.values(CallOutcome) as CallOutcome[];
 
@@ -116,7 +122,6 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
       const real = await stop.reveal();
       setPhones(real.phones);
       setRevealedOwners(real.owners);
-      setPhoneIdx(0);
       setRevealed(true);
       onReveal?.();
     } catch (err) {
@@ -202,14 +207,22 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
             {stop.owners.map((o, i) => {
               const sel = i === activeOwner;
+              const nums = ownerNumberCount(i);
               return (
-                <button key={i} className="btn btn-sm" onClick={() => { setActiveOwner(i); setPhoneIdx(0); }}
+                <button key={i} className="btn btn-sm" onClick={() => setActiveOwner(i)}
                   style={{
                     borderColor: sel ? 'var(--gold)' : 'var(--border)', borderWidth: sel ? 1.5 : 1,
                     background: sel ? 'color-mix(in srgb, var(--gold) 14%, transparent)' : 'var(--surface)',
                     color: sel ? 'var(--gold-dark)' : 'var(--text)', fontWeight: sel ? 600 : 500,
                   }}>
                   <Icon name="user" size={12} /> {o.name || `Owner ${i + 1}`}
+                  {nums > 1 && (
+                    <span className="tabular-nums" style={{
+                      marginLeft: 5, fontSize: '0.68rem', fontWeight: 700, padding: '1px 5px',
+                      borderRadius: 6, background: 'color-mix(in srgb, var(--gold) 22%, transparent)',
+                      color: 'var(--gold-dark)',
+                    }}>{nums} nums</span>
+                  )}
                 </button>
               );
             })}
@@ -302,53 +315,70 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
         )}
       </div>
 
-      {/* Call / number reveal */}
+      {/* Call / number reveal.
+          A contact may carry several numbers (Mobile 1-4) and/or several owners,
+          each with their own number(s). The broker must not miss any — so the
+          count is flagged BEFORE reveal, and EVERY number is shown after (never
+          one-at-a-time). */}
       {!revealed ? (
         <div>
+          {totalNumbers > 1 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '9px 12px',
+              borderRadius: 10, fontSize: '0.82rem', fontWeight: 600, lineHeight: 1.3,
+              color: 'var(--gold-dark)',
+              background: 'color-mix(in srgb, var(--gold) 14%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--gold) 45%, transparent)',
+            }}>
+              <Icon name="phone" size={16} style={{ flexShrink: 0 }} />
+              <span>{multiOwner
+                ? `${stop.owners!.length} owners · ${totalNumbers} numbers to try — Call reveals them all`
+                : `${totalNumbers} numbers on file for this owner — Call reveals all of them`}</span>
+            </div>
+          )}
           <button className="btn btn-primary" onClick={reveal} disabled={revealing}
             style={{ justifyContent: 'center', padding: '12px', fontSize: '0.95rem', width: '100%' }}>
-            <Icon name="phoneCall" size={18} /> {revealing ? 'Fetching number…' : 'Call'}
+            <Icon name="phoneCall" size={18} /> {revealing
+              ? 'Fetching numbers…'
+              : totalNumbers > 1 ? `Call — reveal all ${multiOwner ? '' : `${totalNumbers} `}numbers` : 'Call'}
           </button>
           {revealError && <ErrorBox>{revealError}</ErrorBox>}
         </div>
-      ) : current ? (
-        <div>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
-            borderRadius: 10, background: 'color-mix(in srgb, var(--gold) 12%, transparent)',
-            border: '1px solid color-mix(in srgb, var(--gold) 45%, transparent)',
-          }}>
-            {multiOwner && (
-              <span className="chip" style={{ background: 'var(--surface)', color: 'var(--gold-dark)', fontWeight: 700, flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                <Icon name="user" size={11} /> {activeOwnerName}
-              </span>
-            )}
-            {activePhones.length > 1 && (
-              <span className="chip" style={{ background: 'var(--surface)', color: 'var(--gold-dark)', fontWeight: 700, flexShrink: 0 }}>
-                {current?.label}
-              </span>
-            )}
-            <span className="tabular-nums" style={{ flex: 1, fontSize: '1.15rem', fontWeight: 700, letterSpacing: '1px', userSelect: 'all' }}>
-              {current?.number}
-            </span>
-            <button className="btn btn-ghost btn-sm" onClick={() => current && navigator.clipboard?.writeText(current.number)}>
-              <Icon name="copy" size={15} /> Copy
-            </button>
-          </div>
-          {activePhones.length > 1 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-              <button className="btn btn-sm" onClick={nextNumber}
-                style={{ borderColor: 'color-mix(in srgb, var(--gold) 45%, transparent)', color: 'var(--gold-dark)' }}>
-                <Icon name="phone" size={14} /> Multiple numbers ({activePhones.length}) · show next
-              </button>
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
-                {phoneIdx + 1} of {activePhones.length} · {activePhones.map(p => p.label).join(' · ')}
-              </span>
+      ) : activePhones.length > 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {/* Whose numbers these are — only meaningful when there are co-owners. */}
+          {multiOwner && (
+            <div style={{ ...sectionLabel, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 0 }}>
+              <Icon name="user" size={12} />
+              Calling {activeOwnerName} · {activePhones.length} number{activePhones.length === 1 ? '' : 's'}
             </div>
           )}
+          {activePhones.length > 1 && !multiOwner && (
+            <div style={sectionLabel}>All {activePhones.length} numbers — try each</div>
+          )}
+          {/* Every number, stacked — each on its own row with its label + copy. */}
+          {activePhones.map((ph, i) => (
+            <div key={i} style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+              borderRadius: 10, background: 'color-mix(in srgb, var(--gold) 12%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--gold) 45%, transparent)',
+            }}>
+              {activePhones.length > 1 && (
+                <span className="chip" style={{ background: 'var(--surface)', color: 'var(--gold-dark)', fontWeight: 700, flexShrink: 0 }}>
+                  {ph.label}
+                </span>
+              )}
+              <span className="tabular-nums" style={{ flex: 1, fontSize: '1.15rem', fontWeight: 700, letterSpacing: '1px', userSelect: 'all' }}>
+                {ph.number}
+              </span>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigator.clipboard?.writeText(ph.number)}>
+                <Icon name="copy" size={15} /> Copy
+              </button>
+            </div>
+          ))}
           {multiOwner && (
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: 6 }}>
-              {activeOwnerName}’s number — use the owner buttons above to switch.
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
+              Use the owner buttons above to see another owner’s number.
             </div>
           )}
         </div>

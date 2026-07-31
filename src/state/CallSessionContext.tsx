@@ -34,8 +34,15 @@ export interface CallUnit {
   expiresAt?: string;                         // assignment deadline — drives the countdown badge
 }
 
-/** One co-owner shown before reveal — name + their own masked number. */
-export interface OwnerContact { name: string; nationality?: string; phoneMasked?: string; }
+/** One co-owner shown before reveal — name + their own masked number(s).
+ *  `phonesMasked` carries every number the owner has (Mobile 1 / 2 / …), still
+ *  masked, so the dialer can say "2 numbers" and reveal all of them at once. */
+export interface OwnerContact {
+  name: string;
+  nationality?: string;
+  phoneMasked?: string;
+  phonesMasked?: PhoneEntry[];
+}
 /** One co-owner's real number(s), after reveal. */
 export interface OwnerNumbers { name: string; phones: PhoneEntry[]; }
 /** What `reveal()` returns: the flat list (primary), plus per-owner groups. */
@@ -60,6 +67,13 @@ export interface CallStop {
    * Call goes through `reveal()`.
    */
   phoneMasked?: string;
+  /**
+   * Every number the primary owner has on record (Mobile 1 / 2 / …), still
+   * MASKED — display only. Lets the card announce "3 numbers on file" and show
+   * them all before the single audited reveal. At least the primary when there
+   * is a number; empty when there is none. Co-owner numbers live on `owners`.
+   */
+  phonesMasked?: PhoneEntry[];
   /**
    * Fetch the real numbers. Resolves to EVERY number on record, labelled
    * (Mobile 1 / Mobile 2 / …) and grouped for display ("+971 50 123 4567");
