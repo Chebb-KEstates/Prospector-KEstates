@@ -8,6 +8,8 @@ export interface CallHistoryEntry {
   outcome: CallOutcome;
   note?: string;
   by?: string;
+  /** Which co-owner this call was about, when the unit has several. */
+  ownerName?: string;
 }
 
 export interface AssetRow { label: string; value: string; }
@@ -31,6 +33,13 @@ export interface CallUnit {
   notes?: string;                             // free-text notes saved on the record
   expiresAt?: string;                         // assignment deadline — drives the countdown badge
 }
+
+/** One co-owner shown before reveal — name + their own masked number. */
+export interface OwnerContact { name: string; nationality?: string; phoneMasked?: string; }
+/** One co-owner's real number(s), after reveal. */
+export interface OwnerNumbers { name: string; phones: PhoneEntry[]; }
+/** What `reveal()` returns: the flat list (primary), plus per-owner groups. */
+export interface RevealedNumbers { phones: PhoneEntry[]; owners: OwnerNumbers[]; }
 
 /**
  * A single stop in a calling session — one owner (with all their units) or one
@@ -62,7 +71,12 @@ export interface CallStop {
    * browser. Revealing an owner returns their whole contact card as ONE reveal,
    * so a broker isn't charged three of their daily cap for one person.
    */
-  reveal: () => Promise<PhoneEntry[]>;
+  reveal: () => Promise<RevealedNumbers>;
+  /**
+   * Co-owners of the unit being called (masked), for the dialer's owner
+   * switcher. Undefined / single entry for a normal single-owner unit.
+   */
+  owners?: OwnerContact[];
   subtitle: string;
   assetsTitle: string;
   assets: AssetRow[];
@@ -76,14 +90,15 @@ export interface CallStop {
   state: PropertyState;
   note?: string;
   history: CallHistoryEntry[];
-  /** Log one outcome for the whole stop (single-unit owner, or a buyer lead). */
-  log: (outcome: CallOutcome, note: string | undefined, followUpAt: string | undefined) => Promise<void>;
+  /** Log one outcome for the whole stop (single-unit owner, or a buyer lead).
+   *  `ownerName` records which co-owner was spoken to, when there are several. */
+  log: (outcome: CallOutcome, note: string | undefined, followUpAt: string | undefined, ownerName?: string) => Promise<void>;
   /**
    * Log an outcome for ONE of the owner's properties. Present only on multi-unit
    * owner stops, so the card can record "Unit 13 interested, Unit 119 not" rather
    * than tagging every property with the same result.
    */
-  logUnit?: (unitId: string, outcome: CallOutcome, note: string | undefined, followUpAt: string | undefined) => Promise<void>;
+  logUnit?: (unitId: string, outcome: CallOutcome, note: string | undefined, followUpAt: string | undefined, ownerName?: string) => Promise<void>;
   /** Save the free-text notes on one property (owner stops only). */
   saveNote?: (unitId: string, notes: string) => Promise<void>;
 }

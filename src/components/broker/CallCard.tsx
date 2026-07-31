@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CallStop, CallUnit } from '../../state/CallSessionContext';
+import { CallStop, CallUnit, OwnerNumbers } from '../../state/CallSessionContext';
 import { CallOutcome, CallOutcomeLabel, CallOutcomeBuyerLabel } from '../../types/models';
 import type { PhoneEntry } from '../../types/models';
 import { StateChip } from '../common/StateChip';
@@ -51,7 +51,10 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
   const hasPhone = !!stop.phoneMasked;
   const [revealed, setRevealed] = useState(!hasPhone);
   const [phones, setPhones] = useState<PhoneEntry[]>([]);
+  const [revealedOwners, setRevealedOwners] = useState<OwnerNumbers[]>([]);
   const [phoneIdx, setPhoneIdx] = useState(0);
+  // Which co-owner the broker is looking at / speaking to (the switcher).
+  const [activeOwner, setActiveOwner] = useState(0);
   const [revealing, setRevealing] = useState(false);
   const [revealError, setRevealError] = useState<string | null>(null);
 
@@ -71,10 +74,14 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
   const [openUnit, setOpenUnit] = useState<CallUnit | null>(null);
   const [noteOverrides, setNoteOverrides] = useState<Record<string, string>>({});
 
-  const current = phones[phoneIdx];
-  // A unit may be co-owned — the source cell holds all names, e.g. "A & B".
-  const ownerNames = splitOwnerNames(stop.name);
-  const nextNumber = () => setPhoneIdx(i => (i + 1) % phones.length);
+  // A co-owned unit lists each owner with their OWN number — the switcher picks
+  // which owner is in view. Single-owner units use the flat `phones`.
+  const multiOwner = !!(stop.owners && stop.owners.length > 1);
+  const activePhones = multiOwner ? (revealedOwners[activeOwner]?.phones ?? []) : phones;
+  const activeOwnerName = multiOwner ? stop.owners![activeOwner]?.name : undefined;
+  const current = activePhones[phoneIdx];
+  const ownerNames = multiOwner ? stop.owners!.map(o => o.name) : splitOwnerNames(stop.name);
+  const nextNumber = () => setPhoneIdx(i => (i + 1) % Math.max(1, activePhones.length));
   const label = (o: CallOutcome) => (stop.buyer ? CallOutcomeBuyerLabel[o] : CallOutcomeLabel[o]);
   const OUTCOMES = Object.values(CallOutcome) as CallOutcome[];
 
@@ -107,7 +114,8 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
     setRevealError(null);
     try {
       const real = await stop.reveal();
-      setPhones(real);
+      setPhones(real.phones);
+      setRevealedOwners(real.owners);
       setPhoneIdx(0);
       setRevealed(true);
       onReveal?.();
@@ -138,10 +146,10 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
         // onto the owner's other units.
         for (const [unitId, o] of chosen) {
           const n = (unitNotes[unitId] ?? '').trim() || undefined;
-          await stop.logUnit!(unitId, o, n, o === CallOutcome.callbackLater ? fu : undefined);
+          await stop.logUnit!(unitId, o, n, o === CallOutcome.callbackLater ? fu : undefined, activeOwnerName);
         }
       } else {
-        await stop.log(chosen[0][1], note.trim() || undefined, fu);
+        await stop.log(chosen[0][1], note.trim() || undefined, fu, activeOwnerName);
       }
       onComplete(representative(chosen.map(([, o]) => o)));
     } catch (err) {
@@ -185,17 +193,26 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
         <StateChip state={stop.state} />
       </div>
 
-      {/* Co-owners — the source names them in one cell; spell them out so the
-          broker knows who they might reach. The numbers are a shared pool. */}
-      {ownerNames.length > 1 && (
+      {/* Co-owner switcher — each owner has their OWN number; pick who you're
+          calling. The choice drives the number shown below and tags the
+          feedback to that owner. */}
+      {multiOwner && stop.owners && (
         <div style={{ padding: '8px 12px', borderRadius: 10, background: 'var(--surface)', border: '1px solid var(--border-light)' }}>
-          <div style={sectionLabel}>Owners ({ownerNames.length})</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', marginTop: 3 }}>
-            {ownerNames.map((n, i) => (
-              <span key={i} style={{ fontWeight: 600, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <Icon name="user" size={13} style={{ color: 'var(--text-tertiary)' }} /> {n}
-              </span>
-            ))}
+          <div style={sectionLabel}>Owners ({stop.owners.length}) — who are you calling?</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+            {stop.owners.map((o, i) => {
+              const sel = i === activeOwner;
+              return (
+                <button key={i} className="btn btn-sm" onClick={() => { setActiveOwner(i); setPhoneIdx(0); }}
+                  style={{
+                    borderColor: sel ? 'var(--gold)' : 'var(--border)', borderWidth: sel ? 1.5 : 1,
+                    background: sel ? 'color-mix(in srgb, var(--gold) 14%, transparent)' : 'var(--surface)',
+                    color: sel ? 'var(--gold-dark)' : 'var(--text)', fontWeight: sel ? 600 : 500,
+                  }}>
+                  <Icon name="user" size={12} /> {o.name || `Owner ${i + 1}`}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -273,6 +290,7 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
                 <span style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 4, flexShrink: 0, background: outcomeColor(h.outcome) }} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 600 }}>{label(h.outcome)}
+                    {h.ownerName && <span style={{ fontWeight: 500, color: 'var(--gold-dark)' }}> · {h.ownerName}</span>}
                     <span style={{ fontWeight: 400, color: 'var(--text-secondary)' }}> · {fmtDate(h.at)} · {timeAgo(h.at)}</span>
                   </div>
                   {h.note && <div style={{ color: 'var(--text-secondary)' }}>“{h.note}”</div>}
@@ -300,7 +318,12 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
             borderRadius: 10, background: 'color-mix(in srgb, var(--gold) 12%, transparent)',
             border: '1px solid color-mix(in srgb, var(--gold) 45%, transparent)',
           }}>
-            {phones.length > 1 && (
+            {multiOwner && (
+              <span className="chip" style={{ background: 'var(--surface)', color: 'var(--gold-dark)', fontWeight: 700, flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                <Icon name="user" size={11} /> {activeOwnerName}
+              </span>
+            )}
+            {activePhones.length > 1 && (
               <span className="chip" style={{ background: 'var(--surface)', color: 'var(--gold-dark)', fontWeight: 700, flexShrink: 0 }}>
                 {current?.label}
               </span>
@@ -312,20 +335,20 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
               <Icon name="copy" size={15} /> Copy
             </button>
           </div>
-          {phones.length > 1 && (
+          {activePhones.length > 1 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
               <button className="btn btn-sm" onClick={nextNumber}
                 style={{ borderColor: 'color-mix(in srgb, var(--gold) 45%, transparent)', color: 'var(--gold-dark)' }}>
-                <Icon name="phone" size={14} /> Multiple numbers ({phones.length}) · show next
+                <Icon name="phone" size={14} /> Multiple numbers ({activePhones.length}) · show next
               </button>
               <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
-                {phoneIdx + 1} of {phones.length} · {phones.map(p => p.label).join(' · ')}
+                {phoneIdx + 1} of {activePhones.length} · {activePhones.map(p => p.label).join(' · ')}
               </span>
             </div>
           )}
-          {ownerNames.length > 1 && (
+          {multiOwner && (
             <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: 6 }}>
-              Shared across {ownerNames.length} owners ({ownerNames.join(', ')}) — the data doesn't say which number is whose.
+              {activeOwnerName}’s number — use the owner buttons above to switch.
             </div>
           )}
         </div>

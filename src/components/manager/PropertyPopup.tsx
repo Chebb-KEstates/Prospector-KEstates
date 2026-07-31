@@ -33,6 +33,7 @@ export function PropertyPopup({ propertyId, onClose }: { propertyId: string; onC
   const [openUnit, setOpenUnit] = useState<CallUnit | null>(null);
   const [noteOverrides, setNoteOverrides] = useState<Record<string, string>>({});
   const [phones, setPhones] = useState<PhoneEntry[] | null>(null);
+  const [revealedOwners, setRevealedOwners] = useState<{ name: string; phones: PhoneEntry[] }[]>([]);
   const [revealing, setRevealing] = useState(false);
   const [revealError, setRevealError] = useState<string | null>(null);
 
@@ -54,15 +55,20 @@ export function PropertyPopup({ propertyId, onClose }: { propertyId: string; onC
   }, [propertyId, deps]);
 
   const label = (o: CallOutcome) => CallOutcomeLabel[o];
-  // A unit can be co-owned — the source cell holds all names, e.g. "A & B".
-  const ownerNames = splitOwnerNames(stop?.name);
+  // Real co-owners (each with their own number) when the import found several;
+  // fall back to splitting a lone joined cell for legacy single-owner rows.
+  const coOwners = prop?.hasMultipleOwners ? prop.allOwners : [];
+  const ownerNames = coOwners.length > 1 ? coOwners.map(o => o.name) : splitOwnerNames(stop?.name);
+  const realPhonesFor = (name: string) => revealedOwners.find(r => r.name === name)?.phones;
 
   const doReveal = async () => {
     if (!stop || revealing) return;
     setRevealing(true);
     setRevealError(null);
     try {
-      setPhones(await stop.reveal());
+      const r = await stop.reveal();
+      setPhones(r.phones);
+      setRevealedOwners(r.owners);
     } catch (e) {
       setRevealError(e instanceof ApiError ? e.message : 'Could not fetch the number.');
     } finally {
@@ -97,18 +103,26 @@ export function PropertyPopup({ propertyId, onClose }: { propertyId: string; onC
                 <button className="btn btn-icon btn-sm" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button>
               </div>
 
-              {/* Co-owners — the source cell holds several names in one field, so
-                  spell them out. The numbers are a shared pool (the data doesn't
-                  attribute a number to a person), which the contact note says. */}
-              {ownerNames.length > 1 && (
+              {/* Co-owners — each with their OWN number. Masked until the number
+                  below is revealed, then shown per owner. */}
+              {coOwners.length > 1 && (
                 <div style={{ padding: '8px 12px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-                  <div style={sectionLabel}>Owners ({ownerNames.length})</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', marginTop: 3 }}>
-                    {ownerNames.map((n, i) => (
-                      <span key={i} style={{ fontWeight: 600, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                        <Icon name="user" size={13} style={{ color: 'var(--text-tertiary)' }} /> {n}
-                      </span>
-                    ))}
+                  <div style={sectionLabel}>Owners ({coOwners.length})</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+                    {coOwners.map((o, i) => {
+                      const real = realPhonesFor(o.name);
+                      const nums = real ?? o.allPhones;
+                      return (
+                        <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 600, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            <Icon name="user" size={13} style={{ color: 'var(--text-tertiary)' }} /> {o.name || `Owner ${i + 1}`}
+                          </span>
+                          <span className="tabular-nums" style={{ fontSize: '0.8rem', color: real ? 'var(--text)' : 'var(--text-tertiary)', fontWeight: real ? 600 : 400 }}>
+                            {nums.length > 0 ? nums.map(p => p.number).join('  ·  ') : '—'}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -146,11 +160,6 @@ export function PropertyPopup({ propertyId, onClose }: { propertyId: string; onC
                       </button>
                     </>
                   )}
-                </div>
-              )}
-              {phones && ownerNames.length > 1 && (
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: -4 }}>
-                  On record for {ownerNames.length} owners — the source data doesn't say which number belongs to whom.
                 </div>
               )}
               {revealError && <div style={{ color: 'var(--error)', fontSize: '0.75rem' }}>{revealError}</div>}

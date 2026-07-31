@@ -244,6 +244,54 @@ describe('update import — blank keeps, changes merge, work is preserved', () =
   });
 });
 
+// The ownership register lists co-owners on separate rows for the same unit;
+// the import must keep every owner (with their own number), not overwrite.
+describe('co-owners — separate rows, same unit', () => {
+  const run = (r: unknown[][]) => ImportPipeline.dryRun({
+    sheet: new ParsedSheet('reg.xlsx', r), headerRow: 0,
+    columns: ImportPipeline.buildColumns(r, 0), type: DataSetType.register,
+    communityFallback: 'Dubai Hills', datasetId: 'ds', existingByUnitKey: new Map<string, Property>(),
+  });
+
+  it('collapses two owner rows into ONE unit carrying both owners', () => {
+    const res = run([
+      ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile'],
+      ['Dubai Hills', 'T1', '101', 'Ahmed Khan', '0501110001'],
+      ['Dubai Hills', 'T1', '101', 'Fatima Khan', '0502220002'],
+    ]);
+    expect(res.newProperties).toHaveLength(1);
+    const p = res.newProperties[0];
+    expect(p.hasMultipleOwners).toBe(true);
+    expect(p.allOwners.map(o => o.name)).toEqual(['Ahmed Khan', 'Fatima Khan']);
+    // Each owner keeps their OWN number.
+    expect(p.allOwners[0].phone).toBe('971501110001');
+    expect(p.allOwners[1].phone).toBe('971502220002');
+    // Primary mirrors the first owner.
+    expect(p.owner.name).toBe('Ahmed Khan');
+    expect(res.inFileDuplicates).toBe(0); // a co-owner is not a duplicate
+  });
+
+  it('counts a genuinely repeated owner (same unit + same person) as a duplicate', () => {
+    const res = run([
+      ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile'],
+      ['Dubai Hills', 'T1', '101', 'Ahmed Khan', '0501110001'],
+      ['Dubai Hills', 'T1', '101', 'Ahmed Khan', '0501110001'],
+    ]);
+    expect(res.newProperties).toHaveLength(1);
+    expect(res.newProperties[0].allOwners).toHaveLength(1);
+    expect(res.inFileDuplicates).toBe(1);
+  });
+
+  it('a single-owner unit has no co-owners', () => {
+    const p = run([
+      ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile'],
+      ['Dubai Hills', 'T1', '101', 'Solo Owner', '0501110001'],
+    ]).newProperties[0];
+    expect(p.hasMultipleOwners).toBe(false);
+    expect(p.allOwners).toHaveLength(1);
+  });
+});
+
 describe('multiple numbers per owner (Mobile 1 / 2 / 3)', () => {
   const rows: unknown[][] = [
     ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile 1', 'Mobile 2', 'Mobile 3', 'Developer'],

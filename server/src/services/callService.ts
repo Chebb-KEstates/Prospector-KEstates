@@ -24,7 +24,7 @@ const PROP_COLS = `
   unit_number, plot_number, property_type, beds, size_sqft, plot_sqft,
   last_transaction_date, last_transaction_value, tx_count,
   rent_start, rent_end, rent_amount,
-  owner_name, owner_phone, owner_phones, owner_nationality, extra,
+  owner_name, owner_phone, owner_phones, owners, owner_nationality, extra,
   created_at, updated_at, assigned_to, assigned_at, assignment_note,
   cooldown_until, portfolio_since, last_outcome, last_called_at,
   call_attempts, next_follow_up_at, dnc_at, assignment_expires_at`;
@@ -42,6 +42,8 @@ export interface LogCallInput {
   outcome: CallOutcome;
   note?: string;
   followUpAt?: string;
+  /** Which co-owner this call was about, for a multi-owner unit. */
+  ownerName?: string;
 }
 
 export async function logCall(input: LogCallInput): Promise<CallLog> {
@@ -75,6 +77,7 @@ export async function logCall(input: LogCallInput): Promise<CallLog> {
       input.brokerId, now, input.outcome,
       (input.note?.trim().length ?? 0) > 0 ? input.note!.trim() : undefined,
       input.followUpAt,
+      (input.ownerName?.trim().length ?? 0) > 0 ? input.ownerName!.trim() : undefined,
     );
 
     for (const p of properties) {

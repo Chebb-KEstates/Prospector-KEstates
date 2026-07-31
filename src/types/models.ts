@@ -147,6 +147,12 @@ export class Property implements ProspectFields {
   nextFollowUpAt?: string;
   dncAt?: string;
   assignmentExpiresAt?: string;
+  /**
+   * Co-owners of this unit, each with their OWN number — the ownership register
+   * lists them on separate rows. Empty for a single-owner unit, where `owner`
+   * (the primary) is the whole story. `owners[0]` mirrors `owner`.
+   */
+  owners: OwnerInfo[] = [];
   /** Free-text notes on the record, edited from the per-unit detail popup. */
   notes?: string;
   /** Any unmapped columns from the upload, kept verbatim so the table can show them. */
@@ -185,6 +191,15 @@ export class Property implements ProspectFields {
     return !!this.owner.phone && this.owner.phone.length > 0;
   }
 
+  /** Every owner of the unit — the co-owner list, or just the primary. */
+  get allOwners(): OwnerInfo[] {
+    return this.owners.length > 0 ? this.owners : [this.owner];
+  }
+
+  get hasMultipleOwners(): boolean {
+    return this.allOwners.length > 1;
+  }
+
   get unitLabel(): string {
     const b = this.building?.trim() ?? '';
     const u = this.unitNumber?.trim() ?? '';
@@ -219,6 +234,7 @@ export class Property implements ProspectFields {
       lastCalledAt: this.lastCalledAt, callAttempts: this.callAttempts,
       nextFollowUpAt: this.nextFollowUpAt, dncAt: this.dncAt,
       assignmentExpiresAt: this.assignmentExpiresAt,
+      owners: this.owners.map(o => o.toJson()),
       notes: this.notes, extra: this.extra,
     };
   }
@@ -257,6 +273,7 @@ export class Property implements ProspectFields {
     p.nextFollowUpAt = j.nextFollowUpAt as string | undefined;
     p.dncAt = j.dncAt as string | undefined;
     p.assignmentExpiresAt = j.assignmentExpiresAt as string | undefined;
+    p.owners = ((j.owners as Record<string, unknown>[]) ?? []).map(OwnerInfo.fromJson);
     p.notes = j.notes as string | undefined;
     p.extra = Object.fromEntries(
       Object.entries((j.extra as Record<string, unknown>) ?? {}).map(([k, v]) => [k, String(v)]));
@@ -380,6 +397,8 @@ export class CallLog {
     public outcome: CallOutcome,
     public note?: string,
     public followUpAt?: string,
+    /** Which co-owner this call's feedback was about, when the unit has several. */
+    public ownerName?: string,
   ) {}
 
   toJson(): Record<string, unknown> {
@@ -387,6 +406,7 @@ export class CallLog {
       id: this.id, orgId: this.orgId, propertyIds: this.propertyIds,
       leadIds: this.leadIds, brokerId: this.brokerId, at: this.at,
       outcome: this.outcome, note: this.note, followUpAt: this.followUpAt,
+      ownerName: this.ownerName,
     };
   }
 
@@ -400,6 +420,7 @@ export class CallLog {
       (j.outcome as CallOutcome) ?? CallOutcome.noAnswer,
       j.note as string | undefined,
       j.followUpAt as string | undefined,
+      j.ownerName as string | undefined,
     );
   }
 }

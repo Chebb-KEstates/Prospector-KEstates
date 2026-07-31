@@ -141,6 +141,9 @@ export interface PropertyFacets {
 export interface RevealResult {
   phone: string;
   phones: PhoneEntry[];
+  /** Per co-owner, each with their own real number(s). Present only for a
+   *  multi-owner unit; one reveal returns the whole card. */
+  owners?: { name: string; phones: PhoneEntry[] }[];
   used: number;
   cap: number;
 }
@@ -261,7 +264,7 @@ export const leads = {
 
 export const calls = {
   async log(input: {
-    propertyIds: string[]; outcome: CallOutcome; note?: string; followUpAt?: string;
+    propertyIds: string[]; outcome: CallOutcome; note?: string; followUpAt?: string; ownerName?: string;
   }): Promise<CallLog> {
     return CallLog.fromJson(await post('/api/calls', input));
   },

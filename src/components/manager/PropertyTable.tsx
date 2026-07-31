@@ -51,7 +51,7 @@ function baseCols(soonHours: number): ColDef[] {
       // A single cell can name several co-owners ("A & B") — show them, and flag
       // the count so it reads as two owners, not one long name.
       render: p => {
-        const names = splitOwnerNames(p.owner.name);
+        const names = p.hasMultipleOwners ? p.allOwners.map(o => o.name) : splitOwnerNames(p.owner.name);
         if (names.length <= 1) return p.owner.name || '—';
         return (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0 }} title={names.join(' · ')}>

@@ -22,12 +22,12 @@ type NameOf = (id?: string) => string | undefined;
 function history(calls: CallLog[], nameOf: NameOf): CallHistoryEntry[] {
   return [...calls]
     .sort((a, b) => b.at.localeCompare(a.at))
-    .map(c => ({ at: c.at, outcome: c.outcome, note: c.note, by: nameOf(c.brokerId) }));
+    .map(c => ({ at: c.at, outcome: c.outcome, note: c.note, by: nameOf(c.brokerId), ownerName: c.ownerName }));
 }
 
 export interface StopDeps {
   nameOf: NameOf;
-  logCall: (properties: Property[], outcome: any, note?: string, followUpAt?: string) => Promise<void>;
+  logCall: (properties: Property[], outcome: any, note?: string, followUpAt?: string, ownerName?: string) => Promise<void>;
   logLeadCall: (lead: Lead, outcome: any, note?: string, followUpAt?: string) => Promise<void>;
 }
 
@@ -154,8 +154,16 @@ export function buildOwnerStop(
     // Already masked by the server.
     phoneMasked: owner.phone,
     // enforceCap:false — opening the session already counted as the view, the
-    // same rule the client's recordView(…, false) applied at this point.
-    reveal: async () => (await api.properties.reveal(g0.id, false)).phones,
+    // same rule the client's recordView(…, false) applied at this point. One
+    // reveal returns the whole card, including each co-owner's own number.
+    reveal: async () => {
+      const r = await api.properties.reveal(g0.id, false);
+      return { phones: r.phones, owners: r.owners ?? [] };
+    },
+    // Co-owners of the unit being called (masked) — drives the owner switcher.
+    owners: g0.allOwners.length > 1
+      ? g0.allOwners.map(o => ({ name: o.name, nationality: o.nationality, phoneMasked: o.phone }))
+      : undefined,
     subtitle: `${units.length} unit${units.length === 1 ? '' : 's'} · ${g0.community}`,
     assetsTitle: `Portfolio (${units.length})`,
     assets,
@@ -165,12 +173,12 @@ export function buildOwnerStop(
     state: g0?.state ?? PropertyState.assigned,
     note: units.map(p => p.assignmentNote).find(Boolean),
     history: history(calls, deps.nameOf),
-    log: (outcome, note, followUpAt) => deps.logCall(units, outcome, note, followUpAt),
+    log: (outcome, note, followUpAt, ownerName) => deps.logCall(units, outcome, note, followUpAt, ownerName),
     // Multi-unit owners only: log a result for one property at a time.
     logUnit: units.length > 1
-      ? (unitId, outcome, note, followUpAt) => {
+      ? (unitId, outcome, note, followUpAt, ownerName) => {
           const p = units.find(u => u.id === unitId);
-          return deps.logCall(p ? [p] : [], outcome, note, followUpAt);
+          return deps.logCall(p ? [p] : [], outcome, note, followUpAt, ownerName);
         }
       : undefined,
     saveNote: (unitId, notes) => api.properties.saveNotes(unitId, notes).then(() => undefined),
@@ -192,8 +200,8 @@ export function buildLeadStop(l: Lead, calls: CallLog[], deps: StopDeps): CallSt
     flag: '🌐',
     buyer: true,
     phoneMasked: l.phone,
-    // A lead has a single number; the server still returns it as a one-entry list.
-    reveal: async () => (await api.leads.reveal(l.id, false)).phones,
+    // A lead has a single number and no co-owners.
+    reveal: async () => ({ phones: (await api.leads.reveal(l.id, false)).phones, owners: [] }),
     subtitle: `Buyer lead · ${l.project ?? l.source ?? 'enquiry'}`,
     assetsTitle: 'Enquiry',
     assets,

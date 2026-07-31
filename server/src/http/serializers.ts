@@ -73,6 +73,14 @@ export function serializeProperty(p: Property) {
       phones: p.owner.phones.map(e => ({ label: e.label, number: maskedPhone(e.number) })),
       nationality: p.owner.nationality,
     },
+    // Co-owners — each with their OWN number, EVERY one masked on this list
+    // response exactly like the primary. Empty for a single-owner unit.
+    owners: p.owners.map(o => ({
+      name: o.name,
+      phone: o.phone ? maskedPhone(o.phone) : undefined,
+      phones: o.phones.map(e => ({ label: e.label, number: maskedPhone(e.number) })),
+      nationality: o.nationality,
+    })),
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
     assignedTo: p.assignedTo,

@@ -22,11 +22,12 @@ function toCall(r: Row, propertyIds: string[], leadIds: string[]): CallLog {
     r.outcome as CallOutcome,
     (r.note as string) ?? undefined,
     fromDb(r.follow_up_at),
+    (r.owner_name as string) ?? undefined,
   );
 }
 
-const COLS = 'id, org_id, broker_id, at, outcome, note, follow_up_at';
-const C_COLS = 'c.id, c.org_id, c.broker_id, c.at, c.outcome, c.note, c.follow_up_at';
+const COLS = 'id, org_id, broker_id, at, outcome, note, follow_up_at, owner_name';
+const C_COLS = 'c.id, c.org_id, c.broker_id, c.at, c.outcome, c.note, c.follow_up_at, c.owner_name';
 
 function groupLinks(rows: Row[], keyCol: string, valueCol: string): Map<string, string[]> {
   const out = new Map<string, string[]>();
@@ -64,11 +65,11 @@ async function hydrate(rows: Row[], db: PoolConnection | typeof pool): Promise<C
 export async function insertCall(call: CallLog, cx?: PoolConnection): Promise<void> {
   const db = cx ?? pool;
   await db.query(
-    `INSERT INTO calls (id, org_id, broker_id, at, outcome, note, follow_up_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO calls (id, org_id, broker_id, at, outcome, note, owner_name, follow_up_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       call.id, kOrgId, call.brokerId, toDb(call.at), call.outcome,
-      call.note ?? null, toDb(call.followUpAt),
+      call.note ?? null, call.ownerName ?? null, toDb(call.followUpAt),
     ],
   );
 

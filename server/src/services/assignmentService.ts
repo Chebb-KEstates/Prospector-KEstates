@@ -38,7 +38,7 @@ const ASSIGNABLE_COLS = `
   unit_number, plot_number, property_type, beds, size_sqft, plot_sqft,
   last_transaction_date, last_transaction_value, tx_count,
   rent_start, rent_end, rent_amount,
-  owner_name, owner_phone, owner_phones, owner_nationality, extra,
+  owner_name, owner_phone, owner_phones, owners, owner_nationality, extra,
   created_at, updated_at, assigned_to, assigned_at, assignment_note,
   cooldown_until, portfolio_since, last_outcome, last_called_at,
   call_attempts, next_follow_up_at, dnc_at, assignment_expires_at`;

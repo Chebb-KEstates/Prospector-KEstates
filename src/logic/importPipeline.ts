@@ -263,17 +263,28 @@ export abstract class ImportPipeline {
 
     if (params.type === DataSetType.register) {
       for (const r of parsed) {
-        if (units.has(r.unitKey)) inFileDup++;
+        const owner = mkOwner(r);
+        const existing = units.get(r.unitKey);
+        if (existing) {
+          // Same unit, seen before. The register lists each owner on their own
+          // row: a NEW owner is a co-owner (keep them, with their own number);
+          // the SAME owner again is a genuine duplicate row.
+          const key = ownerDedupKey(owner);
+          if (existing.owners.some(o => ownerDedupKey(o) === key)) inFileDup++;
+          else existing.owners.push(owner);
+          continue;
+        }
         const prop = new Property(
           nextId(), kOrgId, params.datasetId, PropertyState.pool,
           r.unitKey, r.community, r.cluster, r.building, r.unitNumber,
           r.plotNumber, r.propertyType, r.beds, r.sizeSqft, r.plotSqft,
           r.txDate, r.txValue, r.txDate ? 1 : 0,
           r.rentStart, r.rentEnd, r.rentAmount,
-          mkOwner(r),
+          owner, // primary = the first row's owner
           at, at,
         );
         prop.extra = r.extra;
+        prop.owners = [owner];
         units.set(r.unitKey, prop);
       }
     } else {
@@ -309,6 +320,7 @@ export abstract class ImportPipeline {
           mkOwner(ownerRow),
           at, at,
         );
+        prop.owners = [mkOwner(ownerRow)];
         // Merge extra across the unit's rows (later rows win).
         prop.extra = Object.assign({}, ...rows.map(r => r.extra));
         units.set(key, prop);
@@ -335,10 +347,15 @@ export abstract class ImportPipeline {
         candidate.owner.nationality ?? existing.owner.nationality,
       );
       mergedOwner.phones = candidate.owner.phones.length > 0 ? candidate.owner.phones : existing.owner.phones;
+      // Co-owners: take the incoming set when it names more than one owner;
+      // otherwise keep whatever's on file (a single incoming row must not wipe
+      // co-owners the sheet simply didn't re-send).
+      const mergedOwners = candidate.owners.length > 1 ? candidate.owners : existing.owners;
       updated.push(existing.copyWith({
         // Update mode keeps the unit in its own set; a fresh import re-tags it.
         datasetId: params.keepExistingDataset ? existing.datasetId : candidate.datasetId,
         owner: mergedOwner,
+        owners: mergedOwners,
         propertyType: candidate.propertyType ?? existing.propertyType,
         beds: candidate.beds ?? existing.beds,
         sizeSqft: candidate.sizeSqft ?? existing.sizeSqft,
@@ -365,6 +382,11 @@ export abstract class ImportPipeline {
       newProps, updated,
     );
   }
+}
+
+/** Identity of an owner for co-owner de-duplication: their number, else name. */
+function ownerDedupKey(o: OwnerInfo): string {
+  return `${o.phone ?? ''}|${o.name.trim().toLowerCase()}`;
 }
 
 function str(v: unknown): string | undefined {

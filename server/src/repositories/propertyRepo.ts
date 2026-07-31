@@ -66,7 +66,31 @@ export function toProperty(r: Row): Property {
   p.notes = (r.notes as string) ?? undefined;
   p.extra = parseExtra(r.extra);
   p.owner.phones = parsePhones(r.owner_phones);
+  p.owners = parseOwners(r.owners);
   return p;
+}
+
+/**
+ * owners is a JSON array of {name, phone, nationality, phones}. NULL means a
+ * single owner (the owner_* columns hold them), and Property.allOwners falls
+ * back to the primary — so single-owner rows need no `owners` value.
+ */
+function parseOwners(v: unknown): OwnerInfo[] {
+  if (v == null) return [];
+  const arr = typeof v === 'string' ? safeParse(v) : v;
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter(e => e && typeof e === 'object')
+    .map(e => {
+      const o = e as { name?: unknown; phone?: unknown; nationality?: unknown; phones?: unknown };
+      const info = new OwnerInfo(
+        String(o.name ?? ''),
+        o.phone != null ? String(o.phone) : undefined,
+        o.nationality != null ? String(o.nationality) : undefined,
+      );
+      info.phones = parsePhones(o.phones);
+      return info;
+    });
 }
 
 /**
@@ -104,7 +128,7 @@ const COLS = `
   unit_number, plot_number, property_type, beds, size_sqft, plot_sqft,
   last_transaction_date, last_transaction_value, tx_count,
   rent_start, rent_end, rent_amount,
-  owner_name, owner_phone, owner_phones, owner_nationality, extra,
+  owner_name, owner_phone, owner_phones, owners, owner_nationality, extra,
   created_at, updated_at, assigned_to, assigned_at, assignment_note,
   cooldown_until, portfolio_since, last_outcome, last_called_at,
   call_attempts, next_follow_up_at, dnc_at, assignment_expires_at, notes`;
@@ -132,6 +156,9 @@ function writeParams(p: Property): unknown[] {
     toDb(p.cooldownUntil), toDb(p.portfolioSince),
     p.lastOutcome ?? null, toDb(p.lastCalledAt), p.callAttempts,
     toDb(p.nextFollowUpAt), toDb(p.dncAt), toDb(p.assignmentExpiresAt),
+    // Co-owners only: a single owner lives in the owner_* columns, so NULL keeps
+    // the column meaningful (NULL = one owner).
+    p.owners.length > 1 ? JSON.stringify(p.owners.map(o => o.toJson())) : null,
   ];
 }
 
@@ -143,8 +170,8 @@ const WRITE_COLS = `
   owner_name, owner_phone, owner_phones, owner_nationality, owner_key, extra,
   created_at, updated_at, assigned_to, assigned_at, assignment_note,
   cooldown_until, portfolio_since, last_outcome, last_called_at,
-  call_attempts, next_follow_up_at, dnc_at, assignment_expires_at`;
-const PLACEHOLDERS = `(${new Array(39).fill('?').join(', ')})`;
+  call_attempts, next_follow_up_at, dnc_at, assignment_expires_at, owners`;
+const PLACEHOLDERS = `(${new Array(40).fill('?').join(', ')})`;
 
 /**
  * Upsert a batch. Chunked because MySQL's max_allowed_packet caps statement
@@ -185,7 +212,8 @@ export async function saveProperties(
         portfolio_since = VALUES(portfolio_since), last_outcome = VALUES(last_outcome),
         last_called_at = VALUES(last_called_at), call_attempts = VALUES(call_attempts),
         next_follow_up_at = VALUES(next_follow_up_at), dnc_at = VALUES(dnc_at),
-        assignment_expires_at = VALUES(assignment_expires_at)`;
+        assignment_expires_at = VALUES(assignment_expires_at),
+        owners = VALUES(owners)`;
     await db.query(sql, chunk.flatMap(writeParams));
     onProgress?.(Math.min(i + CHUNK, properties.length), properties.length);
   }

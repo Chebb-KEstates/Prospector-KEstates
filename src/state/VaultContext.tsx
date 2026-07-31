@@ -87,7 +87,7 @@ interface VaultContextValue {
   undoDnc: (p: Property) => Promise<void>;
   undoDncLead: (l: Lead) => Promise<void>;
 
-  logCall: (properties: Property[], outcome: CallOutcome, note?: string, followUpAt?: string) => Promise<void>;
+  logCall: (properties: Property[], outcome: CallOutcome, note?: string, followUpAt?: string, ownerName?: string) => Promise<void>;
   logLeadCall: (lead: Lead, outcome: CallOutcome, note?: string, followUpAt?: string) => Promise<void>;
 
   /** The sanctioned reveal — single record, capped, audited server-side. */
@@ -315,9 +315,9 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
   }, [bump]);
 
   const logCall = useCallback(async (
-    props: Property[], outcome: CallOutcome, note?: string, followUpAt?: string,
+    props: Property[], outcome: CallOutcome, note?: string, followUpAt?: string, ownerName?: string,
   ) => {
-    await api.calls.log({ propertyIds: props.map(p => p.id), outcome, note, followUpAt });
+    await api.calls.log({ propertyIds: props.map(p => p.id), outcome, note, followUpAt, ownerName });
     bump();
   }, [bump]);
 

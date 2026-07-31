@@ -33,6 +33,12 @@ export interface RevealResult {
    * Always contains at least the primary.
    */
   phones: { label: string; number: string }[];
+  /**
+   * Per co-owner, each with their OWN number(s) — the ownership register lists
+   * co-owners separately. One reveal returns the whole card (all owners), one
+   * cap decrement. Absent for a single-owner unit (use `phone`/`phones`).
+   */
+  owners?: { name: string; phones: { label: string; number: string }[] }[];
   /** Reveals spent today, after this one. */
   used: number;
   cap: number;
@@ -63,6 +69,7 @@ async function revealGuard(
   input: RevealInput,
   phone: string | undefined,
   phones: { label: string; number: string }[] = [],
+  owners: { name: string; phones: { label: string; number: string }[] }[] = [],
 ): Promise<RevealResult> {
   const settings = await loadSettings();
   const cap = input.user.viewCapOverride ?? settings.dailyViewCap;
@@ -109,6 +116,12 @@ async function revealGuard(
   return {
     phone: prettyPhone(phone),
     phones: list.map(e => ({ label: e.label, number: prettyPhone(e.number) })),
+    owners: owners.length > 1
+      ? owners.map(o => ({
+          name: o.name,
+          phones: o.phones.map(e => ({ label: e.label, number: prettyPhone(e.number) })),
+        }))
+      : undefined,
     used: decision.used + 1,
     cap,
   };
@@ -130,9 +143,14 @@ export async function revealOwnerPhone(
   if (!property) throw notFound('That unit no longer exists.');
 
   const all = property.owner.allPhones;
+  // Each co-owner with their own number(s) — one reveal returns the whole card.
+  const ownerGroups = property.allOwners.map(o => ({ name: o.name, phones: o.allPhones }));
+  const multi = ownerGroups.length > 1;
   const what = input.what ??
-    `Revealed number${all.length > 1 ? `s (${all.length})` : ''} — ${property.owner.name || 'Unknown owner'}`;
-  return revealGuard({ ...input, what }, property.owner.phone, all);
+    (multi
+      ? `Revealed co-owners (${ownerGroups.length}) — ${property.owner.name || 'Unknown owner'}`
+      : `Revealed number${all.length > 1 ? `s (${all.length})` : ''} — ${property.owner.name || 'Unknown owner'}`);
+  return revealGuard({ ...input, what }, property.owner.phone, all, ownerGroups);
 }
 
 export async function revealLeadPhone(
