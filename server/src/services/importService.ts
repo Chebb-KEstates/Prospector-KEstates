@@ -2,7 +2,8 @@ import { transaction } from '../db/pool';
 import {
   Property, Lead, DataSet, DataSetType, DataModule,
 } from '../../../src/types/models';
-import { ImportPipeline } from '../../../src/logic/importPipeline';
+import { ImportPipeline, OwnerMode } from '../../../src/logic/importPipeline';
+import type { ChangeTally } from '../../../src/logic/importModels';
 import { LeadPipeline, LeadColumnSpec, LeadField } from '../../../src/logic/leadPipeline';
 import { ColumnSpec, ImportField, ParsedSheet } from '../../../src/logic/importModels';
 import { parseVendorFile } from '../../../src/logic/fileParser';
@@ -173,6 +174,8 @@ export interface OwnerDryRunSummary {
   updatedCount: number;
   uniqueUnits: number;
   callable: number;
+  /** What the matched units actually change — surfaced in the update review. */
+  changes: ChangeTally;
   /** A masked sample of the new rows, for the review step. */
   sample: {
     owner: string; community: string; unit: string; phone: string;
@@ -197,6 +200,8 @@ export async function dryRunOwners(input: {
   communityFallback: string;
   /** Update mode preview: matched units keep their own set (mirrors commit). */
   targetDatasetId?: string;
+  /** How matched units' owners reconcile with the file (update mode). */
+  ownerMode?: OwnerMode;
 }): Promise<OwnerDryRunSummary> {
   const session = await requireOwnedSession(input.sessionId, input.userId);
   if (session.module !== DataModule.owners) {
@@ -232,6 +237,7 @@ export async function dryRunOwners(input: {
     datasetId,
     existingByUnitKey,
     keepExistingDataset: updateMode,
+    ownerMode: input.ownerMode,
   });
 
   return {
@@ -243,6 +249,7 @@ export async function dryRunOwners(input: {
     updatedCount: result.updatedProperties.length,
     uniqueUnits: result.uniqueUnits,
     callable: result.callable,
+    changes: result.changes,
     sample: result.newProperties.slice(0, 20).map(p => ({
       owner: p.owner.name,
       community: p.community,
@@ -275,6 +282,8 @@ export interface CommitOwnersInput {
    * own set; genuinely new units join this set; blank cells never overwrite.
    */
   targetDatasetId?: string;
+  /** How matched units' owners reconcile with the file (update mode). */
+  ownerMode?: OwnerMode;
 }
 
 /**
@@ -316,6 +325,7 @@ export async function commitOwners(input: CommitOwnersInput): Promise<{
     datasetId, existingByUnitKey,
     // In update mode a matched unit keeps its own set; new units join `datasetId`.
     keepExistingDataset: updateMode,
+    ownerMode: input.ownerMode,
   });
 
   const all: Property[] = [...result.newProperties, ...result.updatedProperties];

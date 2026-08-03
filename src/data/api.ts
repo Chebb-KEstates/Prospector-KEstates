@@ -392,12 +392,25 @@ export interface BrokerDashboard {
   byState: Record<PropertyState, number>;
 }
 
+export interface TeamBrokerRow {
+  id: string; name: string; team: string;
+  assigned: number; portfolio: number;
+  calls: number; calls7d: number; calls24h: number;
+  reached: number; interested: number; noAnswer: number;
+  lastAt?: string;
+}
+
+export interface TeamDatasetRow {
+  id: string; name: string; module: DataModule;
+  properties: number; callable: number; numbers: number;
+  agents: number; assigned: number; untouched: number;
+  calls: number; noAnswer: number; interested: number;
+  importedAt: string; lastUpdatedAt?: string;
+}
+
 export interface TeamDashboard {
-  brokers: {
-    id: string; name: string; team: string;
-    assigned: number; portfolio: number;
-    calls: number; reached: number; interested: number;
-  }[];
+  brokers: TeamBrokerRow[];
+  datasetStats: TeamDatasetRow[];
   roi: {
     totalCost: number;
     datasets: number;
@@ -431,10 +444,17 @@ export interface StagedImport {
   preview: unknown[][];
 }
 
+/** What an update changes across the matched units — for the review step. */
+export interface ImportChangeTally {
+  ownerChanges: number; ownerCountChanges: number; phoneChanges: number;
+  rentalChanges: number; saleChanges: number; physicalChanges: number;
+}
+
 export interface OwnerDryRun {
   type: DataSetType;
   sourceRows: number; invalidRows: number; inFileDuplicates: number;
   newCount: number; updatedCount: number; uniqueUnits: number; callable: number;
+  changes: ImportChangeTally;
   sample: { owner: string; community: string; unit: string; phone: string }[];
 }
 
@@ -458,6 +478,8 @@ export const imports = {
     type: DataSetType; communityFallback: string;
     /** Update an existing set instead of creating a new one. */
     targetDatasetId?: string;
+    /** Owner reconciliation for matched units (update mode). */
+    ownerMode?: 'replace' | 'patch';
   }) => post<OwnerDryRun>(`/api/imports/${sessionId}/dry-run`, body),
 
   dryRunLeads: (sessionId: string, body: {
@@ -470,6 +492,8 @@ export const imports = {
     datasetName?: string; source?: string; cost?: number;
     /** Update an existing set instead of creating a new one. */
     targetDatasetId?: string;
+    /** Owner reconciliation for matched units (update mode). */
+    ownerMode?: 'replace' | 'patch';
   }) => post<{ datasetId: string; imported: number }>(`/api/imports/${sessionId}/commit`, body),
 
   commitLeads: (sessionId: string, body: {

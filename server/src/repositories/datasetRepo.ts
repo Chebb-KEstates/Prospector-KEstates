@@ -16,12 +16,15 @@ function toDataSet(r: Row): DataSet {
     Number(r.total_units ?? 0),
     Number(r.callable_units ?? 0),
     Number(r.updated_units ?? 0),
+    fromDb(r.last_updated_at) ?? undefined,
+    Number(r.update_count ?? 0),
   );
 }
 
 const COLS = `
   id, org_id, name, source, type, module, file_name, community_label,
-  imported_at, cost, total_units, callable_units, updated_units`;
+  imported_at, cost, total_units, callable_units, updated_units,
+  last_updated_at, update_count`;
 
 export async function listDatasets(): Promise<DataSet[]> {
   const [rows] = await pool.query<Row[]>(
@@ -63,8 +66,12 @@ export async function deleteDataset(id: string, cx?: PoolConnection): Promise<vo
  * `total_units`/`callable_units` are recomputed as live counts over the rows
  * that belong to the set — the only honest figure once units have been added or
  * their callability changed. `updated_units` accumulates the matched rows across
- * updates, and file_name / imported_at reflect the most recent refresh so the
- * Data Sets list shows the set was touched.
+ * updates.
+ *
+ * `imported_at` is deliberately LEFT ALONE — it's the original import date. The
+ * refresh is recorded in `last_updated_at` (when) and `update_count` (how many
+ * times), and `file_name` reflects the latest file. So the Data Sets list stays
+ * one row that clearly shows it was updated, and when.
  */
 export async function refreshDatasetStats(
   id: string, matchedDelta: number, fileName: string, cx?: PoolConnection,
@@ -72,11 +79,12 @@ export async function refreshDatasetStats(
   const db = cx ?? pool;
   await db.query(
     `UPDATE datasets d SET
-       total_units    = (SELECT COUNT(*) FROM properties WHERE dataset_id = d.id),
-       callable_units = (SELECT COUNT(*) FROM properties WHERE dataset_id = d.id AND callable = 1),
-       updated_units  = updated_units + ?,
-       file_name      = ?,
-       imported_at    = ?
+       total_units     = (SELECT COUNT(*) FROM properties WHERE dataset_id = d.id),
+       callable_units  = (SELECT COUNT(*) FROM properties WHERE dataset_id = d.id AND callable = 1),
+       updated_units   = updated_units + ?,
+       update_count    = update_count + 1,
+       file_name       = ?,
+       last_updated_at = ?
      WHERE id = ?`,
     [matchedDelta, fileName, toDb(new Date().toISOString()), id],
   );

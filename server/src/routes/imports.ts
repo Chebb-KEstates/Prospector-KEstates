@@ -153,6 +153,7 @@ export default async function importRoutes(app: FastifyInstance) {
           type: { type: 'string', enum: Object.values(DataSetType) },
           communityFallback: { type: 'string', maxLength: 255 },
           targetDatasetId: { type: 'string', maxLength: 64 },
+          ownerMode: { type: 'string', enum: ['replace', 'patch'] },
         },
       },
     },
@@ -161,6 +162,7 @@ export default async function importRoutes(app: FastifyInstance) {
     const body = req.body as {
       sheetIndex?: number; headerRow: number; columns: unknown[];
       type?: DataSetType; communityFallback?: string; targetDatasetId?: string;
+      ownerMode?: 'replace' | 'patch';
     };
     const userId = req.currentUser!.id;
     const sheetIndex = body.sheetIndex ?? 0;
@@ -172,6 +174,7 @@ export default async function importRoutes(app: FastifyInstance) {
         type: body.type,
         communityFallback: body.communityFallback ?? '',
         targetDatasetId: body.targetDatasetId,
+        ownerMode: body.ownerMode,
       });
     }
     return dryRunLeads({
@@ -201,6 +204,7 @@ export default async function importRoutes(app: FastifyInstance) {
           source: { type: 'string', maxLength: 255 },
           cost: { type: 'number', minimum: 0, maximum: 1e12 },
           targetDatasetId: { type: 'string', maxLength: 64 },
+          ownerMode: { type: 'string', enum: ['replace', 'patch'] },
         },
       },
     },
@@ -210,7 +214,7 @@ export default async function importRoutes(app: FastifyInstance) {
       sheetIndex?: number; headerRow: number; columns: unknown[];
       type?: DataSetType; communityFallback?: string;
       datasetName?: string; source?: string; cost?: number;
-      targetDatasetId?: string;
+      targetDatasetId?: string; ownerMode?: 'replace' | 'patch';
     };
     const userId = req.currentUser!.id;
     const sheetIndex = body.sheetIndex ?? 0;
@@ -231,6 +235,7 @@ export default async function importRoutes(app: FastifyInstance) {
         source: body.source ?? '',
         cost: body.cost,
         targetDatasetId: body.targetDatasetId,
+        ownerMode: body.ownerMode,
       });
     }
     return commitLeads({

@@ -49,6 +49,9 @@ export function ImportWizard() {
   // Create a brand-new set, or merge this file into an existing one.
   const [mode, setMode] = useState<'new' | 'update'>('new');
   const [targetDatasetId, setTargetDatasetId] = useState('');
+  // Update mode only: is this file the full owner list (replace), or an add-only
+  // patch (keep existing owners, never remove)?
+  const [ownerMode, setOwnerMode] = useState<'replace' | 'patch'>('replace');
   const [dryRun, setDryRun] = useState<api.OwnerDryRun | null>(null);
   const [imported, setImported] = useState(0);
 
@@ -60,7 +63,7 @@ export function ImportWizard() {
   const reset = () => {
     setStep(0); setStaged(null); setDryRun(null); setError(null);
     setColumns([]); setActiveSheet(0); setHeaderRow(0); setCost('');
-    setMode('new'); setTargetDatasetId('');
+    setMode('new'); setTargetDatasetId(''); setOwnerMode('replace');
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -143,6 +146,7 @@ export function ImportWizard() {
         sheetIndex: activeSheet, headerRow, columns, type,
         communityFallback: communityLabel,
         targetDatasetId: updating ? targetDatasetId : undefined,
+        ownerMode: updating ? ownerMode : undefined,
       });
       setDryRun(result);
       setStep(2);
@@ -165,6 +169,7 @@ export function ImportWizard() {
         source: dataSource.trim(),
         cost: cost ? parseFloat(cost) : undefined,
         targetDatasetId: updating ? targetDatasetId : undefined,
+        ownerMode: updating ? ownerMode : undefined,
       });
       setImported(r.imported);
       await reloadDatasets();
@@ -207,17 +212,67 @@ export function ImportWizard() {
       )}
 
       {step === 0 && (
-        <div className="card" style={{ textAlign: 'center', padding: 48 }}>
-          <p style={{ marginBottom: 16, color: 'var(--text-secondary)' }}>
-            Upload an Excel (.xlsx) or CSV file exported from a data vendor.
-          </p>
-          <input ref={fileInputRef} type="file" accept=".xlsx,.csv" onChange={handleFileSelect} style={{ display: 'none' }} />
-          <button className="btn btn-primary" disabled={busy} onClick={() => fileInputRef.current?.click()}>
-            {busy ? 'Reading…' : 'Choose file'}
-          </button>
-          <p style={{ marginTop: 12, fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
-            The file is parsed and discarded — only the rows are kept, and only until you commit.
-          </p>
+        <div>
+          {/* First question: is this new data, or an update to data already here? */}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <ModeCard active={!updating} onClick={() => setMode('new')}
+              title="New data"
+              desc="Properties not yet in the system. Creates a new data set." />
+            <ModeCard active={updating} onClick={() => setMode('update')}
+              title="Update existing data"
+              desc="Refresh properties already in the system. Updates a data set in place — notes, calls and broker allocations are kept." />
+          </div>
+
+          {updating && (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Data set to update</label>
+              <select className="input" value={targetDatasetId} onChange={e => setTargetDatasetId(e.target.value)} style={{ minWidth: 280 }}>
+                <option value="">Choose a data set…</option>
+                {ownerDatasets.map(d => (
+                  <option key={d.id} value={d.id}>{d.name} · {d.totalUnits} units</option>
+                ))}
+              </select>
+              {ownerDatasets.length === 0 && (
+                <div style={{ fontSize: '0.7rem', color: 'var(--warning)', marginTop: 4 }}>
+                  No owner data sets yet — import one as “New data” first.
+                </div>
+              )}
+
+              {/* The confirmed design decision: full owner list vs add-only patch. */}
+              <div style={{ marginTop: 16 }}>
+                <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+                  Owners in this file
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 640 }}>
+                  <OwnerModeRow active={ownerMode === 'replace'} onClick={() => setOwnerMode('replace')}
+                    title="Full owner list (replace)"
+                    desc="Each unit's owners become exactly what this file lists — so a unit that used to have two owners and now shows one is reduced to one." />
+                  <OwnerModeRow active={ownerMode === 'patch'} onClick={() => setOwnerMode('patch')}
+                    title="Only add / patch (keep existing owners)"
+                    desc="Add any new owners or numbers, but never remove one. Use for a partial file that doesn't re-list everyone." />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="card" style={{ textAlign: 'center', padding: 48 }}>
+            <p style={{ marginBottom: 16, color: 'var(--text-secondary)' }}>
+              Upload an Excel (.xlsx) or CSV file exported from a data vendor.
+            </p>
+            <input ref={fileInputRef} type="file" accept=".xlsx,.csv" onChange={handleFileSelect} style={{ display: 'none' }} />
+            <button className="btn btn-primary" disabled={busy || (updating && !targetDatasetId)}
+              onClick={() => fileInputRef.current?.click()}>
+              {busy ? 'Reading…' : 'Choose file'}
+            </button>
+            {updating && !targetDatasetId && (
+              <p style={{ marginTop: 10, fontSize: '0.75rem', color: 'var(--warning)' }}>
+                Pick a data set to update first.
+              </p>
+            )}
+            <p style={{ marginTop: 12, fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
+              The file is parsed and discarded — only the rows are kept, and only until you commit.
+            </p>
+          </div>
         </div>
       )}
 
@@ -235,26 +290,28 @@ export function ImportWizard() {
           )}
 
           <div className="card" style={{ marginBottom: 16 }}>
-            {/* New set, or merge this file into an existing one. */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-                <button className="btn" onClick={() => setMode('new')}
-                  style={{ borderRadius: 0, border: 'none', background: !updating ? 'var(--primary)' : 'transparent', color: !updating ? '#fff' : 'var(--text-secondary)' }}>
-                  Create a new data set
-                </button>
-                <button className="btn" onClick={() => setMode('update')}
-                  style={{ borderRadius: 0, border: 'none', background: updating ? 'var(--primary)' : 'transparent', color: updating ? '#fff' : 'var(--text-secondary)' }}>
-                  Update an existing data set
-                </button>
-              </div>
+            {/* Mode was chosen up front (step 0) — shown here as a reminder. */}
+            <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span className="chip" style={{
+                background: updating ? 'color-mix(in srgb, var(--info) 15%, transparent)' : 'color-mix(in srgb, var(--success) 15%, transparent)',
+                color: updating ? 'var(--info)' : 'var(--success)', fontWeight: 600,
+              }}>
+                {updating ? `Updating: ${targetName || '—'}` : 'New data set'}
+              </span>
               {updating && (
-                <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: '0.75rem', color: 'var(--text-secondary)', maxWidth: 640 }}>
-                  <Icon name="check" size={14} style={{ color: 'var(--success)', flexShrink: 0, marginTop: 2 }} />
-                  <span>Units are matched by location and only changed values are updated. Notes, call history,
-                    portfolio and broker allocations are kept, and blank cells never overwrite existing data.</span>
-                </div>
+                <span className="chip" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                  Owners: {ownerMode === 'replace' ? 'full list (replace)' : 'add / patch only'}
+                </span>
               )}
+              <button className="btn btn-sm btn-ghost" onClick={reset}>Change</button>
             </div>
+            {updating && (
+              <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: '0.75rem', color: 'var(--text-secondary)', maxWidth: 660 }}>
+                <Icon name="check" size={14} style={{ color: 'var(--success)', flexShrink: 0, marginTop: 2 }} />
+                <span>Units are matched by location and only changed values are updated. Notes, call history,
+                  portfolio and broker allocations are kept, and blank cells never overwrite existing data.</span>
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
               <div>
@@ -262,20 +319,7 @@ export function ImportWizard() {
                 <input className="input" type="number" value={headerRow + 1} min={1} style={{ width: 80 }}
                   onChange={e => { const r = parseInt(e.target.value, 10) - 1; if (r >= 0) void changeHeaderRow(r); }} />
               </div>
-              {updating ? (
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Data set to update</label>
-                  <select className="input" value={targetDatasetId} onChange={e => setTargetDatasetId(e.target.value)} style={{ minWidth: 260 }}>
-                    <option value="">Choose a data set…</option>
-                    {ownerDatasets.map(d => (
-                      <option key={d.id} value={d.id}>{d.name} · {d.totalUnits} units</option>
-                    ))}
-                  </select>
-                  {ownerDatasets.length === 0 && (
-                    <div style={{ fontSize: '0.7rem', color: 'var(--warning)', marginTop: 4 }}>No owner data sets yet — import one first.</div>
-                  )}
-                </div>
-              ) : (
+              {!updating && (
                 <>
                   <div>
                     <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Dataset name</label>
@@ -367,7 +411,23 @@ export function ImportWizard() {
                 <div style={{ fontWeight: 600, color: 'var(--success)' }}>
                   {dryRun.updatedCount} unit{dryRun.updatedCount === 1 ? '' : 's'} updated · {dryRun.newCount} new unit{dryRun.newCount === 1 ? '' : 's'} added
                 </div>
-                <div style={{ color: 'var(--text-secondary)', marginTop: 2 }}>
+                {/* Exactly what the update changes — so nothing is overwritten blindly. */}
+                {(() => {
+                  const c = dryRun.changes;
+                  const bits: string[] = [];
+                  if (c.ownerChanges) bits.push(`${c.ownerChanges} owner detail${c.ownerChanges === 1 ? '' : 's'}`);
+                  if (c.ownerCountChanges) bits.push(`${c.ownerCountChanges} owner count`);
+                  if (c.phoneChanges) bits.push(`${c.phoneChanges} number${c.phoneChanges === 1 ? '' : 's'}`);
+                  if (c.rentalChanges) bits.push(`${c.rentalChanges} rental`);
+                  if (c.saleChanges) bits.push(`${c.saleChanges} last sale`);
+                  if (c.physicalChanges) bits.push(`${c.physicalChanges} property detail${c.physicalChanges === 1 ? '' : 's'}`);
+                  return (
+                    <div style={{ color: 'var(--text)', marginTop: 6, fontWeight: 500 }}>
+                      {bits.length > 0 ? `Changing: ${bits.join(' · ')}.` : 'No field changes among the matched units — only touched dates refresh.'}
+                    </div>
+                  );
+                })()}
+                <div style={{ color: 'var(--text-secondary)', marginTop: 4 }}>
                   Broker notes, call history, portfolio and allocations are kept exactly as they are. Only changed
                   values are updated and blank cells are left unchanged. No new data set is created.
                 </div>
@@ -443,6 +503,53 @@ export function ImportWizard() {
         </div>
       )}
     </div>
+  );
+}
+
+/** A big selectable card — the New-vs-Update choice at the top of the wizard. */
+function ModeCard({ active, onClick, title, desc }: {
+  active: boolean; onClick: () => void; title: string; desc: string;
+}) {
+  return (
+    <button onClick={onClick} style={{
+      flex: 1, minWidth: 240, textAlign: 'left', cursor: 'pointer',
+      padding: '16px 18px', borderRadius: 12,
+      border: `1.5px solid ${active ? 'var(--primary)' : 'var(--border)'}`,
+      background: active ? 'color-mix(in srgb, var(--primary) 8%, transparent)' : 'var(--surface)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <span style={{
+          width: 16, height: 16, borderRadius: '50%', flexShrink: 0,
+          border: `2px solid ${active ? 'var(--primary)' : 'var(--border)'}`,
+          background: active ? 'var(--primary)' : 'transparent',
+        }} />
+        <span style={{ fontWeight: 700, fontSize: '0.95rem', color: active ? 'var(--primary)' : 'var(--text)' }}>{title}</span>
+      </div>
+      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', paddingLeft: 24 }}>{desc}</div>
+    </button>
+  );
+}
+
+/** A compact selectable row — the replace/patch owner choice. */
+function OwnerModeRow({ active, onClick, title, desc }: {
+  active: boolean; onClick: () => void; title: string; desc: string;
+}) {
+  return (
+    <button onClick={onClick} style={{
+      textAlign: 'left', cursor: 'pointer', padding: '10px 12px', borderRadius: 10,
+      border: `1.5px solid ${active ? 'var(--primary)' : 'var(--border)'}`,
+      background: active ? 'color-mix(in srgb, var(--primary) 8%, transparent)' : 'var(--surface)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{
+          width: 14, height: 14, borderRadius: '50%', flexShrink: 0,
+          border: `2px solid ${active ? 'var(--primary)' : 'var(--border)'}`,
+          background: active ? 'var(--primary)' : 'transparent',
+        }} />
+        <span style={{ fontWeight: 600, fontSize: '0.82rem', color: active ? 'var(--primary)' : 'var(--text)' }}>{title}</span>
+      </div>
+      <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', paddingLeft: 22, marginTop: 2 }}>{desc}</div>
+    </button>
   );
 }
 

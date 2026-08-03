@@ -38,11 +38,11 @@ function ImportAndFiles() {
             <thead>
               <tr><th>Name</th><th>Module</th><th>Source</th><th>Community</th>
                 <th style={{ textAlign: 'right' }}>Records</th><th style={{ textAlign: 'right' }}>Callable</th>
-                <th>Imported</th><th></th></tr>
+                <th>Imported</th><th>Updated</th><th></th></tr>
             </thead>
             <tbody>
               {datasets.length === 0 ? (
-                <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 24 }}>No data sets yet.</td></tr>
+                <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 24 }}>No data sets yet.</td></tr>
               ) : datasets.map(d => (
                 <tr key={d.id}>
                   <td style={{ fontWeight: 500 }}>{d.name}</td>
@@ -52,6 +52,14 @@ function ImportAndFiles() {
                   <td className="tabular-nums" style={{ textAlign: 'right' }}>{fmtInt(d.totalUnits)}</td>
                   <td className="tabular-nums" style={{ textAlign: 'right' }}>{fmtInt(d.callableUnits)}</td>
                   <td style={{ fontSize: '0.75rem' }}>{fmtDate(d.importedAt)}</td>
+                  {/* One row per data set — an update shows here, never as a 2nd row. */}
+                  <td style={{ fontSize: '0.75rem', color: d.lastUpdatedAt ? 'var(--text)' : 'var(--text-tertiary)' }}>
+                    {d.lastUpdatedAt ? (
+                      <span title={d.updateCount > 0 ? `Updated ${d.updateCount} time${d.updateCount === 1 ? '' : 's'}` : undefined}>
+                        {fmtDate(d.lastUpdatedAt)}{d.updateCount > 1 ? ` · ×${d.updateCount}` : ''}
+                      </span>
+                    ) : '—'}
+                  </td>
                   <td>
                     {user.can(Permission.manageData) && (
                       <button className="btn btn-sm btn-ghost" style={{ color: 'var(--error)' }}

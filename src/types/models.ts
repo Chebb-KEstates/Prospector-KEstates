@@ -512,6 +512,12 @@ export class DataSet {
     public totalUnits = 0,
     public callableUnits = 0,
     public updatedUnits = 0,
+    // `importedAt` stays the ORIGINAL import date. When the set is refreshed by
+    // an update import, `lastUpdatedAt` records when, and `updateCount` how many
+    // times — so the Data Sets list shows one row that "was updated" and when,
+    // never a second data set.
+    public lastUpdatedAt?: string,
+    public updateCount = 0,
   ) {}
 
   toJson(): Record<string, unknown> {
@@ -521,6 +527,7 @@ export class DataSet {
       communityLabel: this.communityLabel, importedAt: this.importedAt,
       cost: this.cost, totalUnits: this.totalUnits,
       callableUnits: this.callableUnits, updatedUnits: this.updatedUnits,
+      lastUpdatedAt: this.lastUpdatedAt, updateCount: this.updateCount,
     };
   }
 
@@ -534,6 +541,8 @@ export class DataSet {
       j.cost != null ? (j.cost as number) : undefined,
       (j.totalUnits as number) ?? 0, (j.callableUnits as number) ?? 0,
       (j.updatedUnits as number) ?? 0,
+      (j.lastUpdatedAt as string | undefined) ?? undefined,
+      (j.updateCount as number) ?? 0,
     );
   }
 }

@@ -1,6 +1,9 @@
 import { Property, OwnerInfo, DataSetType, kOrgId, PropertyState } from '../types/models';
 import type { PhoneEntry } from '../types/models';
-import { ImportField, ColumnSpec, ParsedSheet, DryRunResult, EXTRA_BACKED_FIELDS } from './importModels';
+import { ImportField, ColumnSpec, ParsedSheet, DryRunResult, EXTRA_BACKED_FIELDS, emptyChangeTally } from './importModels';
+
+/** How an update treats the owner(s) a file lists for a unit already on file. */
+export type OwnerMode = 'replace' | 'patch';
 
 export abstract class ImportPipeline {
   static detectHeaderRow(rows: unknown[][]): number {
@@ -161,6 +164,15 @@ export abstract class ImportPipeline {
      * before.
      */
     keepExistingDataset?: boolean;
+    /**
+     * How a matched unit's owner(s) are reconciled with the file:
+     *   • 'replace' (default) — the file is the full owner list for that unit, so
+     *     its owners replace what's on file (lets "was 2 owners, now 1" work). A
+     *     blank owner row never wipes — it's treated as "not provided".
+     *   • 'patch' — add-only: keep every existing owner/number, add any the file
+     *     introduces, never remove one.
+     */
+    ownerMode?: OwnerMode;
   }): DryRunResult {
     const at = params.now ?? new Date().toISOString();
     const byField = new Map<ImportField, number>();
@@ -329,6 +341,8 @@ export abstract class ImportPipeline {
 
     const newProps: Property[] = [];
     const updated: Property[] = [];
+    const ownerMode: OwnerMode = params.ownerMode ?? 'replace';
+    const changes = emptyChangeTally();
     for (const candidate of Array.from(units.values())) {
       const existing = params.existingByUnitKey.get(candidate.unitKey);
       if (existing == null) { newProps.push(candidate); continue; }
@@ -341,21 +355,61 @@ export abstract class ImportPipeline {
       // the existing value when the incoming cell is empty, and the owner is
       // merged field-by-field. This is what lets an "update" sheet carry only
       // the changed columns without erasing everything it leaves blank.
-      const mergedOwner = new OwnerInfo(
+      const mergedPrimary = new OwnerInfo(
         candidate.owner.name.length > 0 ? candidate.owner.name : existing.owner.name,
         candidate.owner.phone ?? existing.owner.phone,
         candidate.owner.nationality ?? existing.owner.nationality,
       );
-      mergedOwner.phones = candidate.owner.phones.length > 0 ? candidate.owner.phones : existing.owner.phones;
-      // Co-owners: take the incoming set when it names more than one owner;
-      // otherwise keep whatever's on file (a single incoming row must not wipe
-      // co-owners the sheet simply didn't re-send).
-      const mergedOwners = candidate.owners.length > 1 ? candidate.owners : existing.owners;
+      mergedPrimary.phones = candidate.owner.phones.length > 0 ? candidate.owner.phones : existing.owner.phones;
+
+      // ── Owner SET reconciliation (the per-upload replace/patch choice) ───────
+      // "Does the file give owner data for this unit?" A blank owner row must
+      // never wipe owners the file simply didn't re-send, in EITHER mode.
+      const fileHasOwner = candidate.owner.name.trim().length > 0 || !!candidate.owner.phone;
+      let effectiveOwners: OwnerInfo[];
+      if (!fileHasOwner) {
+        effectiveOwners = existing.allOwners;
+      } else if (ownerMode === 'patch') {
+        // Add-only: keep every existing owner, fold the file's owners in by name
+        // (new numbers extend the matching owner; unknown names are appended).
+        effectiveOwners = patchOwners(existing.allOwners, candidate.allOwners);
+      } else {
+        // Replace: the file is authoritative for this unit's owners. Keep the
+        // primary's blank-safe fills, take the file's co-owners as the set.
+        effectiveOwners = [mergedPrimary, ...candidate.allOwners.slice(1).map(cloneOwner)];
+      }
+      const primaryOwner = effectiveOwners[0] ?? mergedPrimary;
+      // owners=[] means "single owner, told entirely by owner_*"; >1 stores co-owners.
+      const coOwners = effectiveOwners.length > 1 ? effectiveOwners : [];
+
+      // ── Tally what actually changes (for the review step) ────────────────────
+      const beforeNums = allNumbers(existing.allOwners);
+      const afterNums = allNumbers(effectiveOwners);
+      if (effectiveOwners.length !== existing.allOwners.length) changes.ownerCountChanges++;
+      const primaryChanged =
+        ownerNameKey(primaryOwner) !== ownerNameKey(existing.owner) ||
+        (primaryOwner.phone ?? '') !== (existing.owner.phone ?? '');
+      if (primaryChanged || effectiveOwners.length !== existing.allOwners.length) changes.ownerChanges++;
+      if (!sameStringSet(beforeNums, afterNums)) changes.phoneChanges++;
+      const mRentStart = candidate.rentStart ?? existing.rentStart;
+      const mRentEnd = candidate.rentEnd ?? existing.rentEnd;
+      const mRentAmount = candidate.rentAmount ?? existing.rentAmount;
+      if (mRentStart !== existing.rentStart || mRentEnd !== existing.rentEnd || mRentAmount !== existing.rentAmount) {
+        changes.rentalChanges++;
+      }
+      if (newerTx) changes.saleChanges++;
+      if ((candidate.propertyType ?? existing.propertyType) !== existing.propertyType ||
+          (candidate.beds ?? existing.beds) !== existing.beds ||
+          (candidate.sizeSqft ?? existing.sizeSqft) !== existing.sizeSqft ||
+          (candidate.plotSqft ?? existing.plotSqft) !== existing.plotSqft) {
+        changes.physicalChanges++;
+      }
+
       updated.push(existing.copyWith({
         // Update mode keeps the unit in its own set; a fresh import re-tags it.
         datasetId: params.keepExistingDataset ? existing.datasetId : candidate.datasetId,
-        owner: mergedOwner,
-        owners: mergedOwners,
+        owner: primaryOwner,
+        owners: coOwners,
         propertyType: candidate.propertyType ?? existing.propertyType,
         beds: candidate.beds ?? existing.beds,
         sizeSqft: candidate.sizeSqft ?? existing.sizeSqft,
@@ -365,9 +419,9 @@ export abstract class ImportPipeline {
         lastTransactionDate: newerTx ? candidate.lastTransactionDate : existing.lastTransactionDate,
         lastTransactionValue: newerTx ? candidate.lastTransactionValue : existing.lastTransactionValue,
         txCount: Math.max(candidate.txCount, existing.txCount),
-        rentStart: candidate.rentStart ?? existing.rentStart,
-        rentEnd: candidate.rentEnd ?? existing.rentEnd,
-        rentAmount: candidate.rentAmount ?? existing.rentAmount,
+        rentStart: mRentStart,
+        rentEnd: mRentEnd,
+        rentAmount: mRentAmount,
         // extra only carries non-empty cells (see the extra-building loop), so a
         // blank never lands here; new columns add, existing keys survive.
         extra: { ...existing.extra, ...candidate.extra },
@@ -379,7 +433,7 @@ export abstract class ImportPipeline {
       params.type,
       dataRows.filter(r => r.some(c => c != null)).length,
       invalid, params.type === DataSetType.register ? inFileDup : 0,
-      newProps, updated,
+      newProps, updated, changes,
     );
   }
 }
@@ -387,6 +441,56 @@ export abstract class ImportPipeline {
 /** Identity of an owner for co-owner de-duplication: their number, else name. */
 function ownerDedupKey(o: OwnerInfo): string {
   return `${o.phone ?? ''}|${o.name.trim().toLowerCase()}`;
+}
+
+/** Owners are the same person when their names match (case/space-insensitive). */
+function ownerNameKey(o: OwnerInfo): string { return o.name.trim().toLowerCase(); }
+
+function cloneOwner(o: OwnerInfo): OwnerInfo {
+  const c = new OwnerInfo(o.name, o.phone, o.nationality);
+  c.phones = o.allPhones.map(p => ({ ...p }));
+  return c;
+}
+
+/** Every distinct number across a set of owners (their own numbers, primary incl.). */
+function allNumbers(owners: OwnerInfo[]): Set<string> {
+  const s = new Set<string>();
+  for (const o of owners) for (const p of o.allPhones) if (p.number) s.add(p.number);
+  return s;
+}
+
+function sameStringSet(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  let same = true;
+  a.forEach(x => { if (!b.has(x)) same = false; });
+  return same;
+}
+
+/**
+ * Add-only owner merge ("patch"): start from the existing owners, then fold in
+ * each incoming owner — a matching name gains any new numbers (and fills a blank
+ * nationality); an unknown name is appended as a new co-owner. Nothing is ever
+ * removed, so a partial file can't drop a co-owner it simply didn't re-send.
+ */
+function patchOwners(existing: OwnerInfo[], incoming: OwnerInfo[]): OwnerInfo[] {
+  const out = existing.map(cloneOwner);
+  for (const inc of incoming) {
+    if (inc.name.trim().length === 0 && !inc.phone) continue;
+    const match = inc.name.trim().length > 0
+      ? out.find(o => ownerNameKey(o) === ownerNameKey(inc))
+      : undefined;
+    if (match) {
+      const numbers = new Set(match.phones.map(p => p.number));
+      for (const p of inc.allPhones) {
+        if (p.number && !numbers.has(p.number)) { numbers.add(p.number); match.phones.push({ ...p }); }
+      }
+      if (!match.phone && inc.phone) match.phone = inc.phone;
+      if (!match.nationality && inc.nationality) match.nationality = inc.nationality;
+    } else {
+      out.push(cloneOwner(inc));
+    }
+  }
+  return out;
 }
 
 function str(v: unknown): string | undefined {

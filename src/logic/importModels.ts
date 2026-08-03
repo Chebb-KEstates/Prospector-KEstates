@@ -101,6 +101,28 @@ export class ColumnSpec {
   ) {}
 }
 
+/**
+ * What an UPDATE actually changes, counted per matched unit — so the review step
+ * can say "12 units change owner details, 3 change owner count…" before anything
+ * is written. Physical identity (community/cluster/building/unit) is never in
+ * here: it defines the unit and can't change without being a different unit.
+ */
+export interface ChangeTally {
+  ownerChanges: number;       // primary owner name/number differs, or the owner set changed
+  ownerCountChanges: number;  // number of owners on the unit changed (2→1, 1→2, …)
+  phoneChanges: number;       // the set of numbers on the unit changed
+  rentalChanges: number;      // rent start/end/amount changed
+  saleChanges: number;        // a newer last-transaction arrived
+  physicalChanges: number;    // beds/type/size/plot changed
+}
+
+export function emptyChangeTally(): ChangeTally {
+  return {
+    ownerChanges: 0, ownerCountChanges: 0, phoneChanges: 0,
+    rentalChanges: 0, saleChanges: 0, physicalChanges: 0,
+  };
+}
+
 export class DryRunResult {
   constructor(
     public type: DataSetType,
@@ -109,6 +131,8 @@ export class DryRunResult {
     public inFileDuplicates: number,
     public newProperties: Property[],
     public updatedProperties: Property[],
+    /** What the matched (updated) units change — for the review step. */
+    public changes: ChangeTally = emptyChangeTally(),
   ) {}
 
   get uniqueUnits(): number { return this.newProperties.length + this.updatedProperties.length; }

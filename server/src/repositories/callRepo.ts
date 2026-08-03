@@ -141,6 +141,7 @@ export interface BrokerCallStats {
   calls: number;
   reached: number;
   interested: number;
+  noAnswer: number;
   lastAt?: string;
 }
 
@@ -155,6 +156,7 @@ export async function brokerCallStats(): Promise<BrokerCallStats[]> {
             COUNT(*) AS calls,
             SUM(outcome NOT IN ('noAnswer', 'unreachable')) AS reached,
             SUM(outcome IN ('interestedSell', 'interestedRent')) AS interested,
+            SUM(outcome = 'noAnswer') AS no_answer,
             MAX(at) AS last_at
      FROM calls WHERE org_id = ?
      GROUP BY broker_id`,
@@ -165,6 +167,7 @@ export async function brokerCallStats(): Promise<BrokerCallStats[]> {
     calls: Number(r.calls),
     reached: Number(r.reached ?? 0),
     interested: Number(r.interested ?? 0),
+    noAnswer: Number(r.no_answer ?? 0),
     lastAt: fromDb(r.last_at),
   }));
 }

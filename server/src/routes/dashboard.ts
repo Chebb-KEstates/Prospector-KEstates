@@ -15,6 +15,7 @@ import { countPending } from '../repositories/requestRepo';
 import { listUsers } from '../repositories/userRepo';
 import { listAudit } from '../repositories/auditRepo';
 import { listDatasets } from '../repositories/datasetRepo';
+import { datasetBreakdown } from '../repositories/statsRepo';
 import { loadSettings } from '../repositories/settingsRepo';
 import { serializeAudit } from '../http/serializers';
 
@@ -156,8 +157,14 @@ export default async function dashboardRoutes(app: FastifyInstance) {
   app.get('/api/dashboard/team', {
     preHandler: [app.authenticate, app.requirePermission(Permission.viewReports)],
   }, async () => {
+    const now = Date.now();
+    const last7d = new Date(now - 7 * 24 * 3600_000);
+    const last24h = new Date(now - 24 * 3600_000);
+    const soon = new Date(now + 60_000);
+
     const [
       users, stats, held, datasets, totalProperties, callable, callableWorked, lifetime,
+      by7d, by24h, dsStats,
     ] = await Promise.all([
       listUsers(),
       brokerCallStats(),
@@ -167,6 +174,9 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       countCallable(),
       countCallableWorked(),
       lifetimeStats(),
+      brokerStatsBetween(last7d, soon),
+      brokerStatsBetween(last24h, soon),
+      datasetBreakdown(),
     ]);
 
     const statsById = new Map(stats.map(s => [s.brokerId, s]));
@@ -183,8 +193,35 @@ export default async function dashboardRoutes(app: FastifyInstance) {
           assigned: h.assigned,
           portfolio: h.portfolio,
           calls: s?.calls ?? 0,
+          calls7d: by7d.get(b.id)?.calls ?? 0,
+          calls24h: by24h.get(b.id)?.calls ?? 0,
           reached: s?.reached ?? 0,
           interested: s?.interested ?? 0,
+          noAnswer: s?.noAnswer ?? 0,
+          lastAt: s?.lastAt,
+        };
+      }),
+      // Per-data-set breakdown, joined with each set's identity/dates. Counts
+      // are LIVE (computed from the rows that currently belong to the set), not
+      // the stored total — so a set whose units were merged elsewhere reads 0,
+      // which is the truth, rather than a stale stored count.
+      datasetStats: datasets.map(d => {
+        const st = dsStats.get(d.id);
+        return {
+          id: d.id,
+          name: d.name,
+          module: d.module,
+          properties: st?.properties ?? 0,
+          callable: st?.callable ?? 0,
+          numbers: st?.numbers ?? 0,
+          agents: st?.agents ?? 0,
+          assigned: st?.assigned ?? 0,
+          untouched: st?.untouched ?? 0,
+          calls: st?.calls ?? 0,
+          noAnswer: st?.noAnswer ?? 0,
+          interested: st?.interested ?? 0,
+          importedAt: d.importedAt,
+          lastUpdatedAt: d.lastUpdatedAt,
         };
       }),
       roi: {

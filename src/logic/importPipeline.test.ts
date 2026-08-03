@@ -292,6 +292,92 @@ describe('co-owners — separate rows, same unit', () => {
   });
 });
 
+// Updating a unit whose ownership changed. The per-upload choice decides whether
+// the file is the authoritative owner list (replace) or an add-only patch.
+describe('update import — owner replace vs patch', () => {
+  const build = (rows: unknown[][]) => ImportPipeline.dryRun({
+    sheet: new ParsedSheet('f.xlsx', rows), headerRow: 0,
+    columns: ImportPipeline.buildColumns(rows, 0), type: DataSetType.register,
+    communityFallback: 'Dubai Hills', datasetId: 'ds', existingByUnitKey: new Map<string, Property>(),
+  });
+  const seededPair = () => {
+    const p = build([
+      ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile'],
+      ['Dubai Hills', 'T1', '101', 'Ahmed Khan', '0501110001'],
+      ['Dubai Hills', 'T1', '101', 'Fatima Khan', '0502220002'],
+    ]).newProperties[0];
+    return new Map([[p.unitKey, p]]);
+  };
+  const seededSolo = () => {
+    const p = build([
+      ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile'],
+      ['Dubai Hills', 'T1', '102', 'Solo Owner', '0501110001'],
+    ]).newProperties[0];
+    return new Map([[p.unitKey, p]]);
+  };
+  const update = (rows: unknown[][], byKey: Map<string, Property>, ownerMode?: 'replace' | 'patch') =>
+    ImportPipeline.dryRun({
+      sheet: new ParsedSheet('u.xlsx', rows), headerRow: 0,
+      columns: ImportPipeline.buildColumns(rows, 0), type: DataSetType.register,
+      communityFallback: 'Dubai Hills', datasetId: 'ds', existingByUnitKey: byKey,
+      keepExistingDataset: true, ownerMode,
+    });
+  const oneOwner: unknown[][] = [
+    ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile'],
+    ['Dubai Hills', 'T1', '101', 'Ahmed Khan', '0501110001'],
+  ];
+
+  it('replace: a unit that now lists one owner is reduced to one', () => {
+    const byKey = seededPair();
+    const res = update(oneOwner, byKey, 'replace');
+    const u = res.updatedProperties[0];
+    expect(u.allOwners.map(o => o.name)).toEqual(['Ahmed Khan']);
+    expect(u.hasMultipleOwners).toBe(false);
+    expect(res.changes.ownerCountChanges).toBe(1);
+    expect(res.changes.ownerChanges).toBe(1);
+  });
+
+  it('patch: the same one-owner file keeps both existing owners', () => {
+    const u = update(oneOwner, seededPair(), 'patch').updatedProperties[0];
+    expect(u.allOwners.map(o => o.name)).toEqual(['Ahmed Khan', 'Fatima Khan']);
+  });
+
+  it('replace: a single-owner unit can gain a co-owner', () => {
+    const u = update([
+      ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile'],
+      ['Dubai Hills', 'T1', '102', 'Solo Owner', '0501110001'],
+      ['Dubai Hills', 'T1', '102', 'New Partner', '0509990003'],
+    ], seededSolo(), 'replace').updatedProperties[0];
+    expect(u.allOwners.map(o => o.name)).toEqual(['Solo Owner', 'New Partner']);
+    expect(u.hasMultipleOwners).toBe(true);
+  });
+
+  it('patch: a new number for an existing owner is added, nobody is removed', () => {
+    const u = update([
+      ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile'],
+      ['Dubai Hills', 'T1', '101', 'Ahmed Khan', '0508880008'],
+    ], seededPair(), 'patch').updatedProperties[0];
+    expect(u.allOwners.map(o => o.name)).toEqual(['Ahmed Khan', 'Fatima Khan']);
+    const ahmedNums = u.allOwners[0].allPhones.map(p => p.number);
+    expect(ahmedNums).toContain('971501110001'); // kept
+    expect(ahmedNums).toContain('971508880008'); // added
+  });
+
+  it('a blank owner row never wipes owners, in either mode', () => {
+    const u = update([
+      ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile', 'Location'],
+      ['Dubai Hills', 'T1', '101', '', '', 'Near park'],
+    ], seededPair(), 'replace').updatedProperties[0];
+    expect(u.allOwners.map(o => o.name)).toEqual(['Ahmed Khan', 'Fatima Khan']);
+    expect(u.extra.Location).toBe('Near park');
+  });
+
+  it('defaults to replace when no owner mode is given', () => {
+    const u = update(oneOwner, seededPair()).updatedProperties[0];
+    expect(u.allOwners).toHaveLength(1);
+  });
+});
+
 describe('multiple numbers per owner (Mobile 1 / 2 / 3)', () => {
   const rows: unknown[][] = [
     ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile 1', 'Mobile 2', 'Mobile 3', 'Developer'],
