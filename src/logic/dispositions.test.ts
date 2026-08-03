@@ -169,6 +169,44 @@ describe('cooldown / expiry sweep', () => {
   });
 });
 
+describe('timer removed when a setting is 0', () => {
+  it('assignmentDeadlineOnAssign returns undefined when the SLA is 0', () => {
+    const s = new VaultSettings(); s.assignmentSlaHours = 0;
+    expect(assignmentDeadlineOnAssign(NOW, s)).toBeUndefined();
+  });
+
+  it('a no-answer sets no deadline when the SLA is 0', () => {
+    const s = new VaultSettings(); s.assignmentSlaHours = 0;
+    const p = prop();
+    applyOutcome(p, CallOutcome.noAnswer, NOW, undefined, s);
+    expect(p.assignmentExpiresAt).toBeUndefined();
+  });
+
+  it('interested sets no portfolio deadline when portfolioRenewDays is 0', () => {
+    const s = new VaultSettings(); s.portfolioRenewDays = 0;
+    const p = prop();
+    applyOutcome(p, CallOutcome.interestedSell, NOW, undefined, s);
+    expect(p.state).toBe(PropertyState.portfolio);
+    expect(p.assignmentExpiresAt).toBeUndefined();
+  });
+
+  it('a unit with no deadline is never swept, even far in the future', () => {
+    const s = new VaultSettings(); s.assignmentSlaHours = 0;
+    const p = prop();
+    applyOutcome(p, CallOutcome.noAnswer, NOW, undefined, s);
+    expect(sweepCooldowns([p], daysFromNow(999), s)).toHaveLength(0);
+    expect(p.state).toBe(PropertyState.assigned);
+  });
+
+  it('drops the hard cap when noAnswerMaxHoldDays is 0 (extension applies in full)', () => {
+    const s = new VaultSettings(); s.noAnswerMaxHoldDays = 0; s.noAnswerExtensionHours = 24;
+    const p = prop();
+    p.assignedAt = daysAgo(30); // far past what the default 14-day cap would allow
+    applyOutcome(p, CallOutcome.noAnswer, NOW, undefined, s);
+    expect(p.assignmentExpiresAt).toBe(addHours(NOW, 24));
+  });
+});
+
 describe('portfolio staleness', () => {
   it('flags a portfolio record untouched beyond the stale window', () => {
     const p = prop(PropertyState.portfolio);

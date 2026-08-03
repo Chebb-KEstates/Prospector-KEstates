@@ -13,7 +13,22 @@ import type { ProspectFields } from '../types/models';
  *  - going interested moves the unit into the portfolio with a renewable
  *    `portfolioRenewDays` window — any further work renews it;
  *  - when the deadline lapses, `sweepCooldowns` returns the unit to the pool.
+ *
+ * A timer setting of 0 REMOVES that limit: `assignmentSlaHours = 0` gives
+ * assigned units no deadline (they never auto-return), `portfolioRenewDays = 0`
+ * lets a portfolio unit sit forever, `noAnswerMaxHoldDays = 0` drops the cap,
+ * and `noAnswerExtensionHours = 0` means a no-answer leaves the clock untouched.
+ * A unit with no `assignmentExpiresAt` is simply never swept.
  */
+
+/** A deadline `hours` out, or undefined when the limit is 0 (removed). */
+function deadlineHours(dateStr: string, hours: number): string | undefined {
+  return hours > 0 ? addHours(dateStr, hours) : undefined;
+}
+/** A deadline `days` out, or undefined when the limit is 0 (removed). */
+function deadlineDays(dateStr: string, days: number): string | undefined {
+  return days > 0 ? addDays(dateStr, days) : undefined;
+}
 
 export function applyOutcome(
   p: ProspectFields,
@@ -35,27 +50,38 @@ export function applyOutcome(
     case CallOutcome.noAnswer:
     case CallOutcome.unreachable:
       p.callAttempts += 1;
-      p.assignmentExpiresAt = wasPortfolio
-        ? addDays(now, settings.portfolioRenewDays)
-        : cappedDeadline(addHours(now, settings.noAnswerExtensionHours), p, settings, now);
+      if (wasPortfolio) {
+        p.assignmentExpiresAt = deadlineDays(now, settings.portfolioRenewDays);
+      } else if (settings.assignmentSlaHours <= 0) {
+        p.assignmentExpiresAt = undefined; // assignment timer removed
+      } else {
+        // Reset to the extension window — or, when no extension is configured,
+        // leave the current deadline in place — never past the hard cap.
+        const base = settings.noAnswerExtensionHours > 0
+          ? addHours(now, settings.noAnswerExtensionHours)
+          : p.assignmentExpiresAt;
+        p.assignmentExpiresAt = cappedDeadline(base, p, settings, now);
+      }
       break;
     case CallOutcome.callbackLater:
       p.callAttempts = 0;
-      p.assignmentExpiresAt = wasPortfolio
-        ? addDays(now, settings.portfolioRenewDays)
-        : cappedDeadline(
-            followUpAt
-              ? addHours(followUpAt, settings.noAnswerExtensionHours)
-              : addHours(now, settings.assignmentSlaHours),
-            p, settings, now,
-          );
+      if (wasPortfolio) {
+        p.assignmentExpiresAt = deadlineDays(now, settings.portfolioRenewDays);
+      } else if (settings.assignmentSlaHours <= 0) {
+        p.assignmentExpiresAt = undefined; // assignment timer removed
+      } else {
+        const base = followUpAt
+          ? (settings.noAnswerExtensionHours > 0 ? addHours(followUpAt, settings.noAnswerExtensionHours) : followUpAt)
+          : addHours(now, settings.assignmentSlaHours);
+        p.assignmentExpiresAt = cappedDeadline(base, p, settings, now);
+      }
       break;
     case CallOutcome.interestedSell:
     case CallOutcome.interestedRent:
       p.callAttempts = 0;
       p.state = PropertyState.portfolio;
       p.portfolioSince ??= now;
-      p.assignmentExpiresAt = addDays(now, settings.portfolioRenewDays);
+      p.assignmentExpiresAt = deadlineDays(now, settings.portfolioRenewDays);
       break;
     case CallOutcome.notInterested:
       p.callAttempts = 0;
@@ -80,12 +106,13 @@ export function applyOutcome(
   }
 }
 
-/** The deadline set when a unit is freshly assigned to a broker. */
+/** The deadline set when a unit is freshly assigned to a broker.
+ *  Undefined when `assignmentSlaHours` is 0 — the assignment timer is removed. */
 export function assignmentDeadlineOnAssign(
   now: string,
   settings: VaultSettings = new VaultSettings(),
-): string {
-  return addHours(now, settings.assignmentSlaHours);
+): string | undefined {
+  return deadlineHours(now, settings.assignmentSlaHours);
 }
 
 /**
@@ -93,14 +120,22 @@ export function assignmentDeadlineOnAssign(
  * clock forward, but never past `noAnswerMaxHoldDays` from when the unit was
  * assigned. Past the cap the returned time is in the past, so the next sweep
  * recycles the unit.
+ *
+ * `noAnswerMaxHoldDays = 0` removes the cap (returns the base unchanged). A
+ * missing `base` (e.g. no extension configured and nothing on the clock) yields
+ * just the cap, or undefined when there's no cap either.
  */
 function cappedDeadline(
-  base: string,
+  base: string | undefined,
   p: ProspectFields,
   settings: VaultSettings,
   now: string,
-): string {
-  const cap = addDays(p.assignedAt ?? now, settings.noAnswerMaxHoldDays);
+): string | undefined {
+  const cap = settings.noAnswerMaxHoldDays > 0
+    ? addDays(p.assignedAt ?? now, settings.noAnswerMaxHoldDays)
+    : undefined;
+  if (base == null) return cap;
+  if (cap == null) return base;
   return new Date(base) < new Date(cap) ? base : cap;
 }
 

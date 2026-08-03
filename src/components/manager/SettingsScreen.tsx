@@ -39,24 +39,30 @@ export function SettingsScreen() {
     }
   };
 
-  const field = (label: string, key: keyof typeof form, type = 'number', note?: string) => (
-    <div>
-      <label style={{ fontSize: '0.8125rem', display: 'block', marginBottom: 4, fontWeight: 500 }}>
-        {label}
-      </label>
-      <input
-        className="input"
-        type={type}
-        value={form[key] as string | number}
-        onChange={e => setForm(p => ({
-          ...p,
-          [key]: type === 'number' ? parseInt(e.target.value) || 0 : e.target.value,
-        }))}
-        style={{ maxWidth: 200 }}
-      />
-      {note && <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 4 }}>{note}</div>}
-    </div>
-  );
+  const field = (label: string, key: keyof typeof form, type = 'number', note?: string, zeroable = false) => {
+    const isZero = zeroable && form[key] === 0;
+    return (
+      <div>
+        <label style={{ fontSize: '0.8125rem', display: 'block', marginBottom: 4, fontWeight: 500 }}>
+          {label}
+        </label>
+        <input
+          className="input"
+          type={type}
+          min={type === 'number' ? (zeroable ? 0 : 1) : undefined}
+          value={form[key] as string | number}
+          onChange={e => setForm(p => ({
+            ...p,
+            [key]: type === 'number' ? parseInt(e.target.value) || 0 : e.target.value,
+          }))}
+          style={{ maxWidth: 200 }}
+        />
+        {isZero
+          ? <div style={{ fontSize: '0.75rem', color: 'var(--warning)', marginTop: 4, fontWeight: 600 }}>No limit — this timer is off.</div>
+          : note && <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 4 }}>{note}</div>}
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -94,13 +100,14 @@ export function SettingsScreen() {
           <h3 style={{ fontWeight: 600, marginBottom: 4 }}>Assignment timer</h3>
           <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginBottom: 16 }}>
             How long a broker holds a unit before it is released back to the pool.
+            Set any field to <b>0</b> to remove that limit.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {field('Time to make contact (hours)', 'assignmentSlaHours', 'number', 'Countdown when a unit is first assigned')}
-            {field('No-answer extension (hours)', 'noAnswerExtensionHours', 'number', 'Each no-answer / unreachable call resets the clock to this')}
-            {field('Maximum hold (days)', 'noAnswerMaxHoldDays', 'number', 'Hard cap from assignment — no-answers cannot extend past this')}
-            {field('Portfolio renewal (days)', 'portfolioRenewDays', 'number', 'Interested units keep this long, renewed by calling or saving notes')}
-            {field('"Running out of time" alert (hours)', 'expiringSoonHours', 'number', 'When a unit turns amber and appears on the home screen')}
+            {field('Time to make contact (hours)', 'assignmentSlaHours', 'number', 'Countdown when a unit is first assigned', true)}
+            {field('No-answer extension (hours)', 'noAnswerExtensionHours', 'number', 'Each no-answer / unreachable call resets the clock to this', true)}
+            {field('Maximum hold (days)', 'noAnswerMaxHoldDays', 'number', 'Hard cap from assignment — no-answers cannot extend past this', true)}
+            {field('Portfolio renewal (days)', 'portfolioRenewDays', 'number', 'Interested units keep this long, renewed by calling or saving notes', true)}
+            {field('"Running out of time" alert (hours)', 'expiringSoonHours', 'number', 'When a unit turns amber and appears on the home screen', true)}
           </div>
         </div>
 

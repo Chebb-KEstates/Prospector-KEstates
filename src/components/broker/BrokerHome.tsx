@@ -63,6 +63,8 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
   // Held units whose clock is nearly up — the "running out of time" list. Sorted
   // soonest-first so the unit about to slip is at the top. Ticks with `nowMs`.
   const expiringSoon = useMemo(() => {
+    // 0 = the "expiring soon" warning is off.
+    if (vault.settings.expiringSoonHours <= 0) return [];
     const soonMs = vault.settings.expiringSoonHours * 3_600_000;
     return mine
       .filter(p => (p.state === PropertyState.assigned || p.state === PropertyState.portfolio) && p.assignmentExpiresAt)

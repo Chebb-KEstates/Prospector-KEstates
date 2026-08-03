@@ -34,12 +34,13 @@ export default async function settingsRoutes(app: FastifyInstance) {
           dailyViewCap: { type: 'integer', minimum: 1, maximum: 10000 },
           wifiLockEnabled: { type: 'boolean' },
           officeIp: { type: 'string', maxLength: 64 },
-          // Assignment timer. Hours 1–720 (30 days), days 1–365.
-          assignmentSlaHours: { type: 'integer', minimum: 1, maximum: 720 },
-          noAnswerExtensionHours: { type: 'integer', minimum: 1, maximum: 720 },
-          noAnswerMaxHoldDays: { type: 'integer', minimum: 1, maximum: 365 },
-          portfolioRenewDays: { type: 'integer', minimum: 1, maximum: 365 },
-          expiringSoonHours: { type: 'integer', minimum: 1, maximum: 720 },
+          // Assignment timer. Hours 0–720 (30 days), days 0–365. 0 = no limit
+          // (the timer is removed — see dispositions.ts).
+          assignmentSlaHours: { type: 'integer', minimum: 0, maximum: 720 },
+          noAnswerExtensionHours: { type: 'integer', minimum: 0, maximum: 720 },
+          noAnswerMaxHoldDays: { type: 'integer', minimum: 0, maximum: 365 },
+          portfolioRenewDays: { type: 'integer', minimum: 0, maximum: 365 },
+          expiringSoonHours: { type: 'integer', minimum: 0, maximum: 720 },
         },
       },
     },

@@ -402,16 +402,23 @@ function buildWhere(f: PropertyFilter): { sql: string; params: unknown[] } {
   // (or already past, awaiting the next sweep). Only assigned/portfolio units
   // carry a deadline, so the state check keeps pooled/cooling rows out.
   if (f.expiringSoon) {
-    const hours = f.expiringWithinHours != null && f.expiringWithinHours > 0 ? f.expiringWithinHours : 24;
-    // UTC_TIMESTAMP, not NOW(): the app writes UTC into these columns (the pool
-    // is opened with timezone 'Z'), while NOW() answers in the server's local
-    // zone — comparing the two skews every deadline by the UTC offset.
-    where.push(
-      `state IN ('${PropertyState.assigned}', '${PropertyState.portfolio}') ` +
-      `AND assignment_expires_at IS NOT NULL ` +
-      `AND assignment_expires_at <= (UTC_TIMESTAMP(3) + INTERVAL ? HOUR)`,
-    );
-    params.push(hours);
+    // The threshold comes from settings.expiringSoonHours; 0 turns the warning
+    // off, so nothing matches. A null (feature requested without a setting)
+    // falls back to 24h.
+    const hours = f.expiringWithinHours ?? 24;
+    if (hours <= 0) {
+      where.push('1 = 0');
+    } else {
+      // UTC_TIMESTAMP, not NOW(): the app writes UTC into these columns (the pool
+      // is opened with timezone 'Z'), while NOW() answers in the server's local
+      // zone — comparing the two skews every deadline by the UTC offset.
+      where.push(
+        `state IN ('${PropertyState.assigned}', '${PropertyState.portfolio}') ` +
+        `AND assignment_expires_at IS NOT NULL ` +
+        `AND assignment_expires_at <= (UTC_TIMESTAMP(3) + INTERVAL ? HOUR)`,
+      );
+      params.push(hours);
+    }
   }
 
   // Tenancy — a lease ending soon or a vacant unit is a live selling signal.
@@ -663,6 +670,8 @@ export async function countStalePortfolio(staleDays: number): Promise<number> {
  * `brokerId` for one broker's own at-risk units; omit for the whole org.
  */
 export async function countExpiringSoon(hours: number, brokerId?: string): Promise<number> {
+  // 0 = the "expiring soon" warning is off — nothing is ever "soon".
+  if (hours <= 0) return 0;
   const where = [
     'org_id = ?',
     `state IN ('${PropertyState.assigned}', '${PropertyState.portfolio}')`,
@@ -756,20 +765,29 @@ export async function updatePropertyNotes(
   const db = cx ?? pool;
   await db.query(
     // UTC_TIMESTAMP throughout — these columns hold UTC, so NOW() would write a
-    // deadline shifted by the server's UTC offset.
+    // deadline shifted by the server's UTC offset. A 0 limit removes the timer:
+    // the IF(? > 0, …, NULL) guards leave the unit with no deadline rather than
+    // one that expires immediately.
     `UPDATE properties SET
        notes = ?, updated_at = ?,
        assignment_expires_at = CASE
-         WHEN state = '${PropertyState.portfolio}' THEN DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? DAY)
-         WHEN state = '${PropertyState.assigned}' THEN LEAST(
-           DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? HOUR),
-           DATE_ADD(COALESCE(assigned_at, UTC_TIMESTAMP(3)), INTERVAL ? DAY))
+         WHEN state = '${PropertyState.portfolio}'
+           THEN IF(? > 0, DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? DAY), NULL)
+         WHEN state = '${PropertyState.assigned}'
+           THEN IF(? > 0,
+                   IF(? > 0,
+                      LEAST(DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? HOUR),
+                            DATE_ADD(COALESCE(assigned_at, UTC_TIMESTAMP(3)), INTERVAL ? DAY)),
+                      DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? HOUR)),
+                   NULL)
          ELSE assignment_expires_at
        END
      WHERE id = ?`,
     [
       notes.length > 0 ? notes : null, toDb(new Date().toISOString()),
-      settings.portfolioRenewDays, settings.assignmentSlaHours, settings.noAnswerMaxHoldDays,
+      settings.portfolioRenewDays, settings.portfolioRenewDays,
+      settings.assignmentSlaHours, settings.noAnswerMaxHoldDays,
+      settings.assignmentSlaHours, settings.noAnswerMaxHoldDays, settings.assignmentSlaHours,
       id,
     ],
   );
