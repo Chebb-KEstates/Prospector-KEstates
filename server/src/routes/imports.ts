@@ -243,6 +243,7 @@ export default async function importRoutes(app: FastifyInstance) {
       columns: sanitizeLeadColumns(body.columns),
       datasetName: (body.datasetName ?? '').trim(),
       source: body.source ?? '',
+      cost: body.cost,
     });
   });
 }

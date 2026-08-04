@@ -405,6 +405,7 @@ export interface TeamDatasetRow {
   properties: number; callable: number; numbers: number;
   agents: number; assigned: number; untouched: number;
   calls: number; noAnswer: number; interested: number;
+  cost?: number;
   importedAt: string; lastUpdatedAt?: string;
 }
 
@@ -498,6 +499,6 @@ export const imports = {
 
   commitLeads: (sessionId: string, body: {
     sheetIndex?: number; headerRow: number; columns: LeadColumnSpec[];
-    datasetName: string; source?: string;
+    datasetName: string; source?: string; cost?: number;
   }) => post<{ datasetId: string; imported: number }>(`/api/imports/${sessionId}/commit`, body),
 };

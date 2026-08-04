@@ -27,12 +27,13 @@ export function LeadImportWizard() {
   const [columns, setColumns] = useState<LeadColumnSpec[]>([]);
   const [datasetName, setDatasetName] = useState('');
   const [dataSource, setDataSource] = useState('');
+  const [cost, setCost] = useState('');
   const [dryRun, setDryRun] = useState<api.LeadDryRunSummary | null>(null);
   const [imported, setImported] = useState(0);
 
   const reset = () => {
     setStep(0); setStaged(null); setDryRun(null); setError(null);
-    setColumns([]); setHeaderRow(0);
+    setColumns([]); setHeaderRow(0); setCost('');
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -111,6 +112,7 @@ export function LeadImportWizard() {
         sheetIndex: 0, headerRow, columns,
         datasetName: datasetName.trim(),
         source: dataSource.trim(),
+        cost: cost ? parseFloat(cost) : undefined,
       });
       setImported(r.imported);
       await reloadDatasets();
@@ -179,6 +181,11 @@ export function LeadImportWizard() {
               <div>
                 <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Source</label>
                 <input className="input" value={dataSource} onChange={e => setDataSource(e.target.value)} style={{ width: 160 }} />
+              </div>
+              {/* Cost tracked on every upload, same as owner data. */}
+              <div>
+                <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Cost (AED)</label>
+                <input className="input" type="number" value={cost} onChange={e => setCost(e.target.value)} style={{ width: 150 }} min={0} placeholder="0" />
               </div>
             </div>
           </div>

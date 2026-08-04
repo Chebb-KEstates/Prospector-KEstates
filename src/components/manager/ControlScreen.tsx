@@ -8,7 +8,7 @@ import { LeadImportWizard } from './LeadImportWizard';
 import { UsersScreen } from './UsersScreen';
 import { AuditScreen } from './AuditScreen';
 import { SettingsScreen } from './SettingsScreen';
-import { fmtDate, fmtInt } from '../../utils/format';
+import { fmtDate, fmtInt, fmtAed } from '../../utils/format';
 
 /** Import + the data-set manager, combined (the Flutter "Import & Files" section). */
 function ImportAndFiles() {
@@ -38,11 +38,12 @@ function ImportAndFiles() {
             <thead>
               <tr><th>Name</th><th>Module</th><th>Source</th><th>Community</th>
                 <th style={{ textAlign: 'right' }}>Records</th><th style={{ textAlign: 'right' }}>Callable</th>
+                <th style={{ textAlign: 'right' }}>Cost</th>
                 <th>Imported</th><th>Updated</th><th></th></tr>
             </thead>
             <tbody>
               {datasets.length === 0 ? (
-                <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 24 }}>No data sets yet.</td></tr>
+                <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 24 }}>No data sets yet.</td></tr>
               ) : datasets.map(d => (
                 <tr key={d.id}>
                   <td style={{ fontWeight: 500 }}>{d.name}</td>
@@ -51,6 +52,10 @@ function ImportAndFiles() {
                   <td>{d.communityLabel}</td>
                   <td className="tabular-nums" style={{ textAlign: 'right' }}>{fmtInt(d.totalUnits)}</td>
                   <td className="tabular-nums" style={{ textAlign: 'right' }}>{fmtInt(d.callableUnits)}</td>
+                  {/* Running spend on the set — an update adds its cost here. */}
+                  <td className="tabular-nums" style={{ textAlign: 'right', color: d.cost != null && d.cost > 0 ? 'var(--text)' : 'var(--text-tertiary)' }}>
+                    {d.cost != null && d.cost > 0 ? fmtAed(d.cost) : '—'}
+                  </td>
                   <td style={{ fontSize: '0.75rem' }}>{fmtDate(d.importedAt)}</td>
                   {/* One row per data set — an update shows here, never as a 2nd row. */}
                   <td style={{ fontSize: '0.75rem', color: d.lastUpdatedAt ? 'var(--text)' : 'var(--text-tertiary)' }}>

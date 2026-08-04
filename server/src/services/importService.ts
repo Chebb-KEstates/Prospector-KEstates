@@ -336,11 +336,12 @@ export async function commitOwners(input: CommitOwnersInput): Promise<{
       // preserved by copyWith), new rows insert into the target set. Then the
       // set's counts are recomputed — no second data set is created.
       await saveProperties(all, cx);
-      await refreshDatasetStats(datasetId, result.updatedProperties.length, session.fileName, cx);
+      await refreshDatasetStats(datasetId, result.updatedProperties.length, session.fileName, input.cost, cx);
+      const spend = input.cost && input.cost > 0 ? ` · +${input.cost} spend` : '';
       await writeAudit({
         actorId: input.userId,
         action: 'import',
-        detail: `Updated data set "${target!.name}" — ${result.updatedProperties.length} updated, ${result.newProperties.length} added`,
+        detail: `Updated data set "${target!.name}" — ${result.updatedProperties.length} updated, ${result.newProperties.length} added${spend}`,
       }, cx);
     } else {
       const dataset = new DataSet(
@@ -415,7 +416,7 @@ export async function dryRunLeads(input: {
 export async function commitLeads(input: {
   sessionId: string; userId: string; sheetIndex: number;
   headerRow: number; columns: LeadColumnSpec[];
-  datasetName: string; source: string;
+  datasetName: string; source: string; cost?: number;
 }): Promise<{ datasetId: string; imported: number }> {
   const session = await requireOwnedSession(input.sessionId, input.userId);
   if (session.module !== DataModule.leads) {
@@ -442,7 +443,7 @@ export async function commitLeads(input: {
   const dataset = new DataSet(
     datasetId, input.datasetName, input.source,
     DataSetType.register, DataModule.leads, session.fileName,
-    '', new Date().toISOString(), undefined,
+    '', new Date().toISOString(), input.cost,
     result.uniqueLeads, result.callable, result.updatedLeads.length,
   );
 

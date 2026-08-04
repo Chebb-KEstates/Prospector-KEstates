@@ -329,12 +329,16 @@ export function ImportWizard() {
                     <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Source</label>
                     <input className="input" value={dataSource} onChange={e => setDataSource(e.target.value)} style={{ width: 160 }} />
                   </div>
-                  <div>
-                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Cost (AED)</label>
-                    <input className="input" type="number" value={cost} onChange={e => setCost(e.target.value)} style={{ width: 120 }} min={0} />
-                  </div>
                 </>
               )}
+              {/* Cost is asked on EVERY upload — a new set records it, an update
+                  adds it to the set's running spend — so data cost is tracked. */}
+              <div>
+                <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                  {updating ? 'Cost of this update (AED)' : 'Cost (AED)'}
+                </label>
+                <input className="input" type="number" value={cost} onChange={e => setCost(e.target.value)} style={{ width: 150 }} min={0} placeholder="0" />
+              </div>
               <div>
                 <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Community fallback</label>
                 <input className="input" value={communityLabel} onChange={e => setCommunityLabel(e.target.value)} style={{ width: 160 }} />
@@ -481,6 +485,14 @@ export function ImportWizard() {
             </div>
           )}
 
+          {/* Soft nudge — cost is how the Data ROI is tracked. Not a blocker:
+              some data is free, so the manager can still commit. */}
+          {(!cost || parseFloat(cost) <= 0) && (
+            <div style={{ marginBottom: 12, fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', gap: 6, alignItems: 'center' }}>
+              <Icon name="alert" size={14} style={{ color: 'var(--warning)', flexShrink: 0 }} />
+              No cost recorded for this upload — go Back to add what you paid, or continue if this data was free.
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn" onClick={() => setStep(1)} disabled={busy}>← Back</button>
             <button className="btn btn-primary" onClick={handleCommit} disabled={busy}>

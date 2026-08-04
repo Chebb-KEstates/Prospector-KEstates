@@ -72,9 +72,12 @@ export async function deleteDataset(id: string, cx?: PoolConnection): Promise<vo
  * refresh is recorded in `last_updated_at` (when) and `update_count` (how many
  * times), and `file_name` reflects the latest file. So the Data Sets list stays
  * one row that clearly shows it was updated, and when.
+ *
+ * `costToAdd` (the price paid for this refreshed file) is ADDED to the set's
+ * running cost, so the total spend on a data set stays right across updates.
  */
 export async function refreshDatasetStats(
-  id: string, matchedDelta: number, fileName: string, cx?: PoolConnection,
+  id: string, matchedDelta: number, fileName: string, costToAdd?: number, cx?: PoolConnection,
 ): Promise<void> {
   const db = cx ?? pool;
   await db.query(
@@ -83,9 +86,10 @@ export async function refreshDatasetStats(
        callable_units  = (SELECT COUNT(*) FROM properties WHERE dataset_id = d.id AND callable = 1),
        updated_units   = updated_units + ?,
        update_count    = update_count + 1,
+       cost            = COALESCE(cost, 0) + ?,
        file_name       = ?,
        last_updated_at = ?
      WHERE id = ?`,
-    [matchedDelta, fileName, toDb(new Date().toISOString()), id],
+    [matchedDelta, costToAdd ?? 0, fileName, toDb(new Date().toISOString()), id],
   );
 }

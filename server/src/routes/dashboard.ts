@@ -220,6 +220,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
           calls: st?.calls ?? 0,
           noAnswer: st?.noAnswer ?? 0,
           interested: st?.interested ?? 0,
+          cost: d.cost,
           importedAt: d.importedAt,
           lastUpdatedAt: d.lastUpdatedAt,
         };
