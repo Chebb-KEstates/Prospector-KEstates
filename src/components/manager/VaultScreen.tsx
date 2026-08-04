@@ -12,6 +12,8 @@ export function VaultScreen() {
   const { recordView } = useVault();
   const [module, setModule] = useState<DataModule>(DataModule.owners);
   const [detailProperty, setDetailProperty] = useState<string | null>(null);
+  // The current page's unit ids, in view order — drives "Next property".
+  const [pageIds, setPageIds] = useState<string[]>([]);
   const [detailLead, setDetailLead] = useState<string | null>(null);
   const [capError, setCapError] = useState<string | null>(null);
 
@@ -68,13 +70,15 @@ export function VaultScreen() {
       )}
 
       {module === DataModule.owners ? (
-        <PropertyTable prefsKey="vault" scope="all" showAssignee onSelect={handleViewProperty} />
+        <PropertyTable prefsKey="vault" scope="all" showAssignee
+          onSelect={(id, orderedIds) => { setPageIds(orderedIds); void handleViewProperty(id); }} />
       ) : (
         <LeadTable prefsKey="vault_leads" scope="all" onSelect={id => setDetailLead(id)} />
       )}
 
       {detailProperty && (
-        <PropertyPopup propertyId={detailProperty} onClose={() => setDetailProperty(null)} />
+        <PropertyPopup propertyId={detailProperty} ids={pageIds}
+          onNavigate={handleViewProperty} onClose={() => setDetailProperty(null)} />
       )}
     </div>
   );

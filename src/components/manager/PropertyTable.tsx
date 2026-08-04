@@ -142,7 +142,9 @@ interface Props {
   interestedOnly?: boolean;
   /** Held units within the "expiring soon" window — the broker's timer chip. */
   expiringSoon?: boolean;
-  onSelect?: (id: string) => void;
+  /** Row click. `orderedIds` is the current page's units in view order, so the
+   *  popup can offer "Next property". */
+  onSelect?: (id: string, orderedIds: string[]) => void;
   selectedId?: string;
   teaser?: boolean;
   hideOwner?: boolean;
@@ -441,7 +443,7 @@ export function PropertyTable({
                 const isSel = p.id === selectedId;
                 const cls = [onSelect ? 'clickable' : '', isSel ? 'selected' : ''].filter(Boolean).join(' ');
                 return (
-                  <tr key={p.id} onClick={() => onSelect?.(p.id)} className={cls || undefined}>
+                  <tr key={p.id} onClick={() => onSelect?.(p.id, rows.map(r => r.id))} className={cls || undefined}>
                     {selectable && (
                       <td className="checkcol" onClick={e => e.stopPropagation()}>
                         <input type="checkbox" checked={checkedIds!.has(p.id)} onChange={() => toggleCheck(p.id)} />

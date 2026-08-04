@@ -73,6 +73,36 @@ export interface AuditPage {
   total: number;
 }
 
+export interface PropertyAuditRow {
+  at: string;
+  actorId: string | null;
+  action: string;
+  detail: string;
+}
+
+/**
+ * Every audit event linked to one property (assign / reclaim / reveal / …),
+ * newest first — the record's slice of the trail, for the popup history journal.
+ * Joins through `audit_properties`, so only events that named this property show.
+ */
+export async function listAuditForProperty(propertyId: string, limit = 200): Promise<PropertyAuditRow[]> {
+  const [rows] = await pool.query<Row[]>(
+    `SELECT a.at, a.actor_id, a.action, a.detail
+     FROM audit a
+     JOIN audit_properties ap ON ap.audit_id = a.id
+     WHERE a.org_id = ? AND ap.property_id = ?
+     ORDER BY a.at DESC, a.id DESC
+     LIMIT ?`,
+    [kOrgId, propertyId, limit],
+  );
+  return rows.map(r => ({
+    at: fromDb(r.at)!,
+    actorId: (r.actor_id as string) ?? null,
+    action: r.action as string,
+    detail: r.detail as string,
+  }));
+}
+
 export async function listAudit(opts: {
   limit: number;
   offset: number;

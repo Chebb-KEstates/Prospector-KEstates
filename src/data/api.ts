@@ -148,6 +148,12 @@ export interface RevealResult {
   cap: number;
 }
 
+/** One entry in a unit's history journal — a call, a record event, or its import. */
+export type PropertyEvent =
+  | { kind: 'call'; at: string; outcome: CallOutcome; note?: string; actorId?: string; ownerName?: string }
+  | { kind: 'audit'; at: string; action: string; detail: string; actorId?: string }
+  | { kind: 'import'; at: string; detail: string };
+
 export const properties = {
   async page(q: PropertyQuery, signal?: AbortSignal): Promise<Page<Property>> {
     const r = await get<Page<Record<string, unknown>>>('/api/properties', q as Record<string, unknown>, signal);
@@ -175,6 +181,11 @@ export const properties = {
   async calls(id: string): Promise<CallLog[]> {
     const rows = await get<Record<string, unknown>[]>(`/api/properties/${id}/calls`);
     return rows.map(CallLog.fromJson);
+  },
+
+  /** The record's full history journal — calls + key events, newest first. */
+  async events(id: string): Promise<PropertyEvent[]> {
+    return get<PropertyEvent[]>(`/api/properties/${id}/events`);
   },
 
   /** The sanctioned reveal: single record, capped, audited. */

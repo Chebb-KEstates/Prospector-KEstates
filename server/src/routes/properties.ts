@@ -6,6 +6,8 @@ import {
   updatePropertyNotes,
 } from '../repositories/propertyRepo';
 import { callsForProperties } from '../repositories/callRepo';
+import { listAuditForProperty } from '../repositories/auditRepo';
+import { findDatasetById } from '../repositories/datasetRepo';
 import { loadSettings } from '../repositories/settingsRepo';
 import {
   assignProperties, reclaimProperties,
@@ -257,6 +259,59 @@ export default async function propertyRoutes(app: FastifyInstance) {
     }
     const calls = await callsForProperties([id]);
     return calls.map(serializeCall);
+  });
+
+  /**
+   * The record's full history journal — everything that happened to one unit,
+   * merged and time-sorted: every call (outcome + feedback + who + owner), the
+   * property-linked audit events (assigned / returned to pool / number revealed),
+   * and a synthesized "imported" event from the row's creation. Powers the
+   * right-hand column of the unit popup.
+   */
+  app.get('/api/properties/:id/events', {
+    preHandler: [app.authenticate],
+    schema: {
+      params: {
+        type: 'object', required: ['id'],
+        properties: { id: { type: 'string', maxLength: 64 } },
+      },
+    },
+  }, async (req) => {
+    const { id } = req.params as { id: string };
+    const p = await findPropertyById(id);
+    if (!p) throw notFound('That unit no longer exists.');
+    const me = req.currentUser!;
+    if (!me.isManager && p.assignedTo !== me.id) {
+      throw forbidden('That unit is not assigned to you.');
+    }
+
+    const [calls, auditRows, dataset] = await Promise.all([
+      callsForProperties([id]),
+      listAuditForProperty(id),
+      p.datasetId ? findDatasetById(p.datasetId) : Promise.resolve(null),
+    ]);
+
+    const events = [
+      ...calls.map(c => ({
+        kind: 'call' as const,
+        at: c.at, outcome: c.outcome, note: c.note, actorId: c.brokerId, ownerName: c.ownerName,
+      })),
+      // A logged call also writes an audit 'call' row; the calls table already
+      // gives the richer event, so drop the audit twin to avoid duplication.
+      ...auditRows
+        .filter(a => a.action !== 'call')
+        .map(a => ({
+          kind: 'audit' as const,
+          at: a.at, action: a.action, detail: a.detail, actorId: a.actorId ?? undefined,
+        })),
+      {
+        kind: 'import' as const,
+        at: p.createdAt,
+        detail: dataset ? `Imported into “${dataset.name}”` : 'Imported into the vault',
+      },
+    ].sort((a, b) => b.at.localeCompare(a.at));
+
+    return events;
   });
 
   /**

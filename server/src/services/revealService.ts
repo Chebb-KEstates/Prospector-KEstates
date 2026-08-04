@@ -63,6 +63,9 @@ interface RevealInput {
   /** Whether this reveal counts against the cap. */
   enforceCap: boolean;
   what: string;
+  /** Properties this reveal touches — linked in the audit so it shows on the
+   *  record's history journal. */
+  propertyIds?: string[];
 }
 
 async function revealGuard(
@@ -101,6 +104,7 @@ async function revealGuard(
       actorId: input.user.id,
       action: 'view',
       detail: input.what,
+      propertyIds: input.propertyIds,
     }, cx);
 
     return { blocked: false as const, used };
@@ -150,7 +154,7 @@ export async function revealOwnerPhone(
     (multi
       ? `Revealed co-owners (${ownerGroups.length}) — ${property.owner.name || 'Unknown owner'}`
       : `Revealed number${all.length > 1 ? `s (${all.length})` : ''} — ${property.owner.name || 'Unknown owner'}`);
-  return revealGuard({ ...input, what }, property.owner.phone, all, ownerGroups);
+  return revealGuard({ ...input, what, propertyIds: [property.id] }, property.owner.phone, all, ownerGroups);
 }
 
 export async function revealLeadPhone(

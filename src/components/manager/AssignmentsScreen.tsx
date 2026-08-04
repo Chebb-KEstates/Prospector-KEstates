@@ -23,6 +23,7 @@ export function AssignmentsScreen() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
+  const [pageIds, setPageIds] = useState<string[]>([]);
 
   // Row click opens the owner popup — an audited, cap-counted view, same as the
   // Data Vault. The checkbox still selects for assign/reclaim.
@@ -151,11 +152,14 @@ export function AssignmentsScreen() {
           showAssignee={tab === 'assigned'}
           checkedIds={selected}
           onCheckedChanged={setSelected}
-          onSelect={openDetail}
+          onSelect={(id, orderedIds) => { setPageIds(orderedIds); void openDetail(id); }}
         />
       </>}
 
-      {detail && <PropertyPopup propertyId={detail} onClose={() => setDetail(null)} />}
+      {detail && (
+        <PropertyPopup propertyId={detail} ids={pageIds}
+          onNavigate={openDetail} onClose={() => setDetail(null)} />
+      )}
     </div>
   );
 }
