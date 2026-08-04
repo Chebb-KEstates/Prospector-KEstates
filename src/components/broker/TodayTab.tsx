@@ -8,10 +8,12 @@ import { StateChip, OutcomeChip } from '../common/StateChip';
 import { Icon } from '../common/Icon';
 import { fmtDate } from '../../utils/format';
 import {
-  ownerCallStops, leadCallStops, ownerStopForProperty, leadStopFor, stopDeps,
+  ownerCallStops, leadCallStops, leadStopFor, stopDeps,
 } from './callStops';
 import { CallDialog } from './CallDialog';
 import { CallStop } from '../../state/CallSessionContext';
+import { PropertyPopup } from '../manager/PropertyPopup';
+import { ApiError } from '../../data/apiClient';
 import { useMyProperties, useMyLeads } from '../../data/hooks';
 
 /**
@@ -59,8 +61,11 @@ export function TodayTab() {
   const { start } = useCallSession();
   const [buyers, setBuyers] = useState(false);
   const [quick, setQuick] = useState<Quick>('all');
-  const [callStop, setCallStop] = useState<CallStop | null>(null);
   const [starting, setStarting] = useState(false);
+  // Row click opens the record popup (an audited, cap-counted owner view).
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [pageIds, setPageIds] = useState<string[]>([]);
+  const [capError, setCapError] = useState<string | null>(null);
 
   const { rows: myProperties } = useMyProperties();
   const { rows: myLeads } = useMyLeads();
@@ -98,10 +103,17 @@ export function TodayTab() {
     }
   };
 
-  const openOwnerCall = async (id: string) => {
-    const prop = myProperties.find(x => x.id === id);
-    if (!prop || !prop.callable) return;
-    setCallStop(await ownerStopForProperty(prop, deps));
+  // Opening a unit is an audited, cap-counted owner view — same as the manager
+  // Vault. The record popup (with its own reveal) opens once the view is allowed.
+  const openDetail = async (id: string, orderedIds: string[]) => {
+    setCapError(null);
+    try {
+      await vault.recordView(id, `Viewed owner detail ${id}`);
+      setPageIds(orderedIds);
+      setDetailId(id);
+    } catch (e) {
+      setCapError(e instanceof ApiError ? e.message : 'Could not open that record.');
+    }
   };
 
   // Owner counting mirrors the original: one caller per distinct number.
@@ -109,7 +121,17 @@ export function TodayTab() {
 
   return (
     <div>
-      {callStop && <CallDialog stop={callStop} onClose={() => setCallStop(null)} />}
+      {detailId && (
+        <PropertyPopup propertyId={detailId} ids={pageIds}
+          onNavigate={(id) => void openDetail(id, pageIds)}
+          onClose={() => setDetailId(null)} />
+      )}
+      {capError && (
+        <div className="card" style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center', borderColor: 'var(--error)' }}>
+          <Icon name="ban" size={16} style={{ color: 'var(--error)' }} />
+          <span style={{ fontSize: '0.875rem', color: 'var(--error)' }}>{capError}</span>
+        </div>
+      )}
 
       {/* Owners | Buyers switch + Start calling */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
@@ -148,7 +170,7 @@ export function TodayTab() {
             prefsKey="broker_today"
             hideOwner
             scope="mine"
-            onSelect={openOwnerCall}
+            onSelect={openDetail}
             {...quickToQuery(quick)}
           />
         </>

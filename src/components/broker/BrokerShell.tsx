@@ -18,7 +18,7 @@ type Tab = 'home' | 'today' | 'pool' | 'portfolio';
 
 const NAV: { key: Tab; label: string; icon: IconName }[] = [
   { key: 'home', label: 'Home', icon: 'home' },
-  { key: 'today', label: 'Today', icon: 'phone' },
+  { key: 'today', label: 'Database', icon: 'phone' },
   { key: 'pool', label: 'Pool', icon: 'layers' },
   { key: 'portfolio', label: 'Portfolio', icon: 'star' },
 ];
@@ -111,7 +111,7 @@ function BrokerShellInner() {
                 <button className="btn btn-sm btn-ghost" onClick={end}>End</button>
               </>
             ) : (
-              <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', textTransform: 'capitalize' }}>{activeTab}</span>
+              <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{NAV.find(n => n.key === activeTab)?.label ?? activeTab}</span>
             )}
           </div>
 

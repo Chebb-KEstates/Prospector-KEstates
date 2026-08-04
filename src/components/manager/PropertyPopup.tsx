@@ -1,30 +1,33 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { CallStop, CallUnit, OwnerNumbers } from '../../state/CallSessionContext';
-import { CallOutcome, CallOutcomeLabel } from '../../types/models';
-import type { PhoneEntry, Property } from '../../types/models';
+import { CallOutcome, CallOutcomeLabel, PropertyState } from '../../types/models';
+import type { PhoneEntry } from '../../types/models';
 import { StateChip, CountdownBadge, OutcomeChip } from '../common/StateChip';
 import { Icon } from '../common/Icon';
 import { ApiError } from '../../data/apiClient';
 import { ToneChip, sectionLabel, outcomeColor } from '../broker/callVisuals';
 import { ownerStopForProperty, stopDeps } from '../broker/callStops';
-import { splitOwnerNames, fmtDateTime, timeAgo } from '../../utils/format';
+import { fmtDateTime, timeAgo } from '../../utils/format';
 import type { PropertyEvent } from '../../data/api';
 import * as api from '../../data/api';
 
 /**
- * The unit work surface — opened by clicking a unit in a data table.
+ * The unit work surface — opened by clicking a unit in a data table (manager
+ * Vault / Assignments, and the broker's Database tab).
  *
  * A big, property-centric, THREE-column layout:
- *   • Left   — the record: property + owner information, and persistent notes
- *              that stay on the property no matter who it's assigned to.
+ *   • Left   — the record: the owner's property/ies (a scrollable list when they
+ *              own several; click one to focus it), the owner, and persistent
+ *              notes that stay on the property no matter who it's assigned to.
  *   • Middle — call & log: reveal the number(s), pick an outcome, add call
- *              feedback, Save (logs a real call, moves the record's state), then
- *              Close / Next property.
- *   • Right  — a full history journal: every call and key event, newest first.
+ *              feedback, Save (logs a real call on the focused unit, moving its
+ *              state), then Close / Next property.
+ *   • Right  — a full history journal for the focused unit: every call and key
+ *              event, newest first.
  *
  * Reveal-lock: once a number is revealed, a result must be saved before the tab
- * can be closed or advanced — the reveal is only worth it if it's recorded.
+ * can be closed or advanced.
  */
 export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   propertyId: string;
@@ -41,20 +44,23 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   );
 
   const [stop, setStop] = useState<CallStop | null>(null);
-  const [prop, setProp] = useState<Property | null>(null);
   const [loading, setLoading] = useState(true);
+  // Which of the owner's units the middle + right + notes act on. Defaults to
+  // the clicked unit; the left list switches it for a multi-unit owner.
+  const [focusedId, setFocusedId] = useState(propertyId);
+  // Live state/deadline for units that changed this session (after a save).
+  const [refresh, setRefresh] = useState<Record<string, { state: PropertyState; expiresAt?: string }>>({});
 
-  // Reveal
+  // Reveal (owner-level — one reveal returns the whole card)
   const [phones, setPhones] = useState<PhoneEntry[]>([]);
   const [revealedOwners, setRevealedOwners] = useState<OwnerNumbers[]>([]);
   const [activeOwner, setActiveOwner] = useState(0);
   const [revealing, setRevealing] = useState(false);
   const [revealError, setRevealError] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
-  // The reveal-lock: a number was revealed and no result saved for it yet.
   const [savedSinceReveal, setSavedSinceReveal] = useState(false);
 
-  // Outcome + feedback
+  // Outcome + feedback (for the focused unit)
   const [outcome, setOutcome] = useState<CallOutcome | null>(null);
   const [feedback, setFeedback] = useState('');
   const [followUpAt, setFollowUpAt] = useState('');
@@ -62,31 +68,32 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
 
-  // Persistent notes (stay on the property)
+  // Persistent notes (per unit)
   const [notes, setNotes] = useState('');
+  const [noteOverrides, setNoteOverrides] = useState<Record<string, string>>({});
   const [notesSaving, setNotesSaving] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
 
-  // History journal
+  // History journal (for the focused unit)
   const [events, setEvents] = useState<PropertyEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsKey, setEventsKey] = useState(0);
 
-  // Reset per-unit state whenever the focused unit changes (incl. "Next").
+  // Load the owner's card whenever the clicked unit changes (incl. "Next").
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setFocusedId(propertyId); setRefresh({}); setNoteOverrides({});
     setPhones([]); setRevealedOwners([]); setActiveOwner(0); setRevealed(false);
     setSavedSinceReveal(false); setOutcome(null); setFeedback(''); setFollowUpAt('');
-    setJustSaved(false); setRevealError(null); setSaveError(null);
-    setNotesSaved(false);
+    setJustSaved(false); setRevealError(null); setSaveError(null); setNotesSaved(false);
     void (async () => {
       try {
         const p = await api.properties.byId(propertyId);
         const s = await ownerStopForProperty(p, deps);
-        if (!cancelled) { setProp(p); setStop(s); setNotes(p.notes ?? ''); }
+        if (!cancelled) setStop(s);
       } catch {
-        if (!cancelled) { setProp(null); setStop(null); }
+        if (!cancelled) setStop(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -94,13 +101,23 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     return () => { cancelled = true; };
   }, [propertyId, deps]);
 
-  // History journal — refetched after a save (eventsKey bump).
+  const focusedUnit: CallUnit | undefined = stop?.units?.find(u => u.id === focusedId);
+
+  // Reset the notes box + per-unit editors whenever the focus changes.
+  useEffect(() => {
+    setNotes(noteOverrides[focusedId] ?? focusedUnit?.notes ?? '');
+    setNotesSaved(false);
+    setOutcome(null); setFeedback(''); setFollowUpAt(''); setJustSaved(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusedId, stop]);
+
+  // History journal for the focused unit; refetched after a save.
   useEffect(() => {
     let cancelled = false;
     setEventsLoading(true);
     void (async () => {
       try {
-        const e = await api.properties.events(propertyId);
+        const e = await api.properties.events(focusedId);
         if (!cancelled) setEvents(e);
       } catch {
         if (!cancelled) setEvents([]);
@@ -109,15 +126,13 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
       }
     })();
     return () => { cancelled = true; };
-  }, [propertyId, eventsKey]);
+  }, [focusedId, eventsKey]);
 
-  // The unit's rich facts (beds/type/size/rental/last sale) — computed once by
-  // the shared stop builder; find THIS unit within the owner's set.
-  const unit: CallUnit | undefined = stop?.units?.find(u => u.id === propertyId);
+  const units = stop?.units ?? [];
+  const multiUnit = units.length > 1;
   const multiOwner = !!(stop?.owners && stop.owners.length > 1);
   const activePhones = multiOwner ? (revealedOwners[activeOwner]?.phones ?? []) : phones;
   const activeOwnerName = multiOwner ? stop?.owners?.[activeOwner]?.name : undefined;
-  const ownerNames = multiOwner ? stop!.owners!.map(o => o.name) : splitOwnerNames(stop?.name ?? '');
 
   const OUTCOMES = Object.values(CallOutcome) as CallOutcome[];
   const isReached = (o: CallOutcome) => o !== CallOutcome.noAnswer && o !== CallOutcome.unreachable;
@@ -129,11 +144,11 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   const locked = revealed && !savedSinceReveal;
   const nextId = (() => { const i = ids.indexOf(propertyId); return i >= 0 ? ids[i + 1] : undefined; })();
 
+  const curState = refresh[focusedId]?.state ?? focusedUnit?.state ?? PropertyState.pool;
+  const curExpires = refresh[focusedId]?.expiresAt ?? focusedUnit?.expiresAt;
+
   const tryClose = () => { if (locked) return; onClose(); };
-  const tryNext = () => {
-    if (locked) return;
-    if (nextId && onNavigate) onNavigate(nextId);
-  };
+  const tryNext = () => { if (locked) return; if (nextId && onNavigate) onNavigate(nextId); };
 
   const doReveal = async () => {
     if (!stop || revealing) return;
@@ -150,15 +165,19 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   };
 
   const save = async () => {
-    if (!prop || !canSave) return;
+    if (!stop || !canSave) return;
     setSaving(true); setSaveError(null);
     const fu = followUpAt ? new Date(followUpAt).toISOString() : undefined;
     try {
-      await vault.logCall([prop], outcome!, feedback.trim() || undefined, isCallback ? fu : undefined, activeOwnerName);
+      // Multi-unit owner → log against the FOCUSED unit only; single unit → its own log.
+      if (stop.logUnit) await stop.logUnit(focusedId, outcome!, feedback.trim() || undefined, isCallback ? fu : undefined, activeOwnerName);
+      else await stop.log(outcome!, feedback.trim() || undefined, isCallback ? fu : undefined, activeOwnerName);
       setSavedSinceReveal(true);
       setJustSaved(true);
-      // Refresh the record's state chip and the journal.
-      try { const p2 = await api.properties.byId(propertyId); setProp(p2); } catch { /* keep old */ }
+      try {
+        const p2 = await api.properties.byId(focusedId);
+        setRefresh(r => ({ ...r, [focusedId]: { state: p2.state, expiresAt: p2.assignmentExpiresAt } }));
+      } catch { /* keep the old chip */ }
       setEventsKey(k => k + 1);
     } catch (e) {
       setSaveError(e instanceof ApiError ? e.message : 'Could not save that. Try again.');
@@ -171,96 +190,106 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     if (!stop?.saveNote) return;
     setNotesSaving(true);
     try {
-      await stop.saveNote(propertyId, notes);
+      await stop.saveNote(focusedId, notes);
+      setNoteOverrides(m => ({ ...m, [focusedId]: notes }));
       setNotesSaved(true);
       setEventsKey(k => k + 1);
-    } catch { /* surfaced by disabling save briefly */ } finally {
+    } catch { /* ignore */ } finally {
       setNotesSaving(false);
     }
   };
 
+  const ownerBlocks = multiOwner
+    ? stop!.owners!.map((o, i) => ({ name: o.name, nationality: o.nationality, nums: revealedOwners[i]?.phones ?? o.phonesMasked ?? [] }))
+    : [{ name: stop?.name ?? 'Owner', nationality: stop?.nationality, nums: (revealed ? phones : (stop?.phonesMasked ?? [])) }];
+
   return (
     <div className="modal-overlay" onClick={tryClose}>
       <div className="modal-content" onClick={e => e.stopPropagation()}
-        style={{ width: '92vw', maxWidth: 1180, maxHeight: '88vh', display: 'flex', flexDirection: 'column', gap: 14, padding: 20 }}>
+        style={{ width: '94vw', maxWidth: 1240, maxHeight: '90vh', display: 'flex', flexDirection: 'column', gap: 14, padding: 20 }}>
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>Loading…</div>
-        ) : !stop || !prop ? (
+        ) : !stop ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>Property not found.</div>
         ) : (
           <>
-            {/* Header — spans all three columns */}
+            {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
               <div style={{ width: 42, height: 42, borderRadius: '50%', flexShrink: 0, background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{stop.flag}</div>
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700, lineHeight: 1.2 }} className="truncate">{unit?.label ?? stop.name}</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, lineHeight: 1.2 }} className="truncate">{focusedUnit?.label ?? stop.name}</div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }} className="truncate">
-                  {[stop.name, unit?.location, stop.nationality].filter(Boolean).join(' · ')}
+                  {[stop.name, focusedUnit?.location, stop.nationality].filter(Boolean).join(' · ')}
                 </div>
               </div>
-              <StateChip state={prop.state} />
-              <CountdownBadge deadline={prop.assignmentExpiresAt} soonHours={vault.settings.expiringSoonHours} />
+              <StateChip state={curState} />
+              <CountdownBadge deadline={curExpires} soonHours={vault.settings.expiringSoonHours} />
               <button className="btn btn-icon btn-sm" onClick={tryClose} aria-label="Close"><Icon name="x" size={16} /></button>
             </div>
 
-            {/* Three columns */}
-            <div style={{
-              display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-              gap: 14, flex: 1, minHeight: 0,
-            }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))', gap: 14, flex: 1, minHeight: 0 }}>
               {/* ── LEFT: the record + persistent notes ─────────────────────── */}
               <Column>
-                <div style={sectionLabel}>Property</div>
-                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--surface-2)' }}>
-                  <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{unit?.label ?? '—'}</div>
-                  {unit?.location && <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)', marginTop: 1 }}>{unit.location}</div>}
-                  {unit?.facts && unit.facts.length > 0 && (
-                    <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 6 }}>{unit.facts.join(' · ')}</div>
-                  )}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                    {unit?.rental && <ToneChip tone={unit.rental.tone}>{unit.rental.label}</ToneChip>}
-                    {stop.signals?.map((s, i) => <ToneChip key={i} tone={s.tone}>{s.label}</ToneChip>)}
+                <div style={sectionLabel}>
+                  {multiUnit ? `Properties (${units.length}) — this owner` : 'Property'}
+                </div>
+                {multiUnit && (
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 6 }}>
+                    Click a property to view its details, notes and history.
                   </div>
-                  {unit?.lastSale && (
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-light)' }}>
-                      Last sale: <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{unit.lastSale}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ ...sectionLabel, marginTop: 14 }}>
-                  {multiOwner ? `Owners (${ownerNames.length})` : 'Owner'}
-                </div>
-                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {(multiOwner ? stop.owners! : [{ name: stop.name, nationality: stop.nationality }]).map((o, i) => {
-                    const real = multiOwner ? revealedOwners[i]?.phones : (revealed ? phones : undefined);
-                    const masked = multiOwner ? stop.owners![i]?.phonesMasked : prop.owner.allPhones;
-                    const nums = real ?? masked ?? [];
+                )}
+                {/* Scrollable block — all of the owner's units. */}
+                <div style={{ maxHeight: multiUnit ? 300 : undefined, overflowY: multiUnit ? 'auto' : 'visible', display: 'flex', flexDirection: 'column', gap: 8, paddingRight: multiUnit ? 4 : 0 }}>
+                  {units.map(u => {
+                    const sel = u.id === focusedId;
+                    const st = refresh[u.id]?.state ?? u.state;
                     return (
-                      <div key={i}>
-                        <div style={{ fontWeight: 600, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                          <Icon name="user" size={13} style={{ color: 'var(--text-tertiary)' }} /> {o.name || `Owner ${i + 1}`}
+                      <button key={u.id} onClick={() => setFocusedId(u.id)} disabled={!multiUnit}
+                        style={{
+                          textAlign: 'left', cursor: multiUnit ? 'pointer' : 'default',
+                          border: `1.5px solid ${sel ? 'var(--gold)' : 'var(--border)'}`, borderRadius: 10, padding: 12,
+                          background: sel ? 'color-mix(in srgb, var(--gold) 9%, transparent)' : 'var(--surface-2)',
+                        }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+                          <span style={{ fontWeight: 600, fontSize: '0.9rem' }} className="truncate">{u.label}</span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                            {u.rental && <ToneChip tone={u.rental.tone}>{u.rental.label}</ToneChip>}
+                            <StateChip state={st} />
+                          </span>
                         </div>
-                        {o.nationality && <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginLeft: 6 }}>{o.nationality}</span>}
-                        <div className="tabular-nums" style={{ fontSize: '0.8rem', marginTop: 2, color: real ? 'var(--text)' : 'var(--text-tertiary)', fontWeight: real ? 600 : 400, display: 'flex', flexWrap: 'wrap', gap: '2px 12px' }}>
-                          {nums.length > 0 ? nums.map((p, j) => <span key={j}>{p.number}</span>) : <span>—</span>}
-                        </div>
-                      </div>
+                        {u.location && <div style={{ fontSize: '0.74rem', color: 'var(--text-tertiary)', marginTop: 2 }} className="truncate">{u.location}</div>}
+                        {u.facts.length > 0 && <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 4 }} className="truncate">{u.facts.join(' · ')}</div>}
+                        {u.lastSale && <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: 4 }}>Last sale: <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{u.lastSale}</span></div>}
+                        {(noteOverrides[u.id] ?? u.notes) && <div style={{ fontSize: '0.72rem', color: 'var(--gold-dark)', marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)' }} /> has notes</div>}
+                      </button>
                     );
                   })}
                 </div>
 
-                <div style={{ ...sectionLabel, marginTop: 14 }}>Notes on this property</div>
+                <div style={{ ...sectionLabel, marginTop: 14 }}>{multiOwner ? `Owners (${stop.owners!.length})` : 'Owner'}</div>
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {ownerBlocks.map((o, i) => (
+                    <div key={i}>
+                      <div style={{ fontWeight: 600, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <Icon name="user" size={13} style={{ color: 'var(--text-tertiary)' }} /> {o.name || `Owner ${i + 1}`}
+                      </div>
+                      {o.nationality && <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginLeft: 6 }}>{o.nationality}</span>}
+                      <div className="tabular-nums" style={{ fontSize: '0.8rem', marginTop: 2, color: 'var(--text)', display: 'flex', flexWrap: 'wrap', gap: '2px 12px' }}>
+                        {o.nums.length > 0 ? o.nums.map((p, j) => <span key={j}>{p.number}</span>) : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ ...sectionLabel, marginTop: 14 }}>Notes {multiUnit ? `on ${focusedUnit?.label ?? 'this unit'}` : 'on this property'}</div>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 6 }}>
                   Stays on the property — kept even if it's reassigned or returns to the pool.
                 </div>
-                <textarea className="input" value={notes} rows={5} style={{ resize: 'vertical' }}
+                <textarea className="input" value={notes} rows={4} style={{ resize: 'vertical' }}
                   placeholder="Anything worth keeping on this unit permanently…"
                   onChange={e => { setNotes(e.target.value); setNotesSaved(false); }} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-                  <button className="btn btn-sm" onClick={saveNotes} disabled={notesSaving || !stop.saveNote}>
-                    {notesSaving ? 'Saving…' : 'Save notes'}
-                  </button>
+                  <button className="btn btn-sm" onClick={saveNotes} disabled={notesSaving || !stop.saveNote}>{notesSaving ? 'Saving…' : 'Save notes'}</button>
                   {notesSaved && <span style={{ color: 'var(--success)', fontSize: '0.78rem' }}>Saved ✓</span>}
                 </div>
               </Column>
@@ -273,8 +302,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 4 }}>Who are you calling?</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                       {stop.owners!.map((o, i) => {
-                        const sel = i === activeOwner;
-                        const n = o.phonesMasked?.length ?? 0;
+                        const sel = i === activeOwner; const n = o.phonesMasked?.length ?? 0;
                         return (
                           <button key={i} className="btn btn-sm" onClick={() => setActiveOwner(i)}
                             style={{ borderColor: sel ? 'var(--gold)' : 'var(--border)', borderWidth: sel ? 1.5 : 1, background: sel ? 'color-mix(in srgb, var(--gold) 14%, transparent)' : 'var(--surface)', color: sel ? 'var(--gold-dark)' : 'var(--text)', fontWeight: sel ? 600 : 500 }}>
@@ -309,8 +337,9 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   <div style={{ padding: '8px 12px', borderRadius: 10, fontSize: '0.8rem', color: 'var(--text-tertiary)', background: 'var(--surface-2)', border: '1px solid var(--border)' }}>No number on file.</div>
                 )}
 
-                {/* Outcome + feedback */}
-                <div style={{ ...sectionLabel, marginTop: 14 }}>Log the outcome</div>
+                <div style={{ ...sectionLabel, marginTop: 14 }}>
+                  Log the outcome{multiUnit ? ` — ${focusedUnit?.label ?? ''}` : ''}
+                </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {OUTCOMES.map(o => {
                     const c = outcomeColor(o); const sel = outcome === o;
@@ -335,18 +364,17 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   onChange={e => { setFeedback(e.target.value); setJustSaved(false); }} />
 
                 {outcome != null && (
-                  <button className="btn btn-primary" onClick={save} disabled={!canSave} style={{ marginTop: 8, width: '100%', justifyContent: 'center', padding: '10px', background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013', opacity: canSave ? 1 : 0.5 }}>
+                  <button className="btn btn-primary" onClick={save} disabled={!canSave}
+                    style={{ marginTop: 8, width: '100%', justifyContent: 'center', padding: '10px', background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013', opacity: canSave ? 1 : 0.5 }}>
                     <Icon name="check" size={16} /> {saving ? 'Saving…' : 'Save to record'}
                   </button>
                 )}
                 {justSaved && <div style={{ color: 'var(--success)', fontSize: '0.8rem', marginTop: 6, fontWeight: 600 }}>✓ Call logged to the record.</div>}
                 {saveError && <ErrorBox>{saveError}</ErrorBox>}
 
-                {/* Close / Next — guarded by the reveal-lock */}
                 <div style={{ marginTop: 'auto', paddingTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button className="btn" onClick={tryClose} disabled={locked} style={{ opacity: locked ? 0.5 : 1 }}>Close</button>
-                  <button className="btn btn-primary" onClick={tryNext} disabled={locked || !nextId}
-                    style={{ opacity: (locked || !nextId) ? 0.5 : 1 }}>
+                  <button className="btn btn-primary" onClick={tryNext} disabled={locked || !nextId} style={{ opacity: (locked || !nextId) ? 0.5 : 1 }}>
                     Next property <Icon name="arrowRight" size={15} />
                   </button>
                 </div>
@@ -359,7 +387,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
 
               {/* ── RIGHT: history journal ──────────────────────────────────── */}
               <Column>
-                <div style={sectionLabel}>History journal</div>
+                <div style={sectionLabel}>History journal{multiUnit ? ` — ${focusedUnit?.label ?? ''}` : ''}</div>
                 {eventsLoading && events.length === 0 ? (
                   <div style={{ color: 'var(--text-tertiary)', fontSize: '0.82rem', padding: 8 }}>Loading…</div>
                 ) : events.length === 0 ? (
@@ -380,20 +408,13 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   );
 }
 
-/** A scroll-independent column. */
 function Column({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>
-      {children}
-    </div>
-  );
+  return <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>{children}</div>;
 }
 
 function ErrorBox({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, fontSize: '0.8rem', background: 'color-mix(in srgb, var(--error) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--error) 45%, transparent)', color: 'var(--error)' }}>
-      {children}
-    </div>
+    <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, fontSize: '0.8rem', background: 'color-mix(in srgb, var(--error) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--error) 45%, transparent)', color: 'var(--error)' }}>{children}</div>
   );
 }
 
@@ -415,7 +436,7 @@ function JournalRow({ e, actorName }: { e: PropertyEvent; actorName: (id: string
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {e.kind === 'call' && <OutcomeChip outcome={e.outcome} />}
           <span style={{ fontWeight: 600, fontSize: '0.8rem' }}>
-            {e.kind === 'call' ? (e.ownerName ? `Call · ${e.ownerName}` : 'Call') : e.kind === 'import' ? e.detail : e.detail}
+            {e.kind === 'call' ? (e.ownerName ? `Call · ${e.ownerName}` : 'Call') : e.detail}
           </span>
         </div>
         {e.kind === 'call' && e.note && <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 2 }}>“{e.note}”</div>}
