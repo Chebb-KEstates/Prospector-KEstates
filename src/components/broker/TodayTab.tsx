@@ -3,6 +3,7 @@ import { useAuth } from '../../state/AuthContext';
 import { useVault } from '../../state/VaultContext';
 import { useCallSession } from '../../state/CallSessionContext';
 import { PropertyState, CallOutcome } from '../../types/models';
+import { Permission } from '../../types/user';
 import { PropertyTable } from '../manager/PropertyTable';
 import { StateChip, OutcomeChip } from '../common/StateChip';
 import { Icon } from '../common/Icon';
@@ -144,7 +145,9 @@ export function TodayTab() {
           </button>
         </div>
         <div style={{ flex: 1 }} />
-        {!buyers ? (
+        {/* The auto-flipping calling dialer is per-broker: the manager can turn
+            it off under Users. Clicking a unit for the record popup still works. */}
+        {user.can(Permission.useDialer) && (!buyers ? (
           <button className="btn btn-primary" onClick={startOwners} disabled={ownerCallable.length === 0 || starting}
             style={{ background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013' }}>
             <Icon name="phoneCall" size={16} /> {starting ? 'Preparing…' : `Start calling (${ownerCount})`}
@@ -154,7 +157,7 @@ export function TodayTab() {
             style={{ background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013' }}>
             <Icon name="phoneCall" size={16} /> {starting ? 'Preparing…' : `Start calling (${leadCallable.length})`}
           </button>
-        )}
+        ))}
       </div>
 
       {!buyers ? (

@@ -11,6 +11,7 @@ export const UserRoleLabel: Record<UserRole, string> = {
 export enum Permission {
   requestData = 'requestData',
   callOwners = 'callOwners',
+  useDialer = 'useDialer',
   manageData = 'manageData',
   assignData = 'assignData',
   viewReports = 'viewReports',
@@ -21,6 +22,7 @@ export enum Permission {
 export const PermissionLabel: Record<Permission, string> = {
   [Permission.requestData]: 'Request data from pool',
   [Permission.callOwners]: 'Call owners & log outcomes',
+  [Permission.useDialer]: 'Use the calling dialer (auto tab flip)',
   [Permission.manageData]: 'Import & delete data',
   [Permission.assignData]: 'Assign & reclaim',
   [Permission.viewReports]: 'View team reports & ROI',
@@ -37,7 +39,8 @@ export function isManagerScope(p: Permission): boolean {
 export function defaultPermissions(role: UserRole): Set<Permission> {
   return role === UserRole.manager
     ? new Set(Object.values(Permission))
-    : new Set([Permission.requestData, Permission.callOwners]);
+    // Brokers get the dialer by default; a manager can uncheck it per broker.
+    : new Set([Permission.requestData, Permission.callOwners, Permission.useDialer]);
 }
 
 export class AppUser {

@@ -3,6 +3,7 @@ import { useAuth } from '../../state/AuthContext';
 import { useVault } from '../../state/VaultContext';
 import { useCallSession } from '../../state/CallSessionContext';
 import { PropertyState, Property } from '../../types/models';
+import { Permission } from '../../types/user';
 import { groupByOwner } from '../../logic/ownerGrouping';
 import { ownerCallStops, ownerStopForProperty, stopDeps } from './callStops';
 import { CallDialog } from './CallDialog';
@@ -147,11 +148,13 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
           </>
         }
         side={
-          <button className="slab-action primary" onClick={startCalling}
-            disabled={callable.length === 0 || starting}
-            style={{ padding: '14px 22px', fontSize: '0.95rem' }}>
-            <Icon name="phoneCall" size={18} /> {starting ? 'Preparing…' : `Start calling (${callableOwners})`}
-          </button>
+          user?.can(Permission.useDialer) ? (
+            <button className="slab-action primary" onClick={startCalling}
+              disabled={callable.length === 0 || starting}
+              style={{ padding: '14px 22px', fontSize: '0.95rem' }}>
+              <Icon name="phoneCall" size={18} /> {starting ? 'Preparing…' : `Start calling (${callableOwners})`}
+            </button>
+          ) : undefined
         }
       />
 
