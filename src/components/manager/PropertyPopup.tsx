@@ -257,8 +257,8 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                             <StateChip state={st} />
                           </span>
                         </div>
-                        {u.location && <div style={{ fontSize: '0.74rem', color: 'var(--text-tertiary)', marginTop: 2 }} className="truncate">{u.location}</div>}
-                        {u.facts.length > 0 && <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 4 }} className="truncate">{u.facts.join(' · ')}</div>}
+                        {u.location && <div style={{ fontSize: '0.74rem', color: 'var(--text-tertiary)', marginTop: 2, whiteSpace: 'normal', wordBreak: 'break-word' }}>{u.location}</div>}
+                        {u.facts.length > 0 && <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 4, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.4 }}>{u.facts.join(' · ')}</div>}
                         {u.lastSale && <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: 4 }}>Last sale: <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{u.lastSale}</span></div>}
                         {(noteOverrides[u.id] ?? u.notes) && <div style={{ fontSize: '0.72rem', color: 'var(--gold-dark)', marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)' }} /> has notes</div>}
                       </button>
