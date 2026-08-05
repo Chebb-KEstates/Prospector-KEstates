@@ -10,8 +10,7 @@ import { Icon, IconName } from '../common/Icon';
 import { BrokerHome } from './BrokerHome';
 import { TodayTab } from './TodayTab';
 import { PoolTab } from './PoolTab';
-import { PropertyTable } from '../manager/PropertyTable';
-import { PropertyState } from '../../types/models';
+import { PortfolioTab } from './PortfolioTab';
 import { CallSessionView } from './CallSessionView';
 
 type Tab = 'home' | 'today' | 'pool' | 'portfolio';
@@ -124,10 +123,7 @@ function BrokerShellInner() {
                 {activeTab === 'home' && <BrokerHome onGo={(t) => setActiveTab(t as Tab)} />}
                 {activeTab === 'today' && <TodayTab />}
                 {activeTab === 'pool' && <PoolTab />}
-                {activeTab === 'portfolio' && (
-                  <PropertyTable prefsKey="broker_portfolio" hideOwner
-                    scope="mine" fixedState={PropertyState.portfolio} />
-                )}
+                {activeTab === 'portfolio' && <PortfolioTab />}
               </>
             )}
           </div>
