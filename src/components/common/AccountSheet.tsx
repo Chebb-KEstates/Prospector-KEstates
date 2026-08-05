@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../state/AuthContext';
-import { ThemeToggle } from './ThemeToggle';
 
 export function AccountSheet() {
   const { user, signOut } = useAuth();
@@ -56,20 +55,15 @@ export function AccountSheet() {
               {user.role === 'manager' ? 'Manager' : 'Broker'}
             </div>
 
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginBottom: 12 }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginBottom: 8 }}>
-                Appearance
-              </div>
-              <ThemeToggle />
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+              <button
+                className="btn btn-ghost"
+                onClick={signOut}
+                style={{ width: '100%', justifyContent: 'center' }}
+              >
+                Sign out
+              </button>
             </div>
-
-            <button
-              className="btn btn-ghost"
-              onClick={signOut}
-              style={{ width: '100%', justifyContent: 'center' }}
-            >
-              Sign out
-            </button>
           </div>
         </div>
       )}

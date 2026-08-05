@@ -150,7 +150,7 @@ export interface RevealResult {
 
 /** One entry in a unit's history journal — a call, a record event, or its import. */
 export type PropertyEvent =
-  | { kind: 'call'; at: string; outcome: CallOutcome; note?: string; actorId?: string; ownerName?: string }
+  | { kind: 'call'; at: string; outcome: CallOutcome; note?: string; actorId?: string; ownerName?: string; unitLabel?: string; thisUnit?: boolean }
   | { kind: 'audit'; at: string; action: string; detail: string; actorId?: string }
   | { kind: 'import'; at: string; detail: string };
 

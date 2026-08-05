@@ -6,11 +6,16 @@ import type { PhoneEntry } from '../../types/models';
 import { StateChip, CountdownBadge, OutcomeChip } from '../common/StateChip';
 import { Icon } from '../common/Icon';
 import { ApiError } from '../../data/apiClient';
-import { ToneChip, sectionLabel, outcomeColor } from '../broker/callVisuals';
+import { sectionLabel, outcomeColor } from '../broker/callVisuals';
 import { ownerStopForProperty, stopDeps } from '../broker/callStops';
 import { fmtDateTime, timeAgo } from '../../utils/format';
 import type { PropertyEvent } from '../../data/api';
 import * as api from '../../data/api';
+
+/** Plain-text colour for the rental line by its tone (vacant = opening, etc.). */
+const RENTAL_TONE: Record<string, string> = {
+  good: 'var(--success)', warn: 'var(--warning)', info: 'var(--text-secondary)', neutral: 'var(--text-secondary)',
+};
 
 /**
  * The unit work surface — opened by clicking a unit in a data table (manager
@@ -250,17 +255,17 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                           border: `1.5px solid ${sel ? 'var(--gold)' : 'var(--border)'}`, borderRadius: 10, padding: 12,
                           background: sel ? 'color-mix(in srgb, var(--gold) 9%, transparent)' : 'var(--surface-2)',
                         }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
-                          <span style={{ fontWeight: 600, fontSize: '0.9rem' }} className="truncate">{u.label}</span>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                            {u.rental && <ToneChip tone={u.rental.tone}>{u.rental.label}</ToneChip>}
-                            <StateChip state={st} />
-                          </span>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, justifyContent: 'space-between' }}>
+                          {/* Full unit number — wraps rather than clipping. */}
+                          <span style={{ fontWeight: 700, fontSize: '0.95rem', lineHeight: 1.3, whiteSpace: 'normal', wordBreak: 'break-word' }}>{u.label}</span>
+                          <span style={{ flexShrink: 0 }}><StateChip state={st} /></span>
                         </div>
-                        {u.location && <div style={{ fontSize: '0.74rem', color: 'var(--text-tertiary)', marginTop: 2, whiteSpace: 'normal', wordBreak: 'break-word' }}>{u.location}</div>}
-                        {u.facts.length > 0 && <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 4, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.4 }}>{u.facts.join(' · ')}</div>}
-                        {u.lastSale && <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: 4 }}>Last sale: <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{u.lastSale}</span></div>}
-                        {(noteOverrides[u.id] ?? u.notes) && <div style={{ fontSize: '0.72rem', color: 'var(--gold-dark)', marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)' }} /> has notes</div>}
+                        {u.location && <div style={{ fontSize: '0.76rem', color: 'var(--text-tertiary)', marginTop: 3, whiteSpace: 'normal', wordBreak: 'break-word' }}>{u.location}</div>}
+                        {u.facts.length > 0 && <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 4, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.45 }}>{u.facts.join(' · ')}</div>}
+                        {u.lastSale && <div style={{ fontSize: '0.76rem', color: 'var(--text-tertiary)', marginTop: 5 }}>Last sale: <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{u.lastSale}</span></div>}
+                        {/* Rental status + info as plain text, right below the last sale. */}
+                        {u.rental && <div style={{ fontSize: '0.78rem', marginTop: 3, color: RENTAL_TONE[u.rental.tone], fontWeight: 500, whiteSpace: 'normal', wordBreak: 'break-word' }}>Rental: {u.rental.label}</div>}
+                        {(noteOverrides[u.id] ?? u.notes) && <div style={{ fontSize: '0.74rem', color: 'var(--gold-dark)', marginTop: 5, display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)' }} /> has notes</div>}
                       </button>
                     );
                   })}
@@ -435,12 +440,22 @@ function JournalRow({ e, actorName }: { e: PropertyEvent; actorName: (id: string
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {e.kind === 'call' && <OutcomeChip outcome={e.outcome} />}
-          <span style={{ fontWeight: 600, fontSize: '0.8rem' }}>
+          <span style={{ fontWeight: 600, fontSize: '0.82rem' }}>
             {e.kind === 'call' ? (e.ownerName ? `Call · ${e.ownerName}` : 'Call') : e.detail}
           </span>
+          {/* Which of the owner's units the call was about — so a note left on
+              another unit is clearly attributed. */}
+          {e.kind === 'call' && e.unitLabel && (
+            <span className="chip" style={{
+              fontSize: '0.68rem', padding: '1px 7px',
+              background: e.thisUnit ? 'color-mix(in srgb, var(--gold) 16%, transparent)' : 'var(--surface-2)',
+              color: e.thisUnit ? 'var(--gold-dark)' : 'var(--text-secondary)',
+              fontWeight: 600, border: '1px solid var(--border-light)',
+            }}>{e.unitLabel}</span>
+          )}
         </div>
-        {e.kind === 'call' && e.note && <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 2 }}>“{e.note}”</div>}
-        <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
+        {e.kind === 'call' && e.note && <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 2 }}>“{e.note}”</div>}
+        <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
           {[who, fmtDateTime(e.at), timeAgo(e.at)].filter(Boolean).join(' · ')}
         </div>
       </div>

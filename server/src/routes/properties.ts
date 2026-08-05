@@ -3,8 +3,9 @@ import { Permission } from '../../../src/types/user';
 import { PropertyState } from '../../../src/types/models';
 import {
   queryProperties, propertyFacets, findPropertyById, findAssignedTo,
-  updatePropertyNotes,
+  updatePropertyNotes, findByOwnerKey,
 } from '../repositories/propertyRepo';
+import { ownerKeyOf } from '../../../src/logic/ownerGrouping';
 import { callsForProperties } from '../repositories/callRepo';
 import { listAuditForProperty } from '../repositories/auditRepo';
 import { findDatasetById } from '../repositories/datasetRepo';
@@ -262,11 +263,14 @@ export default async function propertyRoutes(app: FastifyInstance) {
   });
 
   /**
-   * The record's full history journal — everything that happened to one unit,
-   * merged and time-sorted: every call (outcome + feedback + who + owner), the
-   * property-linked audit events (assigned / returned to pool / number revealed),
-   * and a synthesized "imported" event from the row's creation. Powers the
-   * right-hand column of the unit popup.
+   * The record's full history journal — everything that happened to the OWNER,
+   * merged and time-sorted, so a broker calling the owner about one unit still
+   * sees the note left yesterday about another of their units:
+   *  - every call across ALL of the owner's units (outcome + feedback + who +
+   *    owner + which unit it was about);
+   *  - this unit's own record events (assigned / returned to pool / revealed);
+   *  - a synthesized "imported" event.
+   * Powers the right-hand column of the unit popup.
    */
   app.get('/api/properties/:id/events', {
     preHandler: [app.authenticate],
@@ -285,17 +289,29 @@ export default async function propertyRoutes(app: FastifyInstance) {
       throw forbidden('That unit is not assigned to you.');
     }
 
+    // Every unit this owner holds — so the call history is per-OWNER, not per-unit.
+    const ownerUnits = await findByOwnerKey(ownerKeyOf(p));
+    const units = ownerUnits.length > 0 ? ownerUnits : [p];
+    const unitIds = units.map(u => u.id);
+    const labelById = new Map(units.map(u => [u.id, u.unitLabel]));
+
     const [calls, auditRows, dataset] = await Promise.all([
-      callsForProperties([id]),
+      callsForProperties(unitIds),
       listAuditForProperty(id),
       p.datasetId ? findDatasetById(p.datasetId) : Promise.resolve(null),
     ]);
 
     const events = [
-      ...calls.map(c => ({
-        kind: 'call' as const,
-        at: c.at, outcome: c.outcome, note: c.note, actorId: c.brokerId, ownerName: c.ownerName,
-      })),
+      ...calls.map(c => {
+        // Which of the owner's units this call was about (label for the journal).
+        const labels = c.propertyIds.map(pid => labelById.get(pid)).filter((l): l is string => !!l);
+        return {
+          kind: 'call' as const,
+          at: c.at, outcome: c.outcome, note: c.note, actorId: c.brokerId, ownerName: c.ownerName,
+          unitLabel: labels.length > 0 ? labels.join(', ') : undefined,
+          thisUnit: c.propertyIds.includes(id),
+        };
+      }),
       // A logged call also writes an audit 'call' row; the calls table already
       // gives the richer event, so drop the audit twin to avoid duplication.
       ...auditRows
