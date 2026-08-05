@@ -32,7 +32,7 @@ export function ManagerShell() {
     { key: 'home', label: 'Dashboard' },
     { key: 'vault', label: 'Data Vault', permission: Permission.manageData },
     { key: 'assignments', label: 'Assignments', permission: Permission.assignData, badge: pendingRequests.length },
-    { key: 'team', label: 'Team', permission: Permission.viewReports },
+    { key: 'team', label: 'Report', permission: Permission.viewReports },
     { key: 'control', label: 'Control' },
   ];
 

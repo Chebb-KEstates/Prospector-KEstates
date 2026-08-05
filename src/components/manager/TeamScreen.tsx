@@ -71,7 +71,7 @@ export function TeamScreen() {
 
   return (
     <div style={{ maxWidth: 1500, margin: '0 auto' }}>
-      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 20 }}>Team &amp; Data</h2>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 20 }}>Report</h2>
 
       <SectionTitle>Brokers</SectionTitle>
       <AnalyticsTable
