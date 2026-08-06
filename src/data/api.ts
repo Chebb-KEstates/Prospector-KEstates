@@ -358,6 +358,11 @@ export const settings = {
   async save(s: VaultSettings): Promise<VaultSettings> {
     return VaultSettings.fromJson(await patch('/api/settings', s.toJson()));
   },
+
+  /** The caller's current IP as the server sees it — for setting the office lock. */
+  async myIp(): Promise<string> {
+    return (await get<{ ip: string }>('/api/settings/my-ip')).ip;
+  },
 };
 
 // ── Audit ──────────────────────────────────────────────────────────────────

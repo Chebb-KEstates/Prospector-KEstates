@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { Permission } from '../../../src/types/user';
 import { VaultSettings } from '../../../src/types/models';
 import { loadSettings, saveSettings } from '../repositories/settingsRepo';
+import { clearIpLockCache } from '../auth/ipLock';
 import { writeAudit } from '../repositories/auditRepo';
 import { serializeSettings } from '../http/serializers';
 
@@ -16,6 +17,13 @@ import { serializeSettings } from '../http/serializers';
 export default async function settingsRoutes(app: FastifyInstance) {
   app.get('/api/settings', { preHandler: [app.authenticate] }, async () =>
     serializeSettings(await loadSettings()));
+
+  /**
+   * The caller's own current IP, as the server sees it — so a manager setting the
+   * office lock can enter the right address ("use my current IP") instead of
+   * guessing and locking the team out. This is exactly the IP the lock compares.
+   */
+  app.get('/api/settings/my-ip', { preHandler: [app.authenticate] }, async (req) => ({ ip: req.ip }));
 
   app.patch('/api/settings', {
     preHandler: [app.authenticate, app.requirePermission(Permission.editSettings)],
@@ -65,6 +73,7 @@ export default async function settingsRoutes(app: FastifyInstance) {
     );
 
     await saveSettings(next);
+    clearIpLockCache(); // a changed office IP / toggle takes effect at once
     await writeAudit({
       actorId: req.currentUser!.id,
       action: 'settings',

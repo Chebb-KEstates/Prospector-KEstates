@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { useAuth } from '../../state/AuthContext';
 import { VaultSettings } from '../../types/models';
 import { ApiError } from '../../data/apiClient';
+import * as api from '../../data/api';
 
 export function SettingsScreen() {
   const { settings, saveSettings } = useVault();
@@ -10,6 +11,10 @@ export function SettingsScreen() {
   const [form, setForm] = useState({ ...settings });
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [myIp, setMyIp] = useState<string | null>(null);
+
+  // The server-seen IP, so the office lock can be set to the right address.
+  useEffect(() => { api.settings.myIp().then(setMyIp).catch(() => setMyIp(null)); }, []);
 
   const handleSave = async () => {
     if (!user) return;
@@ -120,8 +125,11 @@ export function SettingsScreen() {
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.875rem', cursor: 'pointer' }}>
                 <input type="checkbox" checked={form.wifiLockEnabled}
                   onChange={e => setForm(p => ({ ...p, wifiLockEnabled: e.target.checked }))} />
-                WiFi lock (enforced server-side at go-live)
+                Office-network lock (the app only works from the office IP)
               </label>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 4, paddingLeft: 24 }}>
+                Checked on every request: if a signed-in user's IP leaves the office, their next action signs them out.
+              </div>
             </div>
 
             {form.wifiLockEnabled && (
@@ -131,7 +139,21 @@ export function SettingsScreen() {
                 </label>
                 <input className="input" type="text" value={form.officeIp}
                   onChange={e => setForm(p => ({ ...p, officeIp: e.target.value }))}
-                  placeholder="192.168.1.0/24" style={{ maxWidth: 200 }} />
+                  placeholder="e.g. 203.0.113.10 or 203.0.113.0/24" style={{ maxWidth: 320 }} />
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 6 }}>
+                  {myIp
+                    ? <>Your current IP is <strong>{myIp}</strong>.{' '}
+                        <button type="button" className="btn btn-sm btn-ghost" style={{ padding: '1px 8px' }}
+                          onClick={() => setForm(p => ({ ...p, officeIp: p.officeIp.trim() ? `${p.officeIp.trim()}, ${myIp}` : myIp }))}>
+                          Add my IP
+                        </button></>
+                    : 'Enter your office’s public IP.'}
+                  <br />Accepts several, comma-separated, and IPv4 ranges (e.g. <code>203.0.113.0/24</code>).
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--warning)', marginTop: 6 }}>
+                  ⚠ Set this to the office’s <em>public</em> IP, not a 192.168.x internal one. A wrong value locks everyone
+                  out (recover by clearing it in the database). Empty = lock stays off.
+                </div>
               </div>
             )}
           </div>

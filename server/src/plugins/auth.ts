@@ -3,6 +3,8 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { AppUser, Permission } from '../../../src/types/user';
 import { readSession, SESSION_COOKIE, CSRF_HEADER } from '../auth/sessions';
 import { findUserById } from '../repositories/userRepo';
+import { getIpLock } from '../auth/ipLock';
+import { ipAllowed } from '../auth/ipMatch';
 import { unauthorized, forbidden } from '../http/errors';
 
 declare module 'fastify' {
@@ -55,6 +57,23 @@ async function authPlugin(app: FastifyInstance) {
           req.currentUser = user;
           req.sessionToken = token;
           req.sessionCsrf = session.csrfToken;
+        }
+      }
+    }
+
+    // Office-network lock. Enforced on EVERY authenticated request, not just at
+    // login — so a signed-in user who moves off the office network (their IP
+    // changes) is refused on their next action and signed out, not left with
+    // stale access. Only bites when the lock is on AND an address is configured
+    // (an empty office IP can never strand the team). `req.ip` is the real client
+    // when trustProxy is set (production) — see app.ts. Logout stays allowed so
+    // the session can be ended cleanly.
+    if (req.currentUser) {
+      const lock = await getIpLock();
+      if (lock.wifiLockEnabled && lock.officeIp.trim().length > 0 && !ipAllowed(req.ip, lock.officeIp)) {
+        const path = req.url.split('?')[0];
+        if (path !== '/api/auth/logout') {
+          throw unauthorized('Access is restricted to the office network — you have been signed out.');
         }
       }
     }
