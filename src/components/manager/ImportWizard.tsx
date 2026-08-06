@@ -541,7 +541,7 @@ export function ImportWizard({ remapRequest, restageRequest }: {
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn" onClick={() => setStep(1)} disabled={busy}>← Back</button>
             <button className="btn btn-primary" onClick={handleCommit} disabled={busy}>
-              {busy ? (updating ? 'Updating…' : 'Importing…') : (updating ? 'Apply update' : 'Commit import')}
+              {busy ? (updating ? 'Saving…' : 'Importing…') : (updating ? 'Save update' : 'Commit import')}
             </button>
           </div>
         </div>
