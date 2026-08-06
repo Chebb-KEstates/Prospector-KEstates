@@ -328,6 +328,13 @@ export const datasets = {
     return rows.map(DataSet.fromJson);
   },
 
+  /** Edit a data set's own details (name, source, community, price paid). */
+  async update(id: string, input: {
+    name?: string; source?: string; communityLabel?: string; cost?: number | null;
+  }): Promise<DataSet> {
+    return DataSet.fromJson(await patch<Record<string, unknown>>(`/api/datasets/${id}`, input));
+  },
+
   remove: (id: string) =>
     del<{ deleted: true; removedUnits: number; removedLeads: number }>(`/api/datasets/${id}`),
 };

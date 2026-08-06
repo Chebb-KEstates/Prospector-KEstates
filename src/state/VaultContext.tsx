@@ -82,6 +82,9 @@ interface VaultContextValue {
   denyRequest: (req: BatchRequest) => Promise<void>;
 
   deleteDataset: (d: DataSet) => Promise<{ removedUnits: number; removedLeads: number }>;
+  updateDataset: (id: string, patch: {
+    name?: string; source?: string; communityLabel?: string; cost?: number | null;
+  }) => Promise<DataSet>;
   reloadDatasets: () => Promise<void>;
 
   undoDnc: (p: Property) => Promise<void>;
@@ -302,6 +305,15 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
     return { removedUnits: r.removedUnits, removedLeads: r.removedLeads };
   }, [bump]);
 
+  const updateDataset = useCallback(async (id: string, patch: {
+    name?: string; source?: string; communityLabel?: string; cost?: number | null;
+  }) => {
+    const updated = await api.datasets.update(id, patch);
+    setDatasets(prev => prev.map(x => (x.id === updated.id ? updated : x)));
+    bump();
+    return updated;
+  }, [bump]);
+
   // ── Calls / DNC ──────────────────────────────────────────────────────────
 
   const undoDnc = useCallback(async (p: Property) => {
@@ -351,7 +363,7 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
     saveUser, setUserActive, resetUserPassword, saveSettings,
     assign, reclaim, assignLeads, reclaimLeads,
     submitRequest, approveRequest, denyRequest,
-    deleteDataset,
+    deleteDataset, updateDataset,
     undoDnc, undoDncLead,
     logCall, logLeadCall,
     revealPhone, revealLeadPhone, recordView,

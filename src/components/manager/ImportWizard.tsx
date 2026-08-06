@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { DataSetType, DataModule } from '../../types/models';
 import { ColumnSpec, ImportField, ImportFieldLabel } from '../../logic/importModels';
@@ -29,9 +29,18 @@ import { ApiError } from '../../data/apiClient';
  * deleting the data set silently orphaned its owner data. The id is now minted
  * once, at staging, and used for both.
  */
-export function ImportWizard() {
+/**
+ * `remapRequest` — a "Re-map columns…" request from the Data Sets list. When its
+ * nonce changes the wizard jumps to Update mode pre-targeted at that data set and
+ * scrolls into view, so re-mapping headers is the same familiar upload flow.
+ */
+export function ImportWizard({ remapRequest }: {
+  remapRequest?: { datasetId: string; nonce: number };
+} = {}) {
   const { reloadDatasets, datasets } = useVault();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const appliedNonce = useRef<number | null>(null);
 
   const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
   const [busy, setBusy] = useState(false);
@@ -65,6 +74,18 @@ export function ImportWizard() {
     setColumns([]); setActiveSheet(0); setHeaderRow(0); setCost('');
     setMode('new'); setTargetDatasetId(''); setOwnerMode('replace');
   };
+
+  // A "Re-map columns…" click on a data set drops the wizard into Update mode for
+  // that set (step 0 → choose the corrected file). Guarded by nonce so it applies
+  // once per click, never on an incidental re-render.
+  useEffect(() => {
+    if (!remapRequest || remapRequest.nonce === appliedNonce.current) return;
+    appliedNonce.current = remapRequest.nonce;
+    reset();
+    setMode('update');
+    setTargetDatasetId(remapRequest.datasetId);
+    rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [remapRequest]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -182,7 +203,7 @@ export function ImportWizard() {
   };
 
   return (
-    <div>
+    <div ref={rootRef}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <h2 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Import Properties</h2>
         <button className="btn btn-ghost" onClick={() => saveFile('prospector_template.xlsx', buildTemplateXlsx())}>

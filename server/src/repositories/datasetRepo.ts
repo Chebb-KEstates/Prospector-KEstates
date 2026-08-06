@@ -62,6 +62,30 @@ export async function deleteDataset(id: string, cx?: PoolConnection): Promise<vo
 }
 
 /**
+ * Edit a data set's own details — the fields a manager can safely correct after
+ * the fact without re-importing: its name, source, community label and the price
+ * paid. Only the keys present in `patch` are written (an absent key is left
+ * alone; `cost: null` deliberately clears the recorded price). The imported rows
+ * and the counts/dates are untouched — re-mapping columns needs a re-upload.
+ */
+export async function updateDatasetMeta(
+  id: string,
+  patch: { name?: string; source?: string; communityLabel?: string; cost?: number | null },
+  cx?: PoolConnection,
+): Promise<void> {
+  const db = cx ?? pool;
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (patch.name !== undefined) { sets.push('name = ?'); vals.push(patch.name); }
+  if (patch.source !== undefined) { sets.push('source = ?'); vals.push(patch.source); }
+  if (patch.communityLabel !== undefined) { sets.push('community_label = ?'); vals.push(patch.communityLabel); }
+  if (patch.cost !== undefined) { sets.push('cost = ?'); vals.push(patch.cost); }
+  if (sets.length === 0) return;
+  vals.push(id);
+  await db.query(`UPDATE datasets SET ${sets.join(', ')} WHERE id = ?`, vals);
+}
+
+/**
  * Refresh a data set's counts after an UPDATE import (see importService).
  * `total_units`/`callable_units` are recomputed as live counts over the rows
  * that belong to the set — the only honest figure once units have been added or

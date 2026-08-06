@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { Permission } from '../../../src/types/user';
 import { DataModule } from '../../../src/types/models';
 import { transaction } from '../db/pool';
-import { listDatasets, findDatasetById, deleteDataset } from '../repositories/datasetRepo';
+import { listDatasets, findDatasetById, deleteDataset, updateDatasetMeta } from '../repositories/datasetRepo';
 import { deleteByDataset, countByDataset } from '../repositories/propertyRepo';
 import { deleteLeadsByDataset, countLeadsByDataset } from '../repositories/leadRepo';
 import { writeAudit } from '../repositories/auditRepo';
@@ -25,6 +25,53 @@ export default async function datasetRoutes(app: FastifyInstance) {
    * the join resolves, and the delete happens in a transaction so the dataset
    * row and its data cannot come apart.
    */
+  /**
+   * Edit a data set's own details — name, source, community label and the price
+   * paid. This is the safe, in-place "edit" a manager reaches for to fix a typo
+   * or record what the data cost. It never touches the imported rows or the
+   * counts; re-mapping columns is a re-upload (the wizard's Update mode).
+   */
+  app.patch('/api/datasets/:id', {
+    preHandler: [app.authenticate, app.requirePermission(Permission.manageData)],
+    schema: {
+      params: {
+        type: 'object', required: ['id'],
+        properties: { id: { type: 'string', maxLength: 64 } },
+      },
+      body: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 200 },
+          source: { type: 'string', maxLength: 200 },
+          communityLabel: { type: 'string', maxLength: 200 },
+          cost: { type: ['number', 'null'], minimum: 0 },
+        },
+      },
+    },
+  }, async (req) => {
+    const { id } = req.params as { id: string };
+    const body = req.body as {
+      name?: string; source?: string; communityLabel?: string; cost?: number | null;
+    };
+    const dataset = await findDatasetById(id);
+    if (!dataset) throw notFound('That data set no longer exists.');
+
+    await updateDatasetMeta(id, {
+      name: body.name?.trim(),
+      source: body.source?.trim(),
+      communityLabel: body.communityLabel?.trim(),
+      cost: body.cost,
+    });
+
+    const updated = (await findDatasetById(id))!;
+    await writeAudit({
+      actorId: req.currentUser!.id,
+      action: 'edit',
+      detail: `Edited data set "${updated.name}"`,
+    });
+    return serializeDataset(updated);
+  });
+
   app.delete('/api/datasets/:id', {
     preHandler: [app.authenticate, app.requirePermission(Permission.manageData)],
     schema: {

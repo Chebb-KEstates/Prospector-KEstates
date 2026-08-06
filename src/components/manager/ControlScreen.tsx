@@ -2,20 +2,34 @@ import React, { useState } from 'react';
 import { useAuth } from '../../state/AuthContext';
 import { useVault } from '../../state/VaultContext';
 import { Permission } from '../../types/user';
-import { DataModule, DataModuleLabel } from '../../types/models';
+import { DataModule, DataModuleLabel, DataSet } from '../../types/models';
 import { ImportWizard } from './ImportWizard';
 import { LeadImportWizard } from './LeadImportWizard';
 import { UsersScreen } from './UsersScreen';
 import { AuditScreen } from './AuditScreen';
 import { SettingsScreen } from './SettingsScreen';
+import { ApiError } from '../../data/apiClient';
 import { fmtDate, fmtInt, fmtAed } from '../../utils/format';
 
 /** Import + the data-set manager, combined (the Flutter "Import & Files" section). */
 function ImportAndFiles() {
   const { user } = useAuth();
-  const { datasets, deleteDataset } = useVault();
+  const { datasets, deleteDataset, updateDataset } = useVault();
   const [module, setModule] = useState<DataModule>(DataModule.owners);
+  const [editing, setEditing] = useState<DataSet | null>(null);
+  // A "Re-map columns…" request handed to the owners wizard (nonce re-triggers).
+  const [remapReq, setRemapReq] = useState<{ datasetId: string; nonce: number }>();
   if (!user) return null;
+
+  const canManage = user.can(Permission.manageData);
+
+  // Re-mapping columns is a re-upload: send the wizard into Update mode for this
+  // set. Owner-only — that's the module the update-import flow supports.
+  const startRemap = (d: DataSet) => {
+    setEditing(null);
+    setModule(DataModule.owners);
+    setRemapReq({ datasetId: d.id, nonce: Date.now() });
+  };
 
   return (
     <div>
@@ -29,7 +43,7 @@ function ImportAndFiles() {
         ))}
       </div>
 
-      {module === DataModule.owners ? <ImportWizard /> : <LeadImportWizard />}
+      {module === DataModule.owners ? <ImportWizard remapRequest={remapReq} /> : <LeadImportWizard />}
 
       <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: '28px 0 12px' }}>Data sets</h3>
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -66,17 +80,122 @@ function ImportAndFiles() {
                     ) : '—'}
                   </td>
                   <td>
-                    {user.can(Permission.manageData) && (
-                      <button className="btn btn-sm btn-ghost" style={{ color: 'var(--error)' }}
-                        onClick={() => { if (window.confirm(`Delete "${d.name}" and all its records?`)) void deleteDataset(d); }}>
-                        Delete
-                      </button>
+                    {canManage && (
+                      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                        <button className="btn btn-sm btn-ghost" onClick={() => setEditing(d)}>
+                          Edit
+                        </button>
+                        <button className="btn btn-sm btn-ghost" style={{ color: 'var(--error)' }}
+                          onClick={() => { if (window.confirm(`Delete "${d.name}" and all its records?`)) void deleteDataset(d); }}>
+                          Delete
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {editing && (
+        <EditDatasetDialog dataset={editing} onClose={() => setEditing(null)}
+          onSave={updateDataset} onRemap={startRemap} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Edit a data set's own details — name, source, community and the price paid —
+ * without re-importing. "Re-map columns" is a re-upload (the original file is not
+ * kept), so it hands off to the wizard's Update mode instead of pretending to
+ * remap in place.
+ */
+function EditDatasetDialog({ dataset, onClose, onSave, onRemap }: {
+  dataset: DataSet;
+  onClose: () => void;
+  onSave: (id: string, patch: {
+    name?: string; source?: string; communityLabel?: string; cost?: number | null;
+  }) => Promise<DataSet>;
+  onRemap: (d: DataSet) => void;
+}) {
+  const [name, setName] = useState(dataset.name);
+  const [source, setSource] = useState(dataset.source);
+  const [community, setCommunity] = useState(dataset.communityLabel);
+  const [cost, setCost] = useState(dataset.cost != null ? String(dataset.cost) : '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isOwners = dataset.module === DataModule.owners;
+
+  const save = async () => {
+    if (!name.trim()) { setError('Give the data set a name.'); return; }
+    setBusy(true); setError(null);
+    try {
+      const c = cost.trim();
+      await onSave(dataset.id, {
+        name: name.trim(), source: source.trim(), communityLabel: community.trim(),
+        cost: c === '' ? null : Number(c),
+      });
+      onClose();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not save those changes.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const field = (label: string, value: string, set: (v: string) => void) => (
+    <div>
+      <label style={{ fontSize: '0.8125rem', display: 'block', marginBottom: 4 }}>{label}</label>
+      <input className="input" value={value} onChange={e => set(e.target.value)} />
+    </div>
+  );
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+        <h3 style={{ fontWeight: 600, marginBottom: 4 }}>Edit data set</h3>
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 16 }}>
+          {DataModuleLabel[dataset.module]} · {fmtInt(dataset.totalUnits)} records
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {field('Name', name, setName)}
+          {field('Source', source, setSource)}
+          {field('Community', community, setCommunity)}
+          <div>
+            <label style={{ fontSize: '0.8125rem', display: 'block', marginBottom: 4 }}>Price paid (AED)</label>
+            <input className="input" type="number" min={0} value={cost} placeholder="0"
+              onChange={e => setCost(e.target.value)} />
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 4 }}>
+              What this data cost — leave blank if it was free.
+            </div>
+          </div>
+
+          {isOwners && (
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+              <div style={{ fontSize: '0.8125rem', fontWeight: 600, marginBottom: 4 }}>Re-map columns / headers</div>
+              <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: 8 }}>
+                Columns can't be re-mapped in place — the original file isn't kept. Re-upload the corrected
+                file into this set: units are matched by location, and notes, calls and allocations are kept.
+              </p>
+              <button className="btn btn-sm" onClick={() => onRemap(dataset)}>
+                Re-map columns (re-upload)…
+              </button>
+            </div>
+          )}
+
+          {error && <div style={{ fontSize: '0.8125rem', color: 'var(--error)' }}>{error}</div>}
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" onClick={save} disabled={busy}>
+              {busy ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
