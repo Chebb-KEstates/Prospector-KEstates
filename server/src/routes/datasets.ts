@@ -3,17 +3,23 @@ import { Permission } from '../../../src/types/user';
 import { DataModule } from '../../../src/types/models';
 import { transaction } from '../db/pool';
 import { listDatasets, findDatasetById, deleteDataset, updateDatasetMeta } from '../repositories/datasetRepo';
+import { datasetsWithSource } from '../repositories/datasetSourceRepo';
 import { deleteByDataset, countByDataset } from '../repositories/propertyRepo';
 import { deleteLeadsByDataset, countLeadsByDataset } from '../repositories/leadRepo';
 import { writeAudit } from '../repositories/auditRepo';
-import { buildDatasetWorkbook } from '../services/exportService';
+import { buildDatasetWorkbook, buildOriginalWorkbook } from '../services/exportService';
+import { restageDatasetForRemap } from '../services/importService';
 import { serializeDataset } from '../http/serializers';
 import { notFound } from '../http/errors';
 
 export default async function datasetRoutes(app: FastifyInstance) {
   app.get('/api/datasets', {
     preHandler: [app.authenticate, app.requirePermission(Permission.manageData)],
-  }, async () => (await listDatasets()).map(serializeDataset));
+  }, async () => {
+    const list = await listDatasets();
+    const withSource = await datasetsWithSource(list.map(d => d.id));
+    return list.map((d) => { d.hasSource = withSource.has(d.id); return serializeDataset(d); });
+  });
 
   /**
    * Delete a data set and everything it brought in.
@@ -57,6 +63,50 @@ export default async function datasetRoutes(app: FastifyInstance) {
       .header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
       .header('Content-Disposition', `attachment; filename="${asciiName}"`)
       .send(buffer);
+  });
+
+  /**
+   * Download the ORIGINAL file (rebuilt from the retained parsed rows). Only
+   * available for data sets imported once file-keeping was on.
+   */
+  app.get('/api/datasets/:id/original', {
+    preHandler: [app.authenticate, app.requirePermission(Permission.manageData)],
+    schema: {
+      params: {
+        type: 'object', required: ['id'],
+        properties: { id: { type: 'string', maxLength: 64 } },
+      },
+    },
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { buffer, fileName } = await buildOriginalWorkbook(id);
+    await writeAudit({
+      actorId: req.currentUser!.id, action: 'export',
+      detail: `Downloaded original of data set "${id}"`,
+    });
+    const asciiName = fileName.replace(/[^\x20-\x7e]+/g, '_').replace(/["\\]/g, '');
+    return reply
+      .header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .header('Content-Disposition', `attachment; filename="${asciiName}"`)
+      .send(buffer);
+  });
+
+  /**
+   * Re-map an active data set's columns without re-uploading. Restages the
+   * retained rows and returns them in the wizard's staged-import shape, in update
+   * mode against this same set.
+   */
+  app.post('/api/datasets/:id/restage', {
+    preHandler: [app.authenticate, app.requirePermission(Permission.manageData)],
+    schema: {
+      params: {
+        type: 'object', required: ['id'],
+        properties: { id: { type: 'string', maxLength: 64 } },
+      },
+    },
+  }, async (req) => {
+    const { id } = req.params as { id: string };
+    return restageDatasetForRemap(id, req.currentUser!.id);
   });
 
   /**

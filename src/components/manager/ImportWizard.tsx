@@ -34,13 +34,16 @@ import { ApiError } from '../../data/apiClient';
  * nonce changes the wizard jumps to Update mode pre-targeted at that data set and
  * scrolls into view, so re-mapping headers is the same familiar upload flow.
  */
-export function ImportWizard({ remapRequest }: {
+export function ImportWizard({ remapRequest, restageRequest }: {
   remapRequest?: { datasetId: string; nonce: number };
+  /** In-app re-map: a set's retained rows, already staged, to map straight away. */
+  restageRequest?: { nonce: number; payload: api.RestagePayload };
 } = {}) {
   const { reloadDatasets, datasets } = useVault();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const appliedNonce = useRef<number | null>(null);
+  const appliedRestageNonce = useRef<number | null>(null);
 
   const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
   const [busy, setBusy] = useState(false);
@@ -86,6 +89,27 @@ export function ImportWizard({ remapRequest }: {
     setTargetDatasetId(remapRequest.datasetId);
     rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [remapRequest]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // In-app re-map: the set's stored rows arrive already staged, so drop straight
+  // to the mapping step in update mode — no file to pick.
+  useEffect(() => {
+    if (!restageRequest || restageRequest.nonce === appliedRestageNonce.current) return;
+    appliedRestageNonce.current = restageRequest.nonce;
+    const p = restageRequest.payload;
+    setError(null);
+    setDryRun(null);
+    setCost('');
+    setStaged(p);
+    setColumns(p.columns as ColumnSpec[]);
+    setHeaderRow(p.headerRow);
+    setType(p.type);
+    setCommunityLabel(p.community);
+    setActiveSheet(0);
+    setMode('update');
+    setTargetDatasetId(p.targetDatasetId);
+    setStep(1);
+    rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [restageRequest]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

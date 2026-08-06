@@ -338,6 +338,12 @@ export const datasets = {
   /** Download the data set as an .xlsx (current units + calls + feedback + events). */
   exportBlob: (id: string): Promise<Blob> => download(`/api/datasets/${id}/export`),
 
+  /** Download the ORIGINAL uploaded file (only if its source was retained). */
+  originalBlob: (id: string): Promise<Blob> => download(`/api/datasets/${id}/original`),
+
+  /** Restage a set's retained rows for an in-app re-map (no re-upload). */
+  restage: (id: string): Promise<RestagePayload> => post<RestagePayload>(`/api/datasets/${id}/restage`),
+
   remove: (id: string) =>
     del<{ deleted: true; removedUnits: number; removedLeads: number }>(`/api/datasets/${id}`),
 };
@@ -464,6 +470,13 @@ export interface StagedImport {
   columns: ColumnSpec[] | LeadColumnSpec[];
   detectedType?: DataSetType;
   preview: unknown[][];
+}
+
+/** A restaged set for in-app re-mapping — a staged import plus its update context. */
+export interface RestagePayload extends StagedImport {
+  targetDatasetId: string;
+  type: DataSetType;
+  community: string;
 }
 
 /** What an update changes across the matched units — for the review step. */

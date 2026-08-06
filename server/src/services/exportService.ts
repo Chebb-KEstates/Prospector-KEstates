@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import { pool, Row, fromDb } from '../db/pool';
 import { findDatasetById } from '../repositories/datasetRepo';
+import { getDatasetSource, loadSourceGrid } from '../repositories/datasetSourceRepo';
 import { notFound } from '../http/errors';
 import {
   CallOutcome, CallOutcomeLabel, PropertyState, PropertyStateLabel,
@@ -72,6 +73,24 @@ export async function buildDatasetWorkbook(datasetId: string): Promise<{ buffer:
 
   const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
   return { buffer, fileName: `${ds.name}.xlsx` };
+}
+
+/**
+ * Rebuild the ORIGINAL uploaded file from the retained parsed grid — the data as
+ * it came in (dates and all), not the enriched export. Only available for sets
+ * imported once file-keeping was on.
+ */
+export async function buildOriginalWorkbook(datasetId: string): Promise<{ buffer: Buffer; fileName: string }> {
+  const src = await getDatasetSource(datasetId);
+  if (!src) {
+    throw notFound('No stored file for this data set — it was imported before file-keeping was enabled. Re-import it to keep a copy.');
+  }
+  const grid = await loadSourceGrid(datasetId);
+  const ws = XLSX.utils.aoa_to_sheet(grid as unknown[][], { cellDates: true });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, (src.sheetName || 'Sheet1').slice(0, 31));
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  return { buffer, fileName: src.fileName || `${datasetId}.xlsx` };
 }
 
 async function appendOwnerSheets(wb: XLSX.WorkBook, datasetId: string): Promise<void> {

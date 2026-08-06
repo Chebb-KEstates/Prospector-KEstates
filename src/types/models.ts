@@ -518,6 +518,9 @@ export class DataSet {
     // never a second data set.
     public lastUpdatedAt?: string,
     public updateCount = 0,
+    // True when the parsed source was retained (imports from migration 009 on),
+    // so this set can be re-downloaded and re-mapped without a re-upload.
+    public hasSource = false,
   ) {}
 
   toJson(): Record<string, unknown> {
@@ -528,6 +531,7 @@ export class DataSet {
       cost: this.cost, totalUnits: this.totalUnits,
       callableUnits: this.callableUnits, updatedUnits: this.updatedUnits,
       lastUpdatedAt: this.lastUpdatedAt, updateCount: this.updateCount,
+      hasSource: this.hasSource,
     };
   }
 
@@ -543,6 +547,7 @@ export class DataSet {
       (j.updatedUnits as number) ?? 0,
       (j.lastUpdatedAt as string | undefined) ?? undefined,
       (j.updateCount as number) ?? 0,
+      (j.hasSource as boolean) ?? false,
     );
   }
 }

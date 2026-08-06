@@ -21,6 +21,8 @@ function ImportAndFiles() {
   const [editing, setEditing] = useState<DataSet | null>(null);
   // A "Re-map columns…" request handed to the owners wizard (nonce re-triggers).
   const [remapReq, setRemapReq] = useState<{ datasetId: string; nonce: number }>();
+  // An in-app re-map: the set's retained rows, already staged for the wizard.
+  const [restageReq, setRestageReq] = useState<{ nonce: number; payload: api.RestagePayload }>();
   const [exportingId, setExportingId] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   if (!user) return null;
@@ -48,6 +50,14 @@ function ImportAndFiles() {
     setRemapReq({ datasetId: d.id, nonce: Date.now() });
   };
 
+  // In-app re-map (retained source): the dialog restaged the rows; feed them to
+  // the wizard and close the dialog.
+  const onRestaged = (payload: api.RestagePayload) => {
+    setModule(DataModule.owners);
+    setRestageReq({ nonce: Date.now(), payload });
+    setEditing(null);
+  };
+
   return (
     <div>
       <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 20 }}>
@@ -60,7 +70,9 @@ function ImportAndFiles() {
         ))}
       </div>
 
-      {module === DataModule.owners ? <ImportWizard remapRequest={remapReq} /> : <LeadImportWizard />}
+      {module === DataModule.owners
+        ? <ImportWizard remapRequest={remapReq} restageRequest={restageReq} />
+        : <LeadImportWizard />}
 
       <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: '28px 0 12px' }}>Data sets</h3>
       {exportError && (
@@ -128,7 +140,7 @@ function ImportAndFiles() {
 
       {editing && (
         <EditDatasetDialog dataset={editing} onClose={() => setEditing(null)}
-          onSave={updateDataset} onRemap={startRemap} />
+          onSave={updateDataset} onRemap={startRemap} onRestaged={onRestaged} />
       )}
     </div>
   );
@@ -136,26 +148,51 @@ function ImportAndFiles() {
 
 /**
  * Edit a data set's own details — name, source, community and the price paid —
- * without re-importing. "Re-map columns" is a re-upload (the original file is not
- * kept), so it hands off to the wizard's Update mode instead of pretending to
- * remap in place.
+ * without re-importing. When the set's source was retained (imports from now on),
+ * its columns can be re-mapped in place and the original file re-downloaded;
+ * older sets fall back to re-mapping by re-upload.
  */
-function EditDatasetDialog({ dataset, onClose, onSave, onRemap }: {
+function EditDatasetDialog({ dataset, onClose, onSave, onRemap, onRestaged }: {
   dataset: DataSet;
   onClose: () => void;
   onSave: (id: string, patch: {
     name?: string; source?: string; communityLabel?: string; cost?: number | null;
   }) => Promise<DataSet>;
   onRemap: (d: DataSet) => void;
+  onRestaged: (payload: api.RestagePayload) => void;
 }) {
   const [name, setName] = useState(dataset.name);
   const [source, setSource] = useState(dataset.source);
   const [community, setCommunity] = useState(dataset.communityLabel);
   const [cost, setCost] = useState(dataset.cost != null ? String(dataset.cost) : '');
   const [busy, setBusy] = useState(false);
+  const [remapBusy, setRemapBusy] = useState(false);
+  const [dlBusy, setDlBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isOwners = dataset.module === DataModule.owners;
+
+  const remapInApp = async () => {
+    setRemapBusy(true); setError(null);
+    try {
+      onRestaged(await api.datasets.restage(dataset.id));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not open this data set for re-mapping.');
+      setRemapBusy(false);
+    }
+  };
+
+  const downloadOriginal = async () => {
+    setDlBusy(true); setError(null);
+    try {
+      const blob = await api.datasets.originalBlob(dataset.id);
+      saveBlob(dataset.fileName || `${dataset.name}.xlsx`, blob);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not download the original file.');
+    } finally {
+      setDlBusy(false);
+    }
+  };
 
   const save = async () => {
     if (!name.trim()) { setError('Give the data set a name.'); return; }
@@ -204,14 +241,33 @@ function EditDatasetDialog({ dataset, onClose, onSave, onRemap }: {
 
           {isOwners && (
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-              <div style={{ fontSize: '0.8125rem', fontWeight: 600, marginBottom: 4 }}>Re-map columns / headers</div>
-              <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: 8 }}>
-                Columns can't be re-mapped in place — the original file isn't kept. Re-upload the corrected
-                file into this set: units are matched by location, and notes, calls and allocations are kept.
-              </p>
-              <button className="btn btn-sm" onClick={() => onRemap(dataset)}>
-                Re-map columns (re-upload)…
-              </button>
+              <div style={{ fontSize: '0.8125rem', fontWeight: 600, marginBottom: 4 }}>Columns &amp; original file</div>
+              {dataset.hasSource ? (
+                <>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: 8 }}>
+                    The uploaded file is kept for this set. Re-map its columns without re-uploading, or
+                    download the original. Notes, calls and allocations are always kept.
+                  </p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button className="btn btn-sm" disabled={remapBusy} onClick={() => void remapInApp()}>
+                      {remapBusy ? 'Opening…' : 'Re-map columns…'}
+                    </button>
+                    <button className="btn btn-sm btn-ghost" disabled={dlBusy} onClick={() => void downloadOriginal()}>
+                      {dlBusy ? 'Downloading…' : 'Download original'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: 8 }}>
+                    No stored file for this set — it was imported before file-keeping. Re-map by re-uploading
+                    the corrected file (or re-import once to keep a copy for next time).
+                  </p>
+                  <button className="btn btn-sm" onClick={() => onRemap(dataset)}>
+                    Re-map columns (re-upload)…
+                  </button>
+                </>
+              )}
             </div>
           )}
 

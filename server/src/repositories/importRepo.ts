@@ -85,7 +85,7 @@ function serializeCells(cells: unknown[]): unknown[] {
   });
 }
 
-function deserializeCells(cells: unknown[]): unknown[] {
+export function deserializeCells(cells: unknown[]): unknown[] {
   return cells.map(c => {
     if (c != null && typeof c === 'object' && '__date' in (c as object)) {
       const d = new Date((c as { __date: string }).__date);

@@ -8,9 +8,12 @@ import { LeadPipeline, LeadColumnSpec, LeadField } from '../../../src/logic/lead
 import { ColumnSpec, ImportField, ParsedSheet } from '../../../src/logic/importModels';
 import { parseVendorFile } from '../../../src/logic/fileParser';
 import {
-  createStagingSession, findStagingSession, loadStagedSheet,
+  createStagingSession, findStagingSession, loadStagedSheet, loadStagedPreview,
   markCommitted, dropStagedRows, StagedSession,
 } from '../repositories/importRepo';
+import {
+  retainSource, getDatasetSource, restageFromSource,
+} from '../repositories/datasetSourceRepo';
 import { findByUnitKeys, saveProperties } from '../repositories/propertyRepo';
 import { findByLeadKeys, saveLeads } from '../repositories/leadRepo';
 import { insertDataset, findDatasetById, refreshDatasetStats } from '../repositories/datasetRepo';
@@ -360,11 +363,72 @@ export async function commitOwners(input: CommitOwnersInput): Promise<{
         detail: `Imported "${dataset.name}" — ${dataset.totalUnits} units`,
       }, cx);
     }
+    // Keep the parsed source with the data set (replacing any earlier one), so
+    // it can be re-downloaded and re-mapped without a re-upload. Copied from the
+    // scratchpad before it's dropped just below.
+    await retainSource({
+      datasetId, fileName: session.fileName, module: DataModule.owners,
+      sheetName: session.sheetNames[input.sheetIndex] ?? 'Sheet1',
+      headerRow: input.headerRow, columns: input.columns, type: result.type,
+      community: input.communityFallback, rowCount: rows.length,
+      sessionId: input.sessionId, sheetIndex: input.sheetIndex,
+    }, cx);
+
     await markCommitted(input.sessionId, cx);
     await dropStagedRows(input.sessionId, cx);
   });
 
   return { datasetId, imported: all.length };
+}
+
+export interface RestageResult {
+  sessionId: string;
+  fileName: string;
+  sheets: { name: string; rowCount: number }[];
+  headerRow: number;
+  columns: ColumnSpec[];
+  preview: unknown[][];
+  detectedType?: DataSetType;
+  /** Re-map always feeds back into the same set, in update mode. */
+  targetDatasetId: string;
+  type: DataSetType;
+  community: string;
+}
+
+/**
+ * Re-map, without a re-upload: copy a data set's retained source into a fresh
+ * staging session and hand it back in the same shape as a just-uploaded file.
+ * The wizard then drives its normal update flow against it — only nobody had to
+ * find the file again.
+ */
+export async function restageDatasetForRemap(datasetId: string, userId: string): Promise<RestageResult> {
+  const source = await getDatasetSource(datasetId);
+  if (!source) {
+    throw notFound('No stored file for this data set — it was imported before file-keeping was enabled. Re-import it to enable re-mapping.');
+  }
+  if (source.module !== DataModule.owners) {
+    throw badRequest('Only owner data sets can be re-mapped here.');
+  }
+
+  const newSessionId = newImportSessionId();
+  const expiresAt = new Date(Date.now() + env.importSessionTtlMinutes * 60_000);
+  await transaction(async (cx) => {
+    await restageFromSource({ datasetId, newSessionId, userId, source, expiresAt }, cx);
+  });
+
+  const preview = await loadStagedPreview(newSessionId, 0, 30);
+  return {
+    sessionId: newSessionId,
+    fileName: source.fileName,
+    sheets: [{ name: source.sheetName, rowCount: source.rowCount }],
+    headerRow: source.headerRow,
+    columns: source.columns,
+    preview,
+    detectedType: source.type,
+    targetDatasetId: datasetId,
+    type: source.type,
+    community: source.community,
+  };
 }
 
 // ── Leads ──────────────────────────────────────────────────────────────────
