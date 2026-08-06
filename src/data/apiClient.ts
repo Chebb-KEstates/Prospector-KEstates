@@ -187,6 +187,17 @@ export const patch = <T>(path: string, body?: unknown) =>
 export const del = <T>(path: string) =>
   api<T>(path, { method: 'DELETE' });
 
+/** Fetch a binary response (e.g. an .xlsx export) as a Blob, cookies included. */
+export async function download(path: string): Promise<Blob> {
+  const res = await fetch(buildUrl(path), { method: 'GET', credentials: 'include' });
+  if (res.status === 401) {
+    authLostHandlers.forEach(h => h());
+    throw new ApiError(401, 'unauthorized', 'Your session has expired.');
+  }
+  if (!res.ok) throw await toApiError(res);
+  return res.blob();
+}
+
 /**
  * Multipart upload — the import wizard. Deliberately not routed through `api()`:
  * the browser must set its own multipart boundary, so we mustn't send a

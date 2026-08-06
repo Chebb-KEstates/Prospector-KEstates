@@ -1,4 +1,4 @@
-import { get, post, patch, del, upload, tzOffsetMinutes, setCsrfToken } from './apiClient';
+import { get, post, patch, del, download, upload, tzOffsetMinutes, setCsrfToken } from './apiClient';
 import {
   Property, Lead, CallLog, BatchRequest, DataSet, AuditEntry, VaultSettings,
   PropertyState, CallOutcome, DataSetType, DataModule, RequestStatus,
@@ -334,6 +334,9 @@ export const datasets = {
   }): Promise<DataSet> {
     return DataSet.fromJson(await patch<Record<string, unknown>>(`/api/datasets/${id}`, input));
   },
+
+  /** Download the data set as an .xlsx (current units + calls + feedback + events). */
+  exportBlob: (id: string): Promise<Blob> => download(`/api/datasets/${id}/export`),
 
   remove: (id: string) =>
     del<{ deleted: true; removedUnits: number; removedLeads: number }>(`/api/datasets/${id}`),

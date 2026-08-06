@@ -6,6 +6,7 @@ import { listDatasets, findDatasetById, deleteDataset, updateDatasetMeta } from 
 import { deleteByDataset, countByDataset } from '../repositories/propertyRepo';
 import { deleteLeadsByDataset, countLeadsByDataset } from '../repositories/leadRepo';
 import { writeAudit } from '../repositories/auditRepo';
+import { buildDatasetWorkbook } from '../services/exportService';
 import { serializeDataset } from '../http/serializers';
 import { notFound } from '../http/errors';
 
@@ -25,6 +26,39 @@ export default async function datasetRoutes(app: FastifyInstance) {
    * the join resolves, and the delete happens in a transaction so the dataset
    * row and its data cannot come apart.
    */
+  /**
+   * Export a data set to Excel — its current units plus every call, feedback
+   * note and key event. Manager-only and audited; the workbook is built from
+   * stored data so it always reflects the latest state.
+   */
+  app.get('/api/datasets/:id/export', {
+    preHandler: [app.authenticate, app.requirePermission(Permission.manageData)],
+    schema: {
+      params: {
+        type: 'object', required: ['id'],
+        properties: { id: { type: 'string', maxLength: 64 } },
+      },
+    },
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const ds = await findDatasetById(id);
+    if (!ds) throw notFound('That data set no longer exists.');
+
+    const { buffer, fileName } = await buildDatasetWorkbook(id);
+    await writeAudit({
+      actorId: req.currentUser!.id,
+      action: 'export',
+      detail: `Exported data set "${ds.name}"`,
+    });
+
+    // Keep the filename header ASCII-safe; the client sets the real name too.
+    const asciiName = fileName.replace(/[^\x20-\x7e]+/g, '_').replace(/["\\]/g, '');
+    return reply
+      .header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .header('Content-Disposition', `attachment; filename="${asciiName}"`)
+      .send(buffer);
+  });
+
   /**
    * Edit a data set's own details — name, source, community label and the price
    * paid. This is the safe, in-place "edit" a manager reaches for to fix a typo

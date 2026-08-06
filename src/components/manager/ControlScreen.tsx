@@ -9,6 +9,8 @@ import { UsersScreen } from './UsersScreen';
 import { AuditScreen } from './AuditScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { ApiError } from '../../data/apiClient';
+import * as api from '../../data/api';
+import { saveBlob } from '../../logic/downloadFile';
 import { fmtDate, fmtInt, fmtAed } from '../../utils/format';
 
 /** Import + the data-set manager, combined (the Flutter "Import & Files" section). */
@@ -19,9 +21,24 @@ function ImportAndFiles() {
   const [editing, setEditing] = useState<DataSet | null>(null);
   // A "Re-map columns…" request handed to the owners wizard (nonce re-triggers).
   const [remapReq, setRemapReq] = useState<{ datasetId: string; nonce: number }>();
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   if (!user) return null;
 
   const canManage = user.can(Permission.manageData);
+
+  const exportSet = async (d: DataSet) => {
+    setExportingId(d.id);
+    setExportError(null);
+    try {
+      const blob = await api.datasets.exportBlob(d.id);
+      saveBlob(`${d.name}.xlsx`, blob);
+    } catch (e) {
+      setExportError(e instanceof ApiError ? e.message : `Could not export "${d.name}".`);
+    } finally {
+      setExportingId(null);
+    }
+  };
 
   // Re-mapping columns is a re-upload: send the wizard into Update mode for this
   // set. Owner-only — that's the module the update-import flow supports.
@@ -46,6 +63,11 @@ function ImportAndFiles() {
       {module === DataModule.owners ? <ImportWizard remapRequest={remapReq} /> : <LeadImportWizard />}
 
       <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: '28px 0 12px' }}>Data sets</h3>
+      {exportError && (
+        <div className="card" style={{ marginBottom: 12, borderColor: 'var(--error)', color: 'var(--error)', fontSize: '0.8125rem' }}>
+          {exportError}
+        </div>
+      )}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
           <table className="data-table">
@@ -82,6 +104,11 @@ function ImportAndFiles() {
                   <td>
                     {canManage && (
                       <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                        <button className="btn btn-sm btn-ghost" disabled={exportingId === d.id}
+                          onClick={() => void exportSet(d)}
+                          title="Download this data set (units, calls, feedback and history) as Excel">
+                          {exportingId === d.id ? 'Exporting…' : 'Export'}
+                        </button>
                         <button className="btn btn-sm btn-ghost" onClick={() => setEditing(d)}>
                           Edit
                         </button>

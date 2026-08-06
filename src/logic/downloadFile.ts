@@ -7,7 +7,11 @@
  * both sides. Anything touching `document` or `Blob` has to live here instead.
  */
 export function saveFile(fileName: string, bytes: Uint8Array): void {
-  const blob = new Blob([bytes as unknown as BlobPart]);
+  saveBlob(fileName, new Blob([bytes as unknown as BlobPart]));
+}
+
+/** Save an already-built Blob (e.g. a server-streamed .xlsx export). */
+export function saveBlob(fileName: string, blob: Blob): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
