@@ -4,6 +4,7 @@ import { findDatasetById } from '../repositories/datasetRepo';
 import { notFound } from '../http/errors';
 import {
   CallOutcome, CallOutcomeLabel, PropertyState, PropertyStateLabel,
+  DataModule,
 } from '../../../src/types/models';
 
 /**
@@ -65,6 +66,15 @@ export async function buildDatasetWorkbook(datasetId: string): Promise<{ buffer:
   const ds = await findDatasetById(datasetId);
   if (!ds) throw notFound('That data set no longer exists.');
 
+  const wb = XLSX.utils.book_new();
+  if (ds.module === DataModule.leads) await appendLeadSheets(wb, datasetId);
+  else await appendOwnerSheets(wb, datasetId);
+
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  return { buffer, fileName: `${ds.name}.xlsx` };
+}
+
+async function appendOwnerSheets(wb: XLSX.WorkBook, datasetId: string): Promise<void> {
   const [units] = await pool.query<Row[]>(
     `SELECT id, community, cluster, building, unit_number, plot_number, property_type,
             beds, size_sqft, plot_sqft, last_transaction_date, last_transaction_value,
@@ -153,11 +163,57 @@ export async function buildDatasetWorkbook(datasetId: string): Promise<{ buffer:
     e.detail ?? '', e.actor_name ?? '', dateTime(e.at),
   ]);
 
-  const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([unitHeaders, ...unitRows]), 'Units');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([callHeaders, ...callRows]), 'Calls');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([historyHeaders, ...historyRows]), 'History');
+}
 
-  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
-  return { buffer, fileName: `${ds.name}.xlsx` };
+/** Buyer-lead data sets live in their own table, so they get their own sheets. */
+async function appendLeadSheets(wb: XLSX.WorkBook, datasetId: string): Promise<void> {
+  const [leads] = await pool.query<Row[]>(
+    `SELECT id, name, phone, email, project, source, enquiry_date, state,
+            last_outcome, last_called_at, call_attempts
+       FROM leads WHERE dataset_id = ? ORDER BY created_at`,
+    [datasetId],
+  );
+
+  const labelById = new Map<string, string>();
+  const leadHeaders = ['Name', 'Phone', 'Email', 'Project', 'Source', 'Enquiry date',
+    'State', 'Last outcome', 'Last called', 'Calls'];
+  const leadRows = leads.map((l) => {
+    const label = String(l.name || l.phone || l.id);
+    labelById.set(l.id as string, label);
+    const outcome = l.last_outcome as CallOutcome | null;
+    const state = l.state as PropertyState;
+    return [
+      l.name ?? '', l.phone ?? '', l.email ?? '', l.project ?? '', l.source ?? '',
+      dateTime(l.enquiry_date), state ? (PropertyStateLabel[state] ?? state) : '',
+      outcome ? (CallOutcomeLabel[outcome] ?? outcome) : '',
+      dateTime(l.last_called_at), num(l.call_attempts),
+    ];
+  });
+
+  const [calls] = leads.length
+    ? await pool.query<Row[]>(
+      `SELECT cl.lead_id, c.outcome, c.note, c.at, c.follow_up_at, u.name AS broker_name
+         FROM calls c
+         JOIN call_leads cl ON cl.call_id = c.id
+         LEFT JOIN users u ON u.id = c.broker_id
+        WHERE cl.lead_id IN (SELECT id FROM leads WHERE dataset_id = ?)
+        ORDER BY c.at DESC`,
+      [datasetId],
+    )
+    : [[]] as unknown as [Row[]];
+  const callHeaders = ['Lead', 'Outcome', 'Feedback', 'Broker', 'When', 'Follow-up'];
+  const callRows = calls.map((c) => {
+    const outcome = c.outcome as CallOutcome;
+    return [
+      labelById.get(c.lead_id as string) ?? '',
+      outcome ? (CallOutcomeLabel[outcome] ?? outcome) : '', c.note ?? '',
+      c.broker_name ?? '', dateTime(c.at), dateTime(c.follow_up_at),
+    ];
+  });
+
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([leadHeaders, ...leadRows]), 'Leads');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([callHeaders, ...callRows]), 'Calls');
 }
