@@ -71,6 +71,18 @@ export const auth = {
     return r;
   },
 
+  /** Local-testing switch-user config: whether it's on, and which users to offer. */
+  async config(): Promise<{ devLogin: boolean; users: { id: string; name: string; email: string; role: string }[] }> {
+    return get('/api/auth/config');
+  },
+
+  /** Passwordless sign-in — only works when the server has dev-login enabled (local). */
+  async devLogin(userId: string): Promise<{ user: AppUser; mustChangePassword: boolean }> {
+    const r = await post<SessionResponse>('/api/auth/dev-login', { userId });
+    setCsrfToken(r.csrfToken);
+    return { user: toUser(r.user!), mustChangePassword: r.mustChangePassword };
+  },
+
   async changePassword(currentPassword: string, newPassword: string): Promise<{ ok: true }> {
     const r = await post<{ ok: true; csrfToken: string }>(
       '/api/auth/change-password', { currentPassword, newPassword },

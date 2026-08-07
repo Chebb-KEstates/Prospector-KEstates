@@ -28,6 +28,8 @@ interface AuthContextValue {
   loading: boolean;
   mustChangePassword: boolean;
   signIn: (email: string, password: string) => Promise<string | null>;
+  /** Local-testing passwordless sign-in (no-op path on the live site). */
+  devSignIn: (userId: string) => Promise<string | null>;
   signOut: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<string | null>;
   /** Re-read the session — call after changing your own profile. */
@@ -83,6 +85,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const devSignIn = useCallback(async (userId: string): Promise<string | null> => {
+    try {
+      const r = await auth.devLogin(userId);
+      setUser(r.user);
+      setMustChange(r.mustChangePassword);
+      return null;
+    } catch (err) {
+      if (err instanceof ApiError) return err.message;
+      return 'Cannot reach the server. Check your connection.';
+    }
+  }, []);
+
   const signOut = useCallback(async () => {
     try {
       await auth.logout();
@@ -110,7 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      user, loading, mustChangePassword, signIn, signOut, changePassword, refresh,
+      user, loading, mustChangePassword, signIn, devSignIn, signOut, changePassword, refresh,
     }}>
       {children}
     </AuthContext.Provider>

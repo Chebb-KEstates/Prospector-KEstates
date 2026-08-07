@@ -35,6 +35,13 @@ function bool(name: string, fallback: boolean): boolean {
 export const env = {
   nodeEnv: optional('NODE_ENV', 'development'),
   get isProd(): boolean { return this.nodeEnv === 'production'; },
+  /**
+   * Passwordless "switch user" for LOCAL TESTING ONLY. Fail-closed on purpose:
+   * needs the explicit PROSPECTOR_DEV_LOGIN flag AND a non-production NODE_ENV.
+   * The live site sets neither (and the flag is in no committed env), so login
+   * there is always real — even though it runs a dev build.
+   */
+  get devLogin(): boolean { return !this.isProd && bool('PROSPECTOR_DEV_LOGIN', false); },
   port: int('PORT', 4000),
   corsOrigin: optional('CORS_ORIGIN', 'http://localhost:3000'),
 

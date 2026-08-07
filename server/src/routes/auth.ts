@@ -7,8 +7,10 @@ import {
   createSession, revokeSession, revokeAllFor,
   SESSION_COOKIE, CSRF_COOKIE, sessionCookieOptions, csrfCookieOptions,
 } from '../auth/sessions';
+import { findUserById, listUsers } from '../repositories/userRepo';
 import { writeAudit } from '../repositories/auditRepo';
-import { unauthorized, badRequest, forbidden } from '../http/errors';
+import { env } from '../config/env';
+import { unauthorized, badRequest, forbidden, notFound } from '../http/errors';
 import { publicUser } from '../http/serializers';
 
 /**
@@ -86,6 +88,48 @@ export default async function authRoutes(app: FastifyInstance) {
       mustChangePassword: found.mustChangePassword,
       csrfToken: session.csrfToken,
     };
+  });
+
+  /**
+   * Public login config. Tells the login screen whether the passwordless
+   * "switch user" flow is available (local testing only) and, if so, the users
+   * to offer. On the live site `env.devLogin` is false → `{ devLogin: false }`
+   * and no user list, so the real password form is the only way in.
+   */
+  app.get('/api/auth/config', async () => {
+    if (!env.devLogin) return { devLogin: false, users: [] as unknown[] };
+    const users = (await listUsers())
+      .filter(u => u.active)
+      .map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role }));
+    return { devLogin: true, users };
+  });
+
+  /**
+   * Passwordless sign-in for LOCAL TESTING ONLY. Guarded by `env.devLogin`
+   * (fail-closed — see config/env.ts); returns 404 on the live site so it isn't
+   * even discoverable there. Lets the director hop between users while testing.
+   */
+  app.post('/api/auth/dev-login', {
+    schema: {
+      body: {
+        type: 'object', required: ['userId'], additionalProperties: false,
+        properties: { userId: { type: 'string', maxLength: 64 } },
+      },
+    },
+  }, async (req, reply) => {
+    if (!env.devLogin) throw notFound('Not found.');
+    const { userId } = req.body as { userId: string };
+    const user = await findUserById(userId);
+    if (!user || !user.active) throw notFound('No such user.');
+
+    const session = await createSession(user.id, {
+      userAgent: req.headers['user-agent'],
+      ip: req.ip,
+    });
+    reply
+      .setCookie(SESSION_COOKIE, session.token, sessionCookieOptions(session.expiresAt))
+      .setCookie(CSRF_COOKIE, session.csrfToken, csrfCookieOptions(session.expiresAt));
+    return { user: publicUser(user), mustChangePassword: false, csrfToken: session.csrfToken };
   });
 
   /** Who am I? The frontend calls this on boot to restore a session. */
