@@ -42,12 +42,13 @@ function toUser(r: Row): AppUser {
     perms,
     r.view_cap_override != null ? Number(r.view_cap_override) : undefined,
     fromDb(r.created_at),
+    !!r.ip_locked,
   );
 }
 
 const SELECT = `
   SELECT id, org_id, name, email, role, active, team, permissions,
-         view_cap_override, created_at
+         view_cap_override, created_at, ip_locked
   FROM users`;
 
 export async function findUserById(id: string): Promise<AppUser | null> {
@@ -66,7 +67,7 @@ export async function findUserByEmail(email: string): Promise<AppUser | null> {
 export async function findAuthByEmail(email: string): Promise<UserAuthRow | null> {
   const [rows] = await pool.query<Row[]>(
     `SELECT id, org_id, name, email, role, active, team, permissions,
-            view_cap_override, created_at, password_hash, must_change_password
+            view_cap_override, created_at, ip_locked, password_hash, must_change_password
      FROM users WHERE email = ? LIMIT 1`,
     [email.trim().toLowerCase()],
   );
@@ -81,7 +82,7 @@ export async function findAuthByEmail(email: string): Promise<UserAuthRow | null
 export async function findAuthById(id: string): Promise<UserAuthRow | null> {
   const [rows] = await pool.query<Row[]>(
     `SELECT id, org_id, name, email, role, active, team, permissions,
-            view_cap_override, created_at, password_hash, must_change_password
+            view_cap_override, created_at, ip_locked, password_hash, must_change_password
      FROM users WHERE id = ? LIMIT 1`,
     [id],
   );
@@ -131,14 +132,15 @@ export async function insertUser(input: InsertUserInput, cx?: PoolConnection): P
   await db.query(
     `INSERT INTO users
        (id, org_id, name, email, password_hash, must_change_password, role, active,
-        team, permissions, view_cap_override, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        team, permissions, view_cap_override, ip_locked, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       u.id, kOrgId, u.name, u.email.trim().toLowerCase(),
       input.passwordHash, input.mustChangePassword ? 1 : 0,
       u.role, u.active ? 1 : 0, u.team,
       serializePermissions(u),
       u.viewCapOverride ?? null,
+      u.ipLocked ? 1 : 0,
       toDb(u.createdAt) ?? now,
       now,
     ],
@@ -150,12 +152,13 @@ export async function updateUser(u: AppUser, cx?: PoolConnection): Promise<void>
   const db = cx ?? pool;
   await db.query(
     `UPDATE users SET name = ?, email = ?, role = ?, active = ?, team = ?,
-            permissions = ?, view_cap_override = ?, updated_at = ?
+            permissions = ?, view_cap_override = ?, ip_locked = ?, updated_at = ?
      WHERE id = ?`,
     [
       u.name, u.email.trim().toLowerCase(), u.role, u.active ? 1 : 0, u.team,
       serializePermissions(u),
       u.viewCapOverride ?? null,
+      u.ipLocked ? 1 : 0,
       new Date(),
       u.id,
     ],

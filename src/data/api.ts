@@ -102,14 +102,14 @@ export const users = {
 
   async create(input: {
     name: string; email: string; role: UserRole; team?: string; active?: boolean;
-    permissions?: Permission[]; viewCapOverride?: number; initialPassword: string;
+    permissions?: Permission[]; viewCapOverride?: number; ipLocked?: boolean; initialPassword: string;
   }): Promise<AppUser> {
     return toUser(await post('/api/users', input));
   },
 
   async update(id: string, input: {
     name?: string; email?: string; role?: UserRole; team?: string; active?: boolean;
-    permissions?: Permission[]; viewCapOverride?: number | null;
+    permissions?: Permission[]; viewCapOverride?: number | null; ipLocked?: boolean;
   }): Promise<AppUser> {
     return toUser(await patch(`/api/users/${id}`, input));
   },

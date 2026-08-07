@@ -68,9 +68,9 @@ async function authPlugin(app: FastifyInstance) {
     // (an empty office IP can never strand the team). `req.ip` is the real client
     // when trustProxy is set (production) — see app.ts. Logout stays allowed so
     // the session can be ended cleanly.
-    if (req.currentUser) {
+    if (req.currentUser?.ipLocked) {
       const lock = await getIpLock();
-      if (lock.wifiLockEnabled && lock.officeIp.trim().length > 0 && !ipAllowed(req.ip, lock.officeIp)) {
+      if (lock.officeIp.trim().length > 0 && !ipAllowed(req.ip, lock.officeIp)) {
         const path = req.url.split('?')[0];
         if (path !== '/api/auth/logout') {
           throw unauthorized('Access is restricted to the office network — you have been signed out.');

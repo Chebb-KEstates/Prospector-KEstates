@@ -89,17 +89,7 @@ async function revealGuard(
   const decision = await transaction(async (cx) => {
     const used = await countViewsBetween(input.user.id, from, to, cx);
 
-    // Managers are exempt — same rule as the client's recordView.
-    const capped = input.enforceCap && !input.user.isManager;
-    if (capped && used >= cap) {
-      await writeAudit({
-        actorId: input.user.id,
-        action: 'cap-block',
-        detail: `Daily view cap (${cap}) hit — ${input.what}`,
-      }, cx);
-      return { blocked: true as const, used };
-    }
-
+    // Daily view cap removed — every view/reveal is allowed and simply audited.
     await writeAudit({
       actorId: input.user.id,
       action: 'view',
@@ -109,8 +99,6 @@ async function revealGuard(
 
     return { blocked: false as const, used };
   });
-
-  if (decision.blocked) throw viewCapReached(cap);
 
   // Fall back to the primary so callers always get a non-empty list.
   const list = phones.length > 0

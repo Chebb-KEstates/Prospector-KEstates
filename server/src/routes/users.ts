@@ -54,6 +54,7 @@ export default async function userRoutes(app: FastifyInstance) {
             type: 'array', items: { type: 'string', enum: Object.values(Permission) },
           },
           viewCapOverride: { type: 'integer', minimum: 1, maximum: 10000 },
+          ipLocked: { type: 'boolean' },
           initialPassword: { type: 'string', minLength: 1, maxLength: 200 },
         },
       },
@@ -62,7 +63,7 @@ export default async function userRoutes(app: FastifyInstance) {
     const body = req.body as {
       name: string; email: string; role: UserRole; team?: string;
       active?: boolean; permissions?: Permission[]; viewCapOverride?: number;
-      initialPassword: string;
+      ipLocked?: boolean; initialPassword: string;
     };
 
     const email = body.email.trim().toLowerCase();
@@ -81,6 +82,7 @@ export default async function userRoutes(app: FastifyInstance) {
       body.permissions && body.permissions.length > 0 ? new Set(body.permissions) : undefined,
       body.viewCapOverride,
       new Date().toISOString(),
+      body.ipLocked ?? false,
     );
 
     await insertUser({
@@ -115,6 +117,7 @@ export default async function userRoutes(app: FastifyInstance) {
             type: 'array', items: { type: 'string', enum: Object.values(Permission) },
           },
           viewCapOverride: { type: ['integer', 'null'], minimum: 1, maximum: 10000 },
+          ipLocked: { type: 'boolean' },
         },
       },
     },
@@ -123,6 +126,7 @@ export default async function userRoutes(app: FastifyInstance) {
     const body = req.body as {
       name?: string; email?: string; role?: UserRole; team?: string;
       active?: boolean; permissions?: Permission[]; viewCapOverride?: number | null;
+      ipLocked?: boolean;
     };
     const me = req.currentUser!;
 
@@ -162,6 +166,7 @@ export default async function userRoutes(app: FastifyInstance) {
         ? (body.permissions.length > 0 ? new Set(body.permissions) : null)
         : undefined,
       viewCapOverride: body.viewCapOverride === null ? null : body.viewCapOverride,
+      ipLocked: body.ipLocked,
     });
 
     await updateUser(updated);

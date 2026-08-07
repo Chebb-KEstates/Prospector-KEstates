@@ -117,45 +117,34 @@ export function SettingsScreen() {
         </div>
 
         <div className="card">
-          <h3 style={{ fontWeight: 600, marginBottom: 16 }}>Protection</h3>
+          <h3 style={{ fontWeight: 600, marginBottom: 16 }}>Office-network lock</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {field('Daily view cap', 'dailyViewCap', 'number', 'Owner-detail opens per broker per day')}
-
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+              Set the office IP here, then turn the lock ON per broker under <strong>Users</strong>. A locked user is
+              signed out the moment they use the app from outside this address.
+            </div>
             <div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.875rem', cursor: 'pointer' }}>
-                <input type="checkbox" checked={form.wifiLockEnabled}
-                  onChange={e => setForm(p => ({ ...p, wifiLockEnabled: e.target.checked }))} />
-                Office-network lock (the app only works from the office IP)
+              <label style={{ fontSize: '0.8125rem', display: 'block', marginBottom: 4, fontWeight: 500 }}>
+                Office IP / network
               </label>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 4, paddingLeft: 24 }}>
-                Checked on every request: if a signed-in user's IP leaves the office, their next action signs them out.
+              <input className="input" type="text" value={form.officeIp}
+                onChange={e => setForm(p => ({ ...p, officeIp: e.target.value }))}
+                placeholder="e.g. 203.0.113.10 or 203.0.113.0/24" style={{ maxWidth: 320 }} />
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 6 }}>
+                {myIp
+                  ? <>Your current IP is <strong>{myIp}</strong>.{' '}
+                      <button type="button" className="btn btn-sm btn-ghost" style={{ padding: '1px 8px' }}
+                        onClick={() => setForm(p => ({ ...p, officeIp: p.officeIp.trim() ? `${p.officeIp.trim()}, ${myIp}` : myIp }))}>
+                        Add my IP
+                      </button></>
+                  : 'Enter your office’s public IP.'}
+                <br />Accepts several, comma-separated, and IPv4 ranges (e.g. <code>203.0.113.0/24</code>).
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--warning)', marginTop: 6 }}>
+                ⚠ Use the office’s <em>public</em> IP, not a 192.168.x internal one. If it's wrong, locked users can't get
+                in (recover by clearing it in the database). Empty = no one is locked, whatever their per-user setting.
               </div>
             </div>
-
-            {form.wifiLockEnabled && (
-              <div>
-                <label style={{ fontSize: '0.8125rem', display: 'block', marginBottom: 4, fontWeight: 500 }}>
-                  Office IP / network
-                </label>
-                <input className="input" type="text" value={form.officeIp}
-                  onChange={e => setForm(p => ({ ...p, officeIp: e.target.value }))}
-                  placeholder="e.g. 203.0.113.10 or 203.0.113.0/24" style={{ maxWidth: 320 }} />
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 6 }}>
-                  {myIp
-                    ? <>Your current IP is <strong>{myIp}</strong>.{' '}
-                        <button type="button" className="btn btn-sm btn-ghost" style={{ padding: '1px 8px' }}
-                          onClick={() => setForm(p => ({ ...p, officeIp: p.officeIp.trim() ? `${p.officeIp.trim()}, ${myIp}` : myIp }))}>
-                          Add my IP
-                        </button></>
-                    : 'Enter your office’s public IP.'}
-                  <br />Accepts several, comma-separated, and IPv4 ranges (e.g. <code>203.0.113.0/24</code>).
-                </div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--warning)', marginTop: 6 }}>
-                  ⚠ Set this to the office’s <em>public</em> IP, not a 192.168.x internal one. A wrong value locks everyone
-                  out (recover by clearing it in the database). Empty = lock stays off.
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>

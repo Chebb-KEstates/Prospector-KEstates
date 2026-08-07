@@ -82,13 +82,13 @@ export function UsersScreen() {
   const [form, setForm] = useState({
     name: '', email: '', role: UserRole.broker as UserRole,
     team: '', active: true, permissions: new Set<Permission>(),
-    viewCapOverride: '', initialPassword: '',
+    ipLocked: false, initialPassword: '',
   });
 
   const resetForm = () => setForm({
     name: '', email: '', role: UserRole.broker,
     team: '', active: true, permissions: new Set<Permission>(),
-    viewCapOverride: '', initialPassword: '',
+    ipLocked: false, initialPassword: '',
   });
 
   const openEdit = (u: AppUser) => {
@@ -98,7 +98,7 @@ export function UsersScreen() {
       name: u.name, email: u.email, role: u.role,
       team: u.team, active: u.active,
       permissions: new Set(u.permissions),
-      viewCapOverride: u.viewCapOverride?.toString() ?? '',
+      ipLocked: u.ipLocked,
       initialPassword: '',
     });
   };
@@ -118,7 +118,7 @@ export function UsersScreen() {
         team: form.team.trim(),
         active: form.active,
         permissions: form.permissions.size > 0 ? Array.from(form.permissions) : undefined,
-        viewCapOverride: form.viewCapOverride ? parseInt(form.viewCapOverride, 10) : null,
+        ipLocked: form.ipLocked,
         initialPassword: editing ? undefined : form.initialPassword,
       });
       close();
@@ -223,9 +223,14 @@ export function UsersScreen() {
                 <input className="input" value={form.team} onChange={e => setForm(p => ({ ...p, team: e.target.value }))} />
               </div>
               <div>
-                <label style={{ fontSize: '0.8125rem', display: 'block', marginBottom: 4 }}>View cap override (optional)</label>
-                <input className="input" type="number" value={form.viewCapOverride}
-                  onChange={e => setForm(p => ({ ...p, viewCapOverride: e.target.value }))} />
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={form.ipLocked}
+                    onChange={e => setForm(p => ({ ...p, ipLocked: e.target.checked }))} />
+                  Office-network lock (only usable from the office IP)
+                </label>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 4 }}>
+                  When on, this user is signed out if they use the app from outside the office IP (set under Settings).
+                </div>
               </div>
 
               <div>
@@ -265,7 +270,7 @@ export function UsersScreen() {
               <th>Role</th>
               <th>Team</th>
               <th>Active</th>
-              <th>View cap</th>
+              <th>Office lock</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -284,7 +289,7 @@ export function UsersScreen() {
                     {u.active ? 'Active' : 'Deactivated'}
                   </span>
                 </td>
-                <td>{u.viewCapOverride ?? 'Default'}</td>
+                <td>{u.ipLocked ? 'On' : '—'}</td>
                 <td>
                   <div style={{ display: 'flex', gap: 4 }}>
                     <button className="btn btn-sm btn-ghost" onClick={() => openEdit(u)}>Edit</button>

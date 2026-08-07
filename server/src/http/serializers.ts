@@ -26,6 +26,7 @@ export function publicUser(u: AppUser) {
     team: u.team,
     permissions: Array.from(u.permissions),
     viewCapOverride: u.viewCapOverride,
+    ipLocked: u.ipLocked,
     createdAt: u.createdAt,
   };
 }

@@ -62,7 +62,7 @@ interface VaultContextValue {
   saveUser: (input: {
     id?: string; name: string; email: string; role: UserRole; team?: string;
     active?: boolean; permissions?: Permission[];
-    viewCapOverride?: number | null; initialPassword?: string;
+    viewCapOverride?: number | null; ipLocked?: boolean; initialPassword?: string;
   }) => Promise<AppUser>;
   setUserActive: (user: AppUser, active: boolean) => Promise<void>;
   resetUserPassword: (userId: string, newPassword: string) => Promise<void>;
@@ -207,18 +207,20 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
   const saveUser = useCallback(async (input: {
     id?: string; name: string; email: string; role: UserRole; team?: string;
     active?: boolean; permissions?: Permission[];
-    viewCapOverride?: number | null; initialPassword?: string;
+    viewCapOverride?: number | null; ipLocked?: boolean; initialPassword?: string;
   }): Promise<AppUser> => {
     const saved = input.id
       ? await api.users.update(input.id, {
           name: input.name, email: input.email, role: input.role,
           team: input.team, active: input.active,
           permissions: input.permissions, viewCapOverride: input.viewCapOverride,
+          ipLocked: input.ipLocked,
         })
       : await api.users.create({
           name: input.name, email: input.email, role: input.role,
           team: input.team, active: input.active, permissions: input.permissions,
           viewCapOverride: input.viewCapOverride ?? undefined,
+          ipLocked: input.ipLocked,
           initialPassword: input.initialPassword!,
         });
 

@@ -56,6 +56,8 @@ export class AppUser {
     permissions?: Set<Permission>,
     public viewCapOverride?: number,
     public createdAt?: string,
+    /** When true, this user can only use the app from the office IP (see settings). */
+    public ipLocked = false,
   ) {
     this._permissions = permissions;
   }
@@ -73,6 +75,7 @@ export class AppUser {
   copyWith(fields: {
     name?: string; email?: string; role?: UserRole; active?: boolean;
     team?: string; permissions?: Set<Permission> | null; viewCapOverride?: number | null;
+    ipLocked?: boolean;
   }): AppUser {
     return new AppUser(
       this.id,
@@ -84,6 +87,7 @@ export class AppUser {
       fields.permissions !== undefined ? (fields.permissions ?? undefined) : this._permissions,
       fields.viewCapOverride !== undefined ? (fields.viewCapOverride ?? undefined) : this.viewCapOverride,
       this.createdAt,
+      fields.ipLocked ?? this.ipLocked,
     );
   }
 
@@ -94,6 +98,7 @@ export class AppUser {
       permissions: Array.from(this.permissions).map(p => p),
       viewCapOverride: this.viewCapOverride,
       createdAt: this.createdAt,
+      ipLocked: this.ipLocked,
     };
   }
 
@@ -110,6 +115,7 @@ export class AppUser {
       perms ? new Set(perms) : undefined,
       j.viewCapOverride != null ? (j.viewCapOverride as number) : undefined,
       j.createdAt as string | undefined,
+      (j.ipLocked as boolean) ?? false,
     );
   }
 }
