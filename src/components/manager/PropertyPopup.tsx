@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { CallStop, CallUnit, OwnerNumbers } from '../../state/CallSessionContext';
 import { CallOutcome, PropertyState } from '../../types/models';
@@ -124,6 +124,10 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   // "Next property": next in the table order, or a random one when ticked.
   const [randomize, setRandomize] = useState(() => localStorage.getItem('prospector.popup.randomizeNext') === '1');
 
+  // A running tally of THIS popup session — like the dialer's progress bar.
+  // Survives Next/Previous (the component isn't remounted on navigation).
+  const [session, setSession] = useState({ made: 0, answered: 0, noAnswer: 0, interested: 0 });
+
   // History journal (for the focused unit)
   const [events, setEvents] = useState<PropertyEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
@@ -200,8 +204,12 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     && !saving;
 
   const locked = revealed && !savedSinceReveal;
-  const seqNextId = (() => { const i = ids.indexOf(propertyId); return i >= 0 ? ids[i + 1] : undefined; })();
-  const hasNext = randomize ? ids.length > 1 : !!seqNextId;
+  const listIndex = ids.indexOf(propertyId);
+  const total = ids.length;
+  const seqNextId = listIndex >= 0 ? ids[listIndex + 1] : undefined;
+  const prevId = listIndex > 0 ? ids[listIndex - 1] : undefined;
+  const hasNext = randomize ? total > 1 : !!seqNextId;
+  const hasPrev = !!prevId;
   const pickNext = () => {
     if (!randomize) return seqNextId;
     const pool = ids.filter(id => id !== propertyId);
@@ -217,7 +225,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   const sale = detail?.sale ?? null;
   const saleLine = sale ? [sale.value, sale.date, sale.type].filter(Boolean).join(' · ') : '';
   const rental = detail?.rental ?? { status: '', tone: 'neutral' as const, endsInDays: null as number | null };
-  const rentalExtra = [rental.amount, [rental.start, rental.end].filter(Boolean).join(' → ')].filter(Boolean).join(' · ');
+  const rentalPeriod = [rental.start, rental.end].filter(Boolean).join(' → ');
   const rentalWarn = rental.status === 'Rented' && rental.endsInDays != null && rental.endsInDays >= 0 && rental.endsInDays <= 100;
 
   // Persistent notes save themselves — no button. Flush before leaving the unit.
@@ -238,6 +246,27 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     const n = pickNext();
     if (n && onNavigate) onNavigate(n);
   };
+  const tryPrev = async () => {
+    if (locked || !prevId) return;
+    await flushNotes();
+    if (onNavigate) onNavigate(prevId);
+  };
+
+  // ← / → flip between property tabs (like the dialer). A ref keeps the handler
+  // pointed at the latest closures without re-binding the listener each render.
+  const navRef = useRef({ next: tryNext, prev: tryPrev, locked });
+  navRef.current = { next: tryNext, prev: tryPrev, locked };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (navRef.current.locked) return;
+      if (e.key === 'ArrowRight') { e.preventDefault(); void navRef.current.next(); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); void navRef.current.prev(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const toggleRandomize = (on: boolean) => {
     setRandomize(on);
     localStorage.setItem('prospector.popup.randomizeNext', on ? '1' : '0');
@@ -273,6 +302,14 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
       else await stop.log(primary!, note, primaryIsCallback ? fu : undefined, activeOwnerName);
       setSavedSinceReveal(true);
       setJustSaved(true);
+      // Feed the popup-session progress bar.
+      setSession(s => ({
+        made: s.made + 1,
+        answered: s.answered + (connection === 'answered' ? 1 : 0),
+        noAnswer: s.noAnswer + (connection === 'noAnswer' || connection === 'unreachable' ? 1 : 0),
+        interested: s.interested + (selectedResults.some(r =>
+          r.outcome === CallOutcome.interestedSell || r.outcome === CallOutcome.interestedRent) ? 1 : 0),
+      }));
       try {
         const p2 = await api.properties.byId(focusedId);
         setRefresh(r => ({ ...r, [focusedId]: { state: p2.state, expiresAt: p2.assignmentExpiresAt } }));
@@ -293,7 +330,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   return (
     <div className="modal-overlay" onClick={() => void tryClose()}>
       <div className="modal-content" onClick={e => e.stopPropagation()}
-        style={{ width: '94vw', maxWidth: 1240, maxHeight: '90vh', display: 'flex', flexDirection: 'column', gap: 14, padding: 20 }}>
+        style={{ width: '94vw', maxWidth: 1240, height: '90vh', display: 'flex', flexDirection: 'column', gap: 14, padding: 20 }}>
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>Loading…</div>
         ) : !stop ? (
@@ -315,6 +352,26 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
               <CountdownBadge deadline={curExpires} soonHours={vault.settings.expiringSoonHours} />
               <button className="btn btn-icon btn-sm" onClick={() => void tryClose()} aria-label="Close"><Icon name="x" size={16} /></button>
             </div>
+
+            {/* Progress bar for this run through the list — like the dialer's. */}
+            {total > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexShrink: 0, flexWrap: 'wrap', padding: '8px 14px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    Property {listIndex + 1} of {total} · {Math.max(0, total - session.made)} pending
+                  </div>
+                  <div style={{ marginTop: 5, height: 5, borderRadius: 999, background: 'var(--surface)', overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.min(100, (session.made / total) * 100)}%`, height: '100%', background: 'var(--gold)', transition: 'width .3s' }} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                  <ProgressStat n={session.made} label="made" />
+                  <ProgressStat n={session.answered} label="answered" color="var(--info)" />
+                  <ProgressStat n={session.noAnswer} label="no answer" color="var(--warning)" />
+                  <ProgressStat n={session.made > 0 ? Math.round((session.answered / session.made) * 100) : 0} suffix="%" label="answer rate" />
+                </div>
+              </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))', gap: 14, flex: 1, minHeight: 0 }}>
               {/* ── LEFT: the record + persistent notes ─────────────────────── */}
@@ -368,13 +425,17 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                     <div style={rentalWarn
                       ? { border: '1px solid var(--error)', borderRadius: 8, padding: '7px 9px', boxShadow: '0 0 0 3px color-mix(in srgb, var(--error) 18%, transparent)' }
                       : undefined}>
-                      <div style={{ display: 'flex', gap: 12, alignItems: 'baseline' }}>
-                        <span style={{ ...boxTitle, width: 56, flexShrink: 0 }}>Rental</span>
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                        <span style={{ ...boxTitle, width: 56, flexShrink: 0, paddingTop: 1 }}>Rental</span>
                         {rental.status
-                          ? <span style={{ fontSize: '0.82rem', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                            <span style={{ fontWeight: 700, color: RENTAL_TONE[rental.tone] }}>{rental.status}</span>
-                            {rentalExtra && <span style={{ color: 'var(--text-secondary)' }}> · {rentalExtra}</span>}
-                          </span>
+                          ? <div style={{ fontSize: '0.82rem', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                            {/* Line 1: status + price. Line 2: the lease period. */}
+                            <div>
+                              <span style={{ fontWeight: 700, color: RENTAL_TONE[rental.tone] }}>{rental.status}</span>
+                              {rental.amount && <span style={{ color: 'var(--text-secondary)' }}> · {rental.amount}</span>}
+                            </div>
+                            {rentalPeriod && <div style={{ color: 'var(--text-secondary)', marginTop: 1 }}>{rentalPeriod}</div>}
+                          </div>
                           : <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>No rental transaction data.</span>}
                       </div>
                       {rentalWarn && (
@@ -514,12 +575,17 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                 {justSaved && <div style={{ color: 'var(--success)', fontSize: '0.8rem', marginTop: 6, fontWeight: 600 }}>✓ Call logged to the record.</div>}
                 {saveError && <ErrorBox>{saveError}</ErrorBox>}
 
-                <div style={{ marginTop: 'auto', paddingTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ marginTop: 'auto', paddingTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button className="btn" onClick={() => void tryClose()} disabled={locked} style={{ opacity: locked ? 0.5 : 1 }}>Close</button>
+                  <div style={{ flex: 1 }} />
+                  <button className="btn" onClick={() => void tryPrev()} disabled={locked || !hasPrev} style={{ opacity: (locked || !hasPrev) ? 0.5 : 1 }}>
+                    <Icon name="chevronLeft" size={15} /> Previous
+                  </button>
                   <button className="btn btn-primary" onClick={() => void tryNext()} disabled={locked || !hasNext} style={{ opacity: (locked || !hasNext) ? 0.5 : 1 }}>
                     Next property <Icon name="arrowRight" size={15} />
                   </button>
                 </div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)', marginTop: 6 }}>Tip: use ← / → to flip between properties.</div>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: 8, cursor: 'pointer' }}>
                   <input type="checkbox" checked={randomize} onChange={e => toggleRandomize(e.target.checked)} />
                   Randomise next property
@@ -556,6 +622,16 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
 
 function Column({ children }: { children: React.ReactNode }) {
   return <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>{children}</div>;
+}
+
+/** One number + label in the progress bar. */
+function ProgressStat({ n, label, color, suffix }: { n: number; label: string; color?: string; suffix?: string }) {
+  return (
+    <div style={{ textAlign: 'center', minWidth: 44 }}>
+      <div className="tabular-nums" style={{ fontSize: '1.05rem', fontWeight: 700, color: color ?? 'var(--text)', lineHeight: 1.1 }}>{n}{suffix ?? ''}</div>
+      <div style={{ fontSize: '0.62rem', color: 'var(--text-secondary)' }}>{label}</div>
+    </div>
+  );
 }
 
 /** A pill next to the state chip: when this unit was last called, or "Never called". */
