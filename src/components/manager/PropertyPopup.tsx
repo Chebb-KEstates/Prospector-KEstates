@@ -124,6 +124,17 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   // "Next property": next in the table order, or a random one when ticked.
   const [randomize, setRandomize] = useState(() => localStorage.getItem('prospector.popup.randomizeNext') === '1');
 
+  // The actual path walked this session: `history` is the ordered breadcrumb,
+  // `hpos` the position in it, so Previous retraces where you came from (even in
+  // random mode) rather than jumping to the list-before unit. `visited` is every
+  // distinct unit seen — it only grows, and drives the progress count.
+  const [history, setHistory] = useState<string[]>([propertyId]);
+  const [hpos, setHpos] = useState(0);
+  const [visited, setVisited] = useState<Set<string>>(() => new Set([propertyId]));
+  // Blocks a second navigation until the current one has loaded — so holding an
+  // arrow key can't fire a storm of views on one unit (the old stale-closure bug).
+  const navBusy = useRef(false);
+
   // A running tally of THIS popup session — like the dialer's progress bar.
   // Survives Next/Previous (the component isn't remounted on navigation).
   const [session, setSession] = useState({ made: 0, answered: 0, noAnswer: 0, interested: 0 });
@@ -136,6 +147,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   // Load the owner's card whenever the clicked unit changes (incl. "Next").
   useEffect(() => {
     let cancelled = false;
+    navBusy.current = false; // this navigation has landed — allow the next one
     setLoading(true);
     setFocusedId(propertyId); setRefresh({}); setNoteOverrides({});
     setPhones([]); setRevealedOwners([]); setActiveOwner(0); setRevealed(false);
@@ -204,17 +216,21 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     && !saving;
 
   const locked = revealed && !savedSinceReveal;
-  const listIndex = ids.indexOf(propertyId);
   const total = ids.length;
-  const seqNextId = listIndex >= 0 ? ids[listIndex + 1] : undefined;
-  const prevId = listIndex > 0 ? ids[listIndex - 1] : undefined;
-  const hasNext = randomize ? total > 1 : !!seqNextId;
-  const hasPrev = !!prevId;
-  const pickNext = () => {
-    if (!randomize) return seqNextId;
-    const pool = ids.filter(id => id !== propertyId);
-    return pool.length ? pool[Math.floor(Math.random() * pool.length)] : undefined;
+  // The next unit going FORWARD: retrace the breadcrumb if we've stepped back,
+  // else pick a fresh one (random prefers unseen so progress can reach 100%).
+  const forwardTarget = (): string | undefined => {
+    if (hpos < history.length - 1) return history[hpos + 1];
+    if (randomize) {
+      const unseen = ids.filter(id => !visited.has(id));
+      const pool = unseen.length ? unseen : ids.filter(id => id !== propertyId);
+      return pool.length ? pool[Math.floor(Math.random() * pool.length)] : undefined;
+    }
+    const i = ids.indexOf(propertyId);
+    return i >= 0 ? ids[i + 1] : undefined;
   };
+  const hasNext = !!forwardTarget();
+  const hasPrev = hpos > 0;
 
   const curState = refresh[focusedId]?.state ?? focusedUnit?.state ?? PropertyState.pool;
   const curExpires = refresh[focusedId]?.expiresAt ?? focusedUnit?.expiresAt;
@@ -241,15 +257,24 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
 
   const tryClose = async () => { if (locked) return; await flushNotes(); onClose(); };
   const tryNext = async () => {
-    if (locked) return;
+    if (locked || navBusy.current || !onNavigate) return;
+    const target = forwardTarget();
+    if (!target) return;
+    navBusy.current = true;
     await flushNotes();
-    const n = pickNext();
-    if (n && onNavigate) onNavigate(n);
+    // Extend or retrace the breadcrumb, and remember we've seen this unit.
+    if (hpos < history.length - 1 && history[hpos + 1] === target) setHpos(hpos + 1);
+    else { setHistory(h => [...h.slice(0, hpos + 1), target]); setHpos(hpos + 1); }
+    setVisited(v => (v.has(target) ? v : new Set(v).add(target)));
+    onNavigate(target);
   };
   const tryPrev = async () => {
-    if (locked || !prevId) return;
+    if (locked || navBusy.current || hpos <= 0 || !onNavigate) return;
+    const target = history[hpos - 1]; // the unit we actually came from
+    navBusy.current = true;
     await flushNotes();
-    if (onNavigate) onNavigate(prevId);
+    setHpos(hpos - 1);
+    onNavigate(target);
   };
 
   // ← / → flip between property tabs (like the dialer). A ref keeps the handler
@@ -327,10 +352,37 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     ? stop!.owners!.map((o, i) => ({ name: o.name, nationality: o.nationality, nums: revealedOwners[i]?.phones ?? o.phonesMasked ?? [] }))
     : [{ name: stop?.name ?? 'Owner', nationality: stop?.nationality, nums: (revealed ? phones : (stop?.phonesMasked ?? [])) }];
 
+  const answerRate = session.made > 0 ? Math.round((session.answered / session.made) * 100) : 0;
+
   return (
-    <div className="modal-overlay" onClick={() => void tryClose()}>
+    <div className="modal-overlay" onClick={() => void tryClose()}
+      style={total > 1 ? { alignItems: 'flex-start', paddingTop: 62 } : undefined}>
+      {/* Progress bar pinned to the TOP OF THE PAGE, above the popup box. */}
+      {stop && total > 1 && (
+        <div onClick={e => e.stopPropagation()} style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1001,
+          display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
+          padding: '8px 20px', background: 'var(--surface)', borderBottom: '1px solid var(--border)',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.06)',
+        }}>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+              Property {visited.size} of {total} · {Math.max(0, total - visited.size)} to go
+            </div>
+            <div style={{ marginTop: 5, height: 5, borderRadius: 999, background: 'var(--surface-2)', overflow: 'hidden' }}>
+              <div style={{ width: `${Math.min(100, (visited.size / total) * 100)}%`, height: '100%', background: 'var(--gold)', transition: 'width .3s' }} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+            <ProgressStat n={session.made} label="made" />
+            <ProgressStat n={session.answered} label="answered" color="var(--info)" />
+            <ProgressStat n={session.noAnswer} label="no answer" color="var(--warning)" />
+            <ProgressStat n={answerRate} suffix="%" label="answer rate" />
+          </div>
+        </div>
+      )}
       <div className="modal-content" onClick={e => e.stopPropagation()}
-        style={{ width: '94vw', maxWidth: 1240, height: '90vh', display: 'flex', flexDirection: 'column', gap: 14, padding: 20 }}>
+        style={{ width: '94vw', maxWidth: 1240, height: total > 1 ? 'calc(100vh - 88px)' : '90vh', display: 'flex', flexDirection: 'column', gap: 14, padding: 20 }}>
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>Loading…</div>
         ) : !stop ? (
@@ -352,26 +404,6 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
               <CountdownBadge deadline={curExpires} soonHours={vault.settings.expiringSoonHours} />
               <button className="btn btn-icon btn-sm" onClick={() => void tryClose()} aria-label="Close"><Icon name="x" size={16} /></button>
             </div>
-
-            {/* Progress bar for this run through the list — like the dialer's. */}
-            {total > 1 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexShrink: 0, flexWrap: 'wrap', padding: '8px 14px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-                <div style={{ flex: 1, minWidth: 180 }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                    Property {listIndex + 1} of {total} · {Math.max(0, total - session.made)} pending
-                  </div>
-                  <div style={{ marginTop: 5, height: 5, borderRadius: 999, background: 'var(--surface)', overflow: 'hidden' }}>
-                    <div style={{ width: `${Math.min(100, (session.made / total) * 100)}%`, height: '100%', background: 'var(--gold)', transition: 'width .3s' }} />
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                  <ProgressStat n={session.made} label="made" />
-                  <ProgressStat n={session.answered} label="answered" color="var(--info)" />
-                  <ProgressStat n={session.noAnswer} label="no answer" color="var(--warning)" />
-                  <ProgressStat n={session.made > 0 ? Math.round((session.answered / session.made) * 100) : 0} suffix="%" label="answer rate" />
-                </div>
-              </div>
-            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))', gap: 14, flex: 1, minHeight: 0 }}>
               {/* ── LEFT: the record + persistent notes ─────────────────────── */}
