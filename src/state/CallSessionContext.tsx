@@ -32,6 +32,20 @@ export interface CallUnit {
   history: CallHistoryEntry[];                // this unit's own call history
   notes?: string;                             // free-text notes saved on the record
   expiresAt?: string;                         // assignment deadline — drives the countdown badge
+  detail?: UnitDetail;                        // structured breakdown for the property-view popup
+}
+
+/**
+ * The structured breakdown behind a unit's card — drives the property-view
+ * popup's separate "property facts / last sale / rental" boxes. `facts` are
+ * labelled pairs; `sale` is null when there's no transaction on record; the
+ * rental carries `endsInDays` so the popup can flag a lease running out.
+ */
+export interface UnitDetail {
+  facts: { label: string; value: string }[];
+  sale: { value?: string; date?: string; type?: string } | null;
+  rental: { status: string; tone: ChipTone; amount?: string; start?: string; end?: string; endsInDays?: number | null };
+  lastCalledAt?: string;
 }
 
 /** One co-owner shown before reveal — name + their own masked number(s).

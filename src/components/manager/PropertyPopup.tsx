@@ -17,6 +17,14 @@ const RENTAL_TONE: Record<string, string> = {
   good: 'var(--success)', warn: 'var(--warning)', info: 'var(--text-secondary)', neutral: 'var(--text-secondary)',
 };
 
+/** Each of the left column's little info boxes shares this shell + label style. */
+const boxStyle: React.CSSProperties = {
+  border: '1px solid var(--border)', borderRadius: 12, padding: 14, background: 'var(--surface-2)',
+};
+const boxTitle: React.CSSProperties = {
+  fontSize: '0.64rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', fontWeight: 600,
+};
+
 /**
  * The unit work surface — opened by clicking a unit in a data table (manager
  * Vault / Assignments, and the broker's Database tab).
@@ -73,11 +81,14 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
 
-  // Persistent notes (per unit)
+  // Persistent notes (per unit) — auto-saved on close / next / after a call log.
   const [notes, setNotes] = useState('');
   const [noteOverrides, setNoteOverrides] = useState<Record<string, string>>({});
-  const [notesSaving, setNotesSaving] = useState(false);
+  const [notesDirty, setNotesDirty] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
+
+  // "Next property": next in the table order, or a random one when ticked.
+  const [randomize, setRandomize] = useState(() => localStorage.getItem('prospector.popup.randomizeNext') === '1');
 
   // History journal (for the focused unit)
   const [events, setEvents] = useState<PropertyEvent[]>([]);
@@ -111,7 +122,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   // Reset the notes box + per-unit editors whenever the focus changes.
   useEffect(() => {
     setNotes(noteOverrides[focusedId] ?? focusedUnit?.notes ?? '');
-    setNotesSaved(false);
+    setNotesSaved(false); setNotesDirty(false);
     setOutcome(null); setFeedback(''); setFollowUpAt(''); setJustSaved(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusedId, stop]);
@@ -147,13 +158,46 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     (!isCallback || !!followUpAt) && !saving;
 
   const locked = revealed && !savedSinceReveal;
-  const nextId = (() => { const i = ids.indexOf(propertyId); return i >= 0 ? ids[i + 1] : undefined; })();
+  const seqNextId = (() => { const i = ids.indexOf(propertyId); return i >= 0 ? ids[i + 1] : undefined; })();
+  const hasNext = randomize ? ids.length > 1 : !!seqNextId;
+  const pickNext = () => {
+    if (!randomize) return seqNextId;
+    const pool = ids.filter(id => id !== propertyId);
+    return pool.length ? pool[Math.floor(Math.random() * pool.length)] : undefined;
+  };
 
   const curState = refresh[focusedId]?.state ?? focusedUnit?.state ?? PropertyState.pool;
   const curExpires = refresh[focusedId]?.expiresAt ?? focusedUnit?.expiresAt;
 
-  const tryClose = () => { if (locked) return; onClose(); };
-  const tryNext = () => { if (locked) return; if (nextId && onNavigate) onNavigate(nextId); };
+  // Structured detail for the focused unit's boxes.
+  const detail = focusedUnit?.detail;
+  const facts = detail?.facts ?? [];
+  const sale = detail?.sale ?? null;
+  const rental = detail?.rental ?? { status: '', tone: 'neutral' as const, endsInDays: null as number | null };
+  const rentalWarn = rental.status === 'Rented' && rental.endsInDays != null && rental.endsInDays >= 0 && rental.endsInDays <= 100;
+
+  // Persistent notes save themselves — no button. Flush before leaving the unit.
+  const flushNotes = async () => {
+    if (!stop?.saveNote || !notesDirty) return;
+    try {
+      await stop.saveNote(focusedId, notes);
+      setNoteOverrides(m => ({ ...m, [focusedId]: notes }));
+      setNotesDirty(false); setNotesSaved(true);
+      setEventsKey(k => k + 1);
+    } catch { /* keep the text; a later close retries */ }
+  };
+
+  const tryClose = async () => { if (locked) return; await flushNotes(); onClose(); };
+  const tryNext = async () => {
+    if (locked) return;
+    await flushNotes();
+    const n = pickNext();
+    if (n && onNavigate) onNavigate(n);
+  };
+  const toggleRandomize = (on: boolean) => {
+    setRandomize(on);
+    localStorage.setItem('prospector.popup.randomizeNext', on ? '1' : '0');
+  };
 
   const doReveal = async () => {
     if (!stop || revealing) return;
@@ -184,23 +228,11 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
         setRefresh(r => ({ ...r, [focusedId]: { state: p2.state, expiresAt: p2.assignmentExpiresAt } }));
       } catch { /* keep the old chip */ }
       setEventsKey(k => k + 1);
+      await flushNotes(); // logging a call also persists any pending notes
     } catch (e) {
       setSaveError(e instanceof ApiError ? e.message : 'Could not save that. Try again.');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const saveNotes = async () => {
-    if (!stop?.saveNote) return;
-    setNotesSaving(true);
-    try {
-      await stop.saveNote(focusedId, notes);
-      setNoteOverrides(m => ({ ...m, [focusedId]: notes }));
-      setNotesSaved(true);
-      setEventsKey(k => k + 1);
-    } catch { /* ignore */ } finally {
-      setNotesSaving(false);
     }
   };
 
@@ -209,7 +241,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     : [{ name: stop?.name ?? 'Owner', nationality: stop?.nationality, nums: (revealed ? phones : (stop?.phonesMasked ?? [])) }];
 
   return (
-    <div className="modal-overlay" onClick={tryClose}>
+    <div className="modal-overlay" onClick={() => void tryClose()}>
       <div className="modal-content" onClick={e => e.stopPropagation()}
         style={{ width: '94vw', maxWidth: 1240, maxHeight: '90vh', display: 'flex', flexDirection: 'column', gap: 14, padding: 20 }}>
         {loading ? (
@@ -222,55 +254,104 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
               <div style={{ width: 42, height: 42, borderRadius: '50%', flexShrink: 0, background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{stop.flag}</div>
               <div style={{ minWidth: 0, flex: 1 }}>
+                {/* Unit + address only — the owner name lives in the Owner box below. */}
                 <div style={{ fontSize: '1.1rem', fontWeight: 700, lineHeight: 1.2 }} className="truncate">{focusedUnit?.label ?? stop.name}</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }} className="truncate">
-                  {[stop.name, focusedUnit?.location, stop.nationality].filter(Boolean).join(' · ')}
-                </div>
+                {focusedUnit?.location && (
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }} className="truncate">{focusedUnit.location}</div>
+                )}
               </div>
+              <LastCallPill at={focusedUnit?.detail?.lastCalledAt} />
               <StateChip state={curState} />
               <CountdownBadge deadline={curExpires} soonHours={vault.settings.expiringSoonHours} />
-              <button className="btn btn-icon btn-sm" onClick={tryClose} aria-label="Close"><Icon name="x" size={16} /></button>
+              <button className="btn btn-icon btn-sm" onClick={() => void tryClose()} aria-label="Close"><Icon name="x" size={16} /></button>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))', gap: 14, flex: 1, minHeight: 0 }}>
               {/* ── LEFT: the record + persistent notes ─────────────────────── */}
               <Column>
-                <div style={sectionLabel}>
-                  {multiUnit ? `Properties (${units.length}) — this owner` : 'Property'}
-                </div>
+                {/* Multi-unit owner: a compact switcher; the detail boxes below
+                    always describe the focused unit. */}
                 {multiUnit && (
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 6 }}>
-                    Click a property to view its details, notes and history.
-                  </div>
+                  <>
+                    <div style={sectionLabel}>Properties ({units.length}) — this owner</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 6 }}>Click a property to view its details.</div>
+                    <div style={{ maxHeight: 150, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14, paddingRight: 4 }}>
+                      {units.map(u => {
+                        const sel = u.id === focusedId;
+                        const st = refresh[u.id]?.state ?? u.state;
+                        return (
+                          <button key={u.id} onClick={() => setFocusedId(u.id)}
+                            style={{
+                              textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between',
+                              border: `1.5px solid ${sel ? 'var(--gold)' : 'var(--border)'}`, borderRadius: 10, padding: '8px 10px',
+                              background: sel ? 'color-mix(in srgb, var(--gold) 9%, transparent)' : 'var(--surface-2)',
+                            }}>
+                            <span style={{ fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'normal', wordBreak: 'break-word' }}>{u.label}</span>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                              {(noteOverrides[u.id] ?? u.notes) && <span title="has notes" style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)' }} />}
+                              <StateChip state={st} />
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
-                {/* Scrollable block — all of the owner's units. */}
-                <div style={{ maxHeight: multiUnit ? 300 : undefined, overflowY: multiUnit ? 'auto' : 'visible', display: 'flex', flexDirection: 'column', gap: 8, paddingRight: multiUnit ? 4 : 0 }}>
-                  {units.map(u => {
-                    const sel = u.id === focusedId;
-                    const st = refresh[u.id]?.state ?? u.state;
-                    return (
-                      <button key={u.id} onClick={() => setFocusedId(u.id)} disabled={!multiUnit}
-                        style={{
-                          textAlign: 'left', cursor: multiUnit ? 'pointer' : 'default',
-                          border: `1.5px solid ${sel ? 'var(--gold)' : 'var(--border)'}`, borderRadius: 10, padding: 12,
-                          background: sel ? 'color-mix(in srgb, var(--gold) 9%, transparent)' : 'var(--surface-2)',
-                        }}>
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, justifyContent: 'space-between' }}>
-                          {/* Full unit number — wraps rather than clipping. */}
-                          <span style={{ fontWeight: 700, fontSize: '0.95rem', lineHeight: 1.3, whiteSpace: 'normal', wordBreak: 'break-word' }}>{u.label}</span>
-                          <span style={{ flexShrink: 0 }}><StateChip state={st} /></span>
+
+                {/* PROPERTY box — address + unit on top, then the facts. */}
+                <div style={boxStyle}>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 700, lineHeight: 1.3, whiteSpace: 'normal', wordBreak: 'break-word' }}>{focusedUnit?.label}</div>
+                  {focusedUnit?.location && <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 2 }}>{focusedUnit.location}</div>}
+                  {facts.length > 0 ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px 14px', marginTop: 12 }}>
+                      {facts.map((f, i) => (
+                        <div key={i}>
+                          <div style={boxTitle}>{f.label}</div>
+                          <div style={{ fontSize: '0.86rem', fontWeight: 500, whiteSpace: 'normal', wordBreak: 'break-word', marginTop: 1 }}>{f.value}</div>
                         </div>
-                        {u.location && <div style={{ fontSize: '0.76rem', color: 'var(--text-tertiary)', marginTop: 3, whiteSpace: 'normal', wordBreak: 'break-word' }}>{u.location}</div>}
-                        {u.facts.length > 0 && <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 4, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.45 }}>{u.facts.join(' · ')}</div>}
-                        {u.lastSale && <div style={{ fontSize: '0.76rem', color: 'var(--text-tertiary)', marginTop: 5 }}>Last sale: <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{u.lastSale}</span></div>}
-                        {/* Rental status + info as plain text, right below the last sale. */}
-                        {u.rental && <div style={{ fontSize: '0.78rem', marginTop: 3, color: RENTAL_TONE[u.rental.tone], fontWeight: 500, whiteSpace: 'normal', wordBreak: 'break-word' }}>Rental: {u.rental.label}</div>}
-                        {(noteOverrides[u.id] ?? u.notes) && <div style={{ fontSize: '0.74rem', color: 'var(--gold-dark)', marginTop: 5, display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)' }} /> has notes</div>}
-                      </button>
-                    );
-                  })}
+                      ))}
+                    </div>
+                  ) : <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', marginTop: 8 }}>No property details on file.</div>}
                 </div>
 
+                {/* LAST SALE box */}
+                <div style={{ ...boxStyle, marginTop: 10 }}>
+                  <div style={boxTitle}>Last sale transaction</div>
+                  {sale ? (
+                    <div style={{ marginTop: 6 }}>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 700 }}>{sale.value ?? 'Price not recorded'}</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                        {[sale.date, sale.type].filter(Boolean).join(' · ') || 'Date & type not recorded'}
+                      </div>
+                    </div>
+                  ) : <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', marginTop: 6 }}>No sale transaction data.</div>}
+                </div>
+
+                {/* RENTAL box — red border + glow when the lease ends within 100 days. */}
+                <div style={{
+                  ...boxStyle, marginTop: 10,
+                  ...(rentalWarn ? { borderColor: 'var(--error)', boxShadow: '0 0 0 3px color-mix(in srgb, var(--error) 22%, transparent)' } : {}),
+                }}>
+                  <div style={boxTitle}>Rental</div>
+                  {rental.status ? (
+                    <div style={{ marginTop: 6 }}>
+                      <div style={{ fontSize: '0.92rem', fontWeight: 700, color: RENTAL_TONE[rental.tone] }}>{rental.status}</div>
+                      {rental.amount && <div style={{ fontSize: '0.86rem', fontWeight: 500, marginTop: 2 }}>{rental.amount}</div>}
+                      {(rental.start || rental.end) && (
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                          {[rental.start, rental.end].filter(Boolean).join(' → ')}
+                        </div>
+                      )}
+                      {rentalWarn && (
+                        <div style={{ fontSize: '0.76rem', color: 'var(--error)', fontWeight: 700, marginTop: 4 }}>
+                          ⚠ Lease ends in {rental.endsInDays} day{rental.endsInDays === 1 ? '' : 's'}
+                        </div>
+                      )}
+                    </div>
+                  ) : <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', marginTop: 6 }}>No rental transaction data.</div>}
+                </div>
+
+                {/* OWNER box */}
                 <div style={{ ...sectionLabel, marginTop: 14 }}>{multiOwner ? `Owners (${stop.owners!.length})` : 'Owner'}</div>
                 <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {ownerBlocks.map((o, i) => (
@@ -286,17 +367,15 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   ))}
                 </div>
 
+                {/* NOTES — auto-saved (no button). */}
                 <div style={{ ...sectionLabel, marginTop: 14 }}>Notes {multiUnit ? `on ${focusedUnit?.label ?? 'this unit'}` : 'on this property'}</div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 6 }}>
-                  Stays on the property — kept even if it's reassigned or returns to the pool.
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span>Stays on the property — saved automatically when you close, move on, or log a call.</span>
+                  {notesSaved && !notesDirty && <span style={{ color: 'var(--success)', fontWeight: 600, whiteSpace: 'nowrap' }}>Saved ✓</span>}
                 </div>
                 <textarea className="input" value={notes} rows={4} style={{ resize: 'vertical' }}
                   placeholder="Anything worth keeping on this unit permanently…"
-                  onChange={e => { setNotes(e.target.value); setNotesSaved(false); }} />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-                  <button className="btn btn-sm" onClick={saveNotes} disabled={notesSaving || !stop.saveNote}>{notesSaving ? 'Saving…' : 'Save notes'}</button>
-                  {notesSaved && <span style={{ color: 'var(--success)', fontSize: '0.78rem' }}>Saved ✓</span>}
-                </div>
+                  onChange={e => { setNotes(e.target.value); setNotesDirty(true); setNotesSaved(false); }} />
               </Column>
 
               {/* ── MIDDLE: call & log ──────────────────────────────────────── */}
@@ -378,11 +457,15 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                 {saveError && <ErrorBox>{saveError}</ErrorBox>}
 
                 <div style={{ marginTop: 'auto', paddingTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button className="btn" onClick={tryClose} disabled={locked} style={{ opacity: locked ? 0.5 : 1 }}>Close</button>
-                  <button className="btn btn-primary" onClick={tryNext} disabled={locked || !nextId} style={{ opacity: (locked || !nextId) ? 0.5 : 1 }}>
+                  <button className="btn" onClick={() => void tryClose()} disabled={locked} style={{ opacity: locked ? 0.5 : 1 }}>Close</button>
+                  <button className="btn btn-primary" onClick={() => void tryNext()} disabled={locked || !hasNext} style={{ opacity: (locked || !hasNext) ? 0.5 : 1 }}>
                     Next property <Icon name="arrowRight" size={15} />
                   </button>
                 </div>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: 8, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={randomize} onChange={e => toggleRandomize(e.target.checked)} />
+                  Randomise next property
+                </label>
                 {locked && (
                   <div style={{ fontSize: '0.72rem', color: 'var(--gold-dark)', display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
                     <Icon name="alert" size={13} /> Log a result to finish — the number is only worth revealing if it's recorded.
@@ -415,6 +498,20 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
 
 function Column({ children }: { children: React.ReactNode }) {
   return <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>{children}</div>;
+}
+
+/** A pill next to the state chip: when this unit was last called, or "Never called". */
+function LastCallPill({ at }: { at?: string }) {
+  return (
+    <span style={{
+      fontSize: '0.72rem', padding: '3px 10px', borderRadius: 999, whiteSpace: 'nowrap',
+      background: 'var(--surface-2)', border: '1px solid var(--border)',
+      color: at ? 'var(--text-secondary)' : 'var(--text-tertiary)',
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+    }}>
+      <Icon name="phoneCall" size={11} /> {at ? `Last call ${timeAgo(at)}` : 'Never called'}
+    </span>
+  );
 }
 
 function ErrorBox({ children }: { children: React.ReactNode }) {

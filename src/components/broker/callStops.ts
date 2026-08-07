@@ -1,4 +1,5 @@
-import { CallStop, CallHistoryEntry, AssetRow, CallUnit, CallSignal } from '../../state/CallSessionContext';
+import { CallStop, CallHistoryEntry, AssetRow, CallUnit, CallSignal, UnitDetail } from '../../state/CallSessionContext';
+import type { ChipTone } from '../../state/CallSessionContext';
 import { Property, Lead, PropertyState, CallLog } from '../../types/models';
 import { AppUser } from '../../types/user';
 import { groupByOwner, ownerKeyOf } from '../../logic/ownerGrouping';
@@ -57,6 +58,62 @@ function rentalOf(p: Property): CallUnit['rental'] {
   return { label: 'No Rental', tone: 'neutral' };
 }
 
+/** Whole days from now until a date (negative if past); null if unparseable. */
+function daysUntil(date?: string): number | null {
+  if (!date) return null;
+  const t = new Date(date).getTime();
+  if (isNaN(t)) return null;
+  return Math.floor((t - Date.now()) / (24 * 3600 * 1000));
+}
+
+/**
+ * A unit's structured breakdown for the property-view popup: labelled facts, the
+ * last sale (null when there's none on record), and a rental read that carries
+ * `endsInDays` so the popup can flag a lease running out.
+ */
+function detailOf(p: Property): UnitDetail {
+  const facts: { label: string; value: string }[] = [];
+  const push = (label: string, value: unknown) => {
+    if (value != null && String(value).trim().length > 0) facts.push({ label, value: String(value) });
+  };
+  push('Beds', p.beds);
+  push('Type', p.propertyType);
+  push('Layout', p.extra?.['Layout']);
+  if (p.sizeSqft != null) facts.push({ label: 'BUA', value: fmtArea(p.sizeSqft) });
+  if (p.plotSqft != null) facts.push({ label: 'Plot', value: fmtArea(p.plotSqft) });
+  push('View', p.extra?.['View']);
+  push('Location', p.extra?.['Location']);
+  push('Floor', p.extra?.['Floor']);
+
+  const saleType = p.extra?.['Sale Type'] ?? p.extra?.['Transaction Type'] ?? p.extra?.['Sale type'];
+  const sale = (p.lastTransactionValue != null || p.lastTransactionDate || saleType)
+    ? {
+      value: p.lastTransactionValue != null ? fmtAed(p.lastTransactionValue) : undefined,
+      date: p.lastTransactionDate ? fmtDate(p.lastTransactionDate) : undefined,
+      type: saleType != null && String(saleType).trim() ? String(saleType) : undefined,
+    }
+    : null;
+
+  const statusRaw = (p.extra?.['Rental status'] ?? '').toLowerCase();
+  const isRented = !!p.rentEnd || /new|renew|rented|leased|tenant/.test(statusRaw);
+  const isVacant = /vacant|available/.test(statusRaw);
+  const hasRentalData = isRented || isVacant || p.rentAmount != null || !!p.rentStart || !!p.rentEnd;
+  const endsInDays = daysUntil(p.rentEnd);
+  const tone: ChipTone = isRented
+    ? (endsInDays != null && endsInDays >= 0 && endsInDays <= 100 ? 'warn' : 'info')
+    : isVacant ? 'good' : 'neutral';
+  const rental = {
+    status: isRented ? 'Rented' : isVacant ? 'Vacant' : (hasRentalData ? 'Rental on file' : ''),
+    tone,
+    amount: p.rentAmount ? `${fmtAed(p.rentAmount)}/yr` : undefined,
+    start: p.rentStart ? fmtDate(p.rentStart) : undefined,
+    end: p.rentEnd ? fmtDate(p.rentEnd) : undefined,
+    endsInDays,
+  };
+
+  return { facts, sale, rental, lastCalledAt: p.lastCalledAt };
+}
+
 /** Whole years since a date, floored; null if unparseable. */
 function yearsOwned(date?: string): number | null {
   if (!date) return null;
@@ -110,6 +167,7 @@ export function buildOwnerStop(
       lastSale: p.lastTransactionValue != null
         ? `${fmtAed(p.lastTransactionValue)}${p.lastTransactionDate ? ` · ${fmtDate(p.lastTransactionDate)}` : ''}`
         : undefined,
+      detail: detailOf(p),
       state: p.state,
       // This unit's slice of the owner's call history.
       history: history(calls.filter(c => c.propertyIds.includes(p.id)), deps.nameOf),
