@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { CallStop, CallUnit, OwnerNumbers } from '../../state/CallSessionContext';
-import { CallOutcome, CallOutcomeLabel, PropertyState } from '../../types/models';
+import { CallOutcome, PropertyState } from '../../types/models';
 import type { PhoneEntry } from '../../types/models';
 import { StateChip, CountdownBadge, OutcomeChip } from '../common/StateChip';
 import { Icon } from '../common/Icon';
@@ -24,6 +24,38 @@ const boxStyle: React.CSSProperties = {
 const boxTitle: React.CSSProperties = {
   fontSize: '0.64rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', fontWeight: 600,
 };
+
+/**
+ * The call outcome is captured in two parts:
+ *   1. did the call connect — No answer / Didn't connect / Answered;
+ *   2. if Answered, one or more results.
+ *
+ * Each result maps to a disposition the timer engine already understands (the
+ * new labels reuse an existing behaviour), so nothing about the state machine or
+ * the database changes. When several are picked, the STRONGEST one (highest in
+ * OUTCOME_PRIORITY) drives the state; every label the broker ticked is written
+ * into the call's feedback so it's kept on the record.
+ */
+type Connection = 'answered' | 'noAnswer' | 'unreachable';
+interface ResultOption { key: string; label: string; outcome: CallOutcome }
+const RESULT_OPTIONS: ResultOption[] = [
+  { key: 'sell', label: 'Interested — sell', outcome: CallOutcome.interestedSell },
+  { key: 'rent', label: 'Interested — rent', outcome: CallOutcome.interestedRent },
+  { key: 'callback', label: 'Call back later', outcome: CallOutcome.callbackLater },
+  { key: 'future', label: 'Possible future interest', outcome: CallOutcome.callbackLater },
+  { key: 'notInterested', label: 'Not interested', outcome: CallOutcome.notInterested },
+  { key: 'living', label: 'Living in property', outcome: CallOutcome.notInterested },
+  { key: 'dropped', label: 'Dropped call', outcome: CallOutcome.noAnswer },
+  { key: 'dnc', label: 'Do not call', outcome: CallOutcome.dnc },
+];
+const OUTCOME_PRIORITY: CallOutcome[] = [
+  CallOutcome.dnc, CallOutcome.interestedSell, CallOutcome.interestedRent,
+  CallOutcome.callbackLater, CallOutcome.notInterested, CallOutcome.unreachable, CallOutcome.noAnswer,
+];
+function strongestOutcome(rs: ResultOption[]): CallOutcome | null {
+  for (const o of OUTCOME_PRIORITY) if (rs.some(r => r.outcome === o)) return o;
+  return null;
+}
 
 /**
  * The unit work surface — opened by clicking a unit in a data table (manager
@@ -73,8 +105,10 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   const [revealed, setRevealed] = useState(false);
   const [savedSinceReveal, setSavedSinceReveal] = useState(false);
 
-  // Outcome + feedback (for the focused unit)
-  const [outcome, setOutcome] = useState<CallOutcome | null>(null);
+  // Outcome + feedback (for the focused unit). Two-part: did the call connect
+  // (section 1), and — if answered — one or more results (section 2).
+  const [connection, setConnection] = useState<Connection | null>(null);
+  const [results, setResults] = useState<Set<string>>(new Set());
   const [feedback, setFeedback] = useState('');
   const [followUpAt, setFollowUpAt] = useState('');
   const [saving, setSaving] = useState(false);
@@ -101,7 +135,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     setLoading(true);
     setFocusedId(propertyId); setRefresh({}); setNoteOverrides({});
     setPhones([]); setRevealedOwners([]); setActiveOwner(0); setRevealed(false);
-    setSavedSinceReveal(false); setOutcome(null); setFeedback(''); setFollowUpAt('');
+    setSavedSinceReveal(false); setConnection(null); setResults(new Set()); setFeedback(''); setFollowUpAt('');
     setJustSaved(false); setRevealError(null); setSaveError(null); setNotesSaved(false);
     void (async () => {
       try {
@@ -123,7 +157,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   useEffect(() => {
     setNotes(noteOverrides[focusedId] ?? focusedUnit?.notes ?? '');
     setNotesSaved(false); setNotesDirty(false);
-    setOutcome(null); setFeedback(''); setFollowUpAt(''); setJustSaved(false);
+    setConnection(null); setResults(new Set()); setFeedback(''); setFollowUpAt(''); setJustSaved(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusedId, stop]);
 
@@ -150,12 +184,20 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   const activePhones = multiOwner ? (revealedOwners[activeOwner]?.phones ?? []) : phones;
   const activeOwnerName = multiOwner ? stop?.owners?.[activeOwner]?.name : undefined;
 
-  const OUTCOMES = Object.values(CallOutcome) as CallOutcome[];
-  const isReached = (o: CallOutcome) => o !== CallOutcome.noAnswer && o !== CallOutcome.unreachable;
-  const needFeedback = outcome != null && isReached(outcome);
-  const isCallback = outcome === CallOutcome.callbackLater;
-  const canSave = outcome != null && (!needFeedback || feedback.trim().length > 0) &&
-    (!isCallback || !!followUpAt) && !saving;
+  const answered = connection === 'answered';
+  const selectedResults = RESULT_OPTIONS.filter(r => results.has(r.key));
+  // The single disposition the state machine acts on.
+  const primary: CallOutcome | null =
+    connection === 'noAnswer' ? CallOutcome.noAnswer
+      : connection === 'unreachable' ? CallOutcome.unreachable
+        : answered ? strongestOutcome(selectedResults) : null;
+  const primaryIsCallback = primary === CallOutcome.callbackLater;
+  const needFeedback = answered;                   // an answered call must be explained
+  const canSave = primary != null
+    && (!answered || selectedResults.length > 0)   // answered ⇒ at least one result
+    && (!needFeedback || feedback.trim().length > 0)
+    && (!primaryIsCallback || !!followUpAt)
+    && !saving;
 
   const locked = revealed && !savedSinceReveal;
   const seqNextId = (() => { const i = ids.indexOf(propertyId); return i >= 0 ? ids[i + 1] : undefined; })();
@@ -171,9 +213,11 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
 
   // Structured detail for the focused unit's boxes.
   const detail = focusedUnit?.detail;
-  const facts = detail?.facts ?? [];
+  const factsLine = (focusedUnit?.facts ?? []).join(' · ');
   const sale = detail?.sale ?? null;
+  const saleLine = sale ? [sale.value, sale.date, sale.type].filter(Boolean).join(' · ') : '';
   const rental = detail?.rental ?? { status: '', tone: 'neutral' as const, endsInDays: null as number | null };
+  const rentalExtra = [rental.amount, [rental.start, rental.end].filter(Boolean).join(' → ')].filter(Boolean).join(' · ');
   const rentalWarn = rental.status === 'Rented' && rental.endsInDays != null && rental.endsInDays >= 0 && rental.endsInDays <= 100;
 
   // Persistent notes save themselves — no button. Flush before leaving the unit.
@@ -219,8 +263,14 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     const fu = followUpAt ? new Date(followUpAt).toISOString() : undefined;
     try {
       // Multi-unit owner → log against the FOCUSED unit only; single unit → its own log.
-      if (stop.logUnit) await stop.logUnit(focusedId, outcome!, feedback.trim() || undefined, isCallback ? fu : undefined, activeOwnerName);
-      else await stop.log(outcome!, feedback.trim() || undefined, isCallback ? fu : undefined, activeOwnerName);
+      // Keep every result the broker ticked on the record, even though the
+      // state machine only acts on the strongest (`primary`).
+      const tags = answered ? selectedResults.map(r => r.label) : [];
+      const note = tags.length
+        ? `[${tags.join(' · ')}]${feedback.trim() ? ' ' + feedback.trim() : ''}`
+        : (feedback.trim() || undefined);
+      if (stop.logUnit) await stop.logUnit(focusedId, primary!, note, primaryIsCallback ? fu : undefined, activeOwnerName);
+      else await stop.log(primary!, note, primaryIsCallback ? fu : undefined, activeOwnerName);
       setSavedSinceReveal(true);
       setJustSaved(true);
       try {
@@ -298,57 +348,42 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   </>
                 )}
 
-                {/* PROPERTY box — address + unit on top, then the facts. */}
+                {/* One compact box: property facts + last sale + rental together. */}
                 <div style={boxStyle}>
                   <div style={{ fontSize: '0.95rem', fontWeight: 700, lineHeight: 1.3, whiteSpace: 'normal', wordBreak: 'break-word' }}>{focusedUnit?.label}</div>
-                  {focusedUnit?.location && <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 2 }}>{focusedUnit.location}</div>}
-                  {facts.length > 0 ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px 14px', marginTop: 12 }}>
-                      {facts.map((f, i) => (
-                        <div key={i}>
-                          <div style={boxTitle}>{f.label}</div>
-                          <div style={{ fontSize: '0.86rem', fontWeight: 500, whiteSpace: 'normal', wordBreak: 'break-word', marginTop: 1 }}>{f.value}</div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', marginTop: 8 }}>No property details on file.</div>}
-                </div>
+                  {focusedUnit?.location && <div style={{ fontSize: '0.74rem', color: 'var(--text-tertiary)', marginTop: 2 }}>{focusedUnit.location}</div>}
+                  <div style={{ fontSize: '0.82rem', color: factsLine ? 'var(--text-secondary)' : 'var(--text-tertiary)', marginTop: 8, lineHeight: 1.5, whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                    {factsLine || 'No property details on file.'}
+                  </div>
 
-                {/* LAST SALE box */}
-                <div style={{ ...boxStyle, marginTop: 10 }}>
-                  <div style={boxTitle}>Last sale transaction</div>
-                  {sale ? (
-                    <div style={{ marginTop: 6 }}>
-                      <div style={{ fontSize: '1.05rem', fontWeight: 700 }}>{sale.value ?? 'Price not recorded'}</div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                        {[sale.date, sale.type].filter(Boolean).join(' · ') || 'Date & type not recorded'}
+                  <div style={{ borderTop: '1px solid var(--border-light)', marginTop: 12, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 9 }}>
+                    {/* Last sale */}
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'baseline' }}>
+                      <span style={{ ...boxTitle, width: 56, flexShrink: 0 }}>Last sale</span>
+                      {saleLine
+                        ? <span style={{ fontSize: '0.82rem', fontWeight: 500, whiteSpace: 'normal', wordBreak: 'break-word' }}>{saleLine}</span>
+                        : <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>No sale transaction data.</span>}
+                    </div>
+                    {/* Rental — gains a red border + glow when the lease ends within 100 days. */}
+                    <div style={rentalWarn
+                      ? { border: '1px solid var(--error)', borderRadius: 8, padding: '7px 9px', boxShadow: '0 0 0 3px color-mix(in srgb, var(--error) 18%, transparent)' }
+                      : undefined}>
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'baseline' }}>
+                        <span style={{ ...boxTitle, width: 56, flexShrink: 0 }}>Rental</span>
+                        {rental.status
+                          ? <span style={{ fontSize: '0.82rem', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                            <span style={{ fontWeight: 700, color: RENTAL_TONE[rental.tone] }}>{rental.status}</span>
+                            {rentalExtra && <span style={{ color: 'var(--text-secondary)' }}> · {rentalExtra}</span>}
+                          </span>
+                          : <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>No rental transaction data.</span>}
                       </div>
-                    </div>
-                  ) : <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', marginTop: 6 }}>No sale transaction data.</div>}
-                </div>
-
-                {/* RENTAL box — red border + glow when the lease ends within 100 days. */}
-                <div style={{
-                  ...boxStyle, marginTop: 10,
-                  ...(rentalWarn ? { borderColor: 'var(--error)', boxShadow: '0 0 0 3px color-mix(in srgb, var(--error) 22%, transparent)' } : {}),
-                }}>
-                  <div style={boxTitle}>Rental</div>
-                  {rental.status ? (
-                    <div style={{ marginTop: 6 }}>
-                      <div style={{ fontSize: '0.92rem', fontWeight: 700, color: RENTAL_TONE[rental.tone] }}>{rental.status}</div>
-                      {rental.amount && <div style={{ fontSize: '0.86rem', fontWeight: 500, marginTop: 2 }}>{rental.amount}</div>}
-                      {(rental.start || rental.end) && (
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                          {[rental.start, rental.end].filter(Boolean).join(' → ')}
-                        </div>
-                      )}
                       {rentalWarn && (
-                        <div style={{ fontSize: '0.76rem', color: 'var(--error)', fontWeight: 700, marginTop: 4 }}>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--error)', fontWeight: 700, marginTop: 4, marginLeft: 68 }}>
                           ⚠ Lease ends in {rental.endsInDays} day{rental.endsInDays === 1 ? '' : 's'}
                         </div>
                       )}
                     </div>
-                  ) : <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', marginTop: 6 }}>No rental transaction data.</div>}
+                  </div>
                 </div>
 
                 {/* OWNER box */}
@@ -424,30 +459,53 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                 <div style={{ ...sectionLabel, marginTop: 14 }}>
                   Log the outcome{multiUnit ? ` — ${focusedUnit?.label ?? ''}` : ''}
                 </div>
+
+                {/* Section 1 — did the call connect? */}
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 5 }}>Did the call connect?</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {OUTCOMES.map(o => {
-                    const c = outcomeColor(o); const sel = outcome === o;
+                  {([['answered', 'Answered'], ['noAnswer', 'No answer'], ['unreachable', 'Call didn’t connect']] as [Connection, string][]).map(([key, label]) => {
+                    const sel = connection === key;
                     return (
-                      <button key={o} className="btn btn-sm" onClick={() => { setOutcome(o); setJustSaved(false); }}
-                        style={{ borderColor: sel ? c : 'var(--border)', borderWidth: sel ? 1.5 : 1, color: sel ? c : 'var(--text)', background: sel ? `color-mix(in srgb, ${c} 16%, transparent)` : 'var(--surface)', fontWeight: sel ? 600 : 500 }}>
-                        {CallOutcomeLabel[o]}
+                      <button key={key} className="btn btn-sm"
+                        onClick={() => { setConnection(key); if (key !== 'answered') setResults(new Set()); setJustSaved(false); }}
+                        style={{ borderColor: sel ? 'var(--gold)' : 'var(--border)', borderWidth: sel ? 1.5 : 1, color: sel ? 'var(--gold-dark)' : 'var(--text)', background: sel ? 'color-mix(in srgb, var(--gold) 14%, transparent)' : 'var(--surface)', fontWeight: sel ? 600 : 500 }}>
+                        {label}
                       </button>
                     );
                   })}
                 </div>
 
-                {isCallback && (
+                {/* Section 2 — result of the conversation (answered only; multi-select). */}
+                {answered && (
+                  <div style={{ marginTop: 12, borderTop: '1px solid var(--border-light)', paddingTop: 12 }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 5 }}>What was the outcome? (pick one or more)</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {RESULT_OPTIONS.map(r => {
+                        const c = outcomeColor(r.outcome); const sel = results.has(r.key);
+                        return (
+                          <button key={r.key} className="btn btn-sm"
+                            onClick={() => { setResults(prev => { const n = new Set(prev); if (n.has(r.key)) n.delete(r.key); else n.add(r.key); return n; }); setJustSaved(false); }}
+                            style={{ borderColor: sel ? c : 'var(--border)', borderWidth: sel ? 1.5 : 1, color: sel ? c : 'var(--text)', background: sel ? `color-mix(in srgb, ${c} 16%, transparent)` : 'var(--surface)', fontWeight: sel ? 600 : 500 }}>
+                            {r.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {primaryIsCallback && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
                     <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Call back on</span>
                     <input className="input" type="date" value={followUpAt} onChange={e => setFollowUpAt(e.target.value)} style={{ width: 170 }} />
                   </div>
                 )}
 
-                <textarea className="input" value={feedback} rows={3} style={{ resize: 'vertical', marginTop: 8 }}
+                <textarea className="input" value={feedback} rows={3} style={{ resize: 'vertical', marginTop: 10 }}
                   placeholder={needFeedback ? 'Call feedback — what was said… (required)' : 'Call feedback — what was said…'}
                   onChange={e => { setFeedback(e.target.value); setJustSaved(false); }} />
 
-                {outcome != null && (
+                {connection != null && (
                   <button className="btn btn-primary" onClick={save} disabled={!canSave}
                     style={{ marginTop: 8, width: '100%', justifyContent: 'center', padding: '10px', background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013', opacity: canSave ? 1 : 0.5 }}>
                     <Icon name="check" size={16} /> {saving ? 'Saving…' : 'Save to record'}
