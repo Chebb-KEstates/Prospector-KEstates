@@ -2,6 +2,7 @@ import type { PoolConnection } from 'mysql2/promise';
 import { pool, Row, fromDb } from '../db/pool';
 import { AuditEntry, kOrgId } from '../../../src/types/models';
 import { newAuditId } from '../domain/ids';
+import { maskPhone } from '../domain/masking';
 
 /**
  * The audit trail — append-only, and now actually trustworthy.
@@ -132,4 +133,229 @@ export async function listAudit(opts: {
       propsById.get(r.id as string) ?? [],
     )),
   };
+}
+
+// ── Rich activity feed ───────────────────────────────────────────────────────
+// One readable row per event, resolving unit IDs to owner + unit labels and
+// merging the calls table in (so the outcome and note the broker actually chose
+// show up, retroactively). Phone numbers are only ever surfaced MASKED.
+
+/** One enriched activity row for the audit screen / export. */
+export interface ActivityRow {
+  id: string;
+  at: string;
+  actorId: string | null;
+  /** Raw action for filtering (call, view, assign, import, …). */
+  action: string;
+  /** Display action — 'reveal' is split out of 'view' for readability. */
+  displayAction: string;
+  outcome?: string;
+  ownerName?: string;
+  /** Readable unit (community · cluster · #unit); "+N more" when several. */
+  unitLabel?: string;
+  unitCount: number;
+  note?: string;
+  /** The owner's number, MASKED (••••1234) — never the real number. */
+  numberMasked?: string;
+  detail: string;
+}
+
+export interface ActivityPage { rows: ActivityRow[]; total: number; }
+
+export interface ActivityQuery {
+  limit: number;
+  offset: number;
+  actorId?: string;
+  action?: string;
+  from?: Date;
+  to?: Date;
+  search?: string;
+  sort?: 'at' | 'actor' | 'action';
+  dir?: 'asc' | 'desc';
+}
+
+/** A readable unit label from a property row (blank-building safe — the tower
+ *  lives in community/cluster on real data, so those lead). */
+function unitLabelFromRow(p: Row): string {
+  const loc = [p.community, p.cluster, p.building]
+    .map(s => String(s ?? '').trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  const uniq = loc.filter(s => (seen.has(s.toLowerCase()) ? false : (seen.add(s.toLowerCase()), true)));
+  const unit = String(p.unit_number ?? '').trim();
+  const plot = String(p.plot_number ?? '').trim();
+  const num = unit ? `#${unit}` : plot ? `Plot ${plot}` : '';
+  return [uniq.join(' · '), num].filter(Boolean).join(' · ') || '(unit)';
+}
+
+export async function listActivity(q: ActivityQuery): Promise<ActivityPage> {
+  const includeCalls = !q.action || q.action === 'call';
+  const includeAudit = !q.action || q.action !== 'call';
+  const like = q.search && q.search.trim() ? `%${q.search.trim()}%` : null;
+
+  const branches: string[] = [];
+  const params: unknown[] = [];
+
+  if (includeCalls) {
+    const w: string[] = ['c.org_id = ?']; params.push(kOrgId);
+    if (q.actorId) { w.push('c.broker_id = ?'); params.push(q.actorId); }
+    if (q.from) { w.push('c.at >= ?'); params.push(q.from); }
+    if (q.to) { w.push('c.at < ?'); params.push(q.to); }
+    if (like) { w.push('(c.owner_name LIKE ? OR c.note LIKE ?)'); params.push(like, like); }
+    branches.push(
+      `SELECT 'call' AS src, c.id AS id, c.at AS at, c.broker_id AS actor_id,
+              'call' AS action, c.outcome AS outcome, c.note AS note,
+              c.owner_name AS owner_name, NULL AS detail
+       FROM calls c WHERE ${w.join(' AND ')}`,
+    );
+  }
+  if (includeAudit) {
+    const w: string[] = ['a.org_id = ?', "a.action <> 'call'"]; params.push(kOrgId);
+    if (q.action && q.action !== 'call') { w.push('a.action = ?'); params.push(q.action); }
+    if (q.actorId) { w.push('a.actor_id = ?'); params.push(q.actorId); }
+    if (q.from) { w.push('a.at >= ?'); params.push(q.from); }
+    if (q.to) { w.push('a.at < ?'); params.push(q.to); }
+    if (like) { w.push('a.detail LIKE ?'); params.push(like); }
+    branches.push(
+      `SELECT 'audit' AS src, a.id AS id, a.at AS at, a.actor_id AS actor_id,
+              a.action AS action, NULL AS outcome, NULL AS note,
+              NULL AS owner_name, a.detail AS detail
+       FROM audit a WHERE ${w.join(' AND ')}`,
+    );
+  }
+  if (branches.length === 0) return { rows: [], total: 0 };
+
+  const union = branches.join('\n      UNION ALL\n');
+
+  const [countRows] = await pool.query<Row[]>(`SELECT COUNT(*) AS n FROM (${union}) feed`, params);
+  const total = Number(countRows[0].n);
+
+  // Whitelisted sort — never interpolate user text into the ORDER BY.
+  const dir = q.dir === 'asc' ? 'ASC' : 'DESC';
+  const sortCol = q.sort === 'actor' ? 'actor_id' : q.sort === 'action' ? 'action' : 'at';
+  const [rows] = await pool.query<Row[]>(
+    `SELECT * FROM (${union}) feed
+     ORDER BY ${sortCol} ${dir}, at ${dir}, id ${dir}
+     LIMIT ? OFFSET ?`,
+    [...params, q.limit, q.offset],
+  );
+
+  // ── Resolve the units/owners for this page in a couple of batched lookups ──
+  const callIds = rows.filter(r => r.src === 'call').map(r => r.id as string);
+  const auditRows = rows.filter(r => r.src === 'audit');
+  const auditIds = auditRows.map(r => r.id as string);
+
+  // Plain "Viewed owner detail <id>" rows carry the id in their text, not a link.
+  const parsedByAudit = new Map<string, string>();
+  for (const r of auditRows) {
+    const m = /owner detail\s+(\S+)/.exec(String(r.detail ?? ''));
+    if (m) parsedByAudit.set(r.id as string, m[1]);
+  }
+
+  const callUnits = await linkMap(
+    callIds.length
+      ? `SELECT cp.call_id AS k, cp.property_id AS pid FROM call_properties cp
+         WHERE cp.call_id IN (${callIds.map(() => '?').join(', ')})`
+      : null,
+    callIds,
+  );
+  const auditUnits = await linkMap(
+    auditIds.length
+      ? `SELECT ap.audit_id AS k, ap.property_id AS pid FROM audit_properties ap
+         WHERE ap.audit_id IN (${auditIds.map(() => '?').join(', ')})`
+      : null,
+    auditIds,
+  );
+
+  const allPropIds = new Set<string>();
+  callUnits.forEach(ids => ids.forEach(id => allPropIds.add(id)));
+  auditUnits.forEach(ids => ids.forEach(id => allPropIds.add(id)));
+  parsedByAudit.forEach(id => allPropIds.add(id));
+
+  const propInfo = new Map<string, { label: string; ownerName: string; numberMasked: string }>();
+  if (allPropIds.size > 0) {
+    const ids = [...allPropIds];
+    const [pRows] = await pool.query<Row[]>(
+      `SELECT id, community, cluster, building, unit_number, plot_number, owner_name, owner_phone
+       FROM properties WHERE id IN (${ids.map(() => '?').join(', ')})`,
+      ids,
+    );
+    for (const p of pRows) {
+      propInfo.set(p.id as string, {
+        label: unitLabelFromRow(p),
+        ownerName: String(p.owner_name ?? '').trim(),
+        numberMasked: maskPhone(p.owner_phone as string | null).masked,
+      });
+    }
+  }
+
+  const labelFor = (propIds: string[]): { unitLabel?: string; unitCount: number } => {
+    const infos = propIds.map(id => propInfo.get(id)).filter(Boolean) as { label: string }[];
+    if (infos.length === 0) return { unitLabel: undefined, unitCount: propIds.length };
+    const first = infos[0].label;
+    return {
+      unitLabel: infos.length > 1 ? `${first} +${infos.length - 1} more` : first,
+      unitCount: infos.length,
+    };
+  };
+
+  const out: ActivityRow[] = rows.map(r => {
+    const id = r.id as string;
+    const at = fromDb(r.at)!;
+    const actorId = (r.actor_id as string) ?? null;
+
+    if (r.src === 'call') {
+      const propIds = callUnits.get(id) ?? [];
+      const { unitLabel, unitCount } = labelFor(propIds);
+      const owner = String(r.owner_name ?? '').trim() || (propIds[0] ? propInfo.get(propIds[0])?.ownerName : '') || undefined;
+      return {
+        id, at, actorId,
+        action: 'call', displayAction: 'call',
+        outcome: (r.outcome as string) ?? undefined,
+        ownerName: owner,
+        unitLabel, unitCount,
+        note: (r.note as string) ?? undefined,
+        detail: '',
+      };
+    }
+
+    // audit row
+    const action = r.action as string;
+    const detail = String(r.detail ?? '');
+    const linked = auditUnits.get(id) ?? (parsedByAudit.has(id) ? [parsedByAudit.get(id)!] : []);
+    const { unitLabel, unitCount } = labelFor(linked);
+    const isReveal = action === 'view' && /^Revealed/i.test(detail);
+    const primary = linked[0] ? propInfo.get(linked[0]) : undefined;
+    const ownerName = primary?.ownerName
+      || (isReveal ? detail.replace(/^Revealed[^—]*—\s*/i, '').trim() : undefined)
+      || undefined;
+    // Once owner + unit are resolved, the raw "Viewed owner detail <id>" /
+    // "Revealed number — <name>" text is just noise — those columns carry it.
+    const resolved = !!(ownerName || unitLabel);
+    const cleanDetail = isReveal ? '' : (action === 'view' && resolved ? '' : detail);
+    return {
+      id, at, actorId,
+      action,
+      displayAction: isReveal ? 'reveal' : action,
+      ownerName,
+      unitLabel, unitCount,
+      numberMasked: isReveal ? primary?.numberMasked : undefined,
+      detail: cleanDetail,
+    };
+  });
+
+  return { rows: out, total };
+}
+
+/** Build a map key → [ids] from a two-column (k, pid) query. */
+async function linkMap(sql: string | null, params: string[]): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>();
+  if (!sql) return map;
+  const [rows] = await pool.query<Row[]>(sql, params);
+  for (const r of rows) {
+    const k = r.k as string;
+    if (!map.has(k)) map.set(k, []);
+    map.get(k)!.push(r.pid as string);
+  }
+  return map;
 }

@@ -188,8 +188,8 @@ export const del = <T>(path: string) =>
   api<T>(path, { method: 'DELETE' });
 
 /** Fetch a binary response (e.g. an .xlsx export) as a Blob, cookies included. */
-export async function download(path: string): Promise<Blob> {
-  const res = await fetch(buildUrl(path), { method: 'GET', credentials: 'include' });
+export async function download(path: string, query?: Record<string, unknown>): Promise<Blob> {
+  const res = await fetch(buildUrl(path, query), { method: 'GET', credentials: 'include' });
   if (res.status === 401) {
     authLostHandlers.forEach(h => h());
     throw new ApiError(401, 'unauthorized', 'Your session has expired.');

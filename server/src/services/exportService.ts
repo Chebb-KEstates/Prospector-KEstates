@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import { pool, Row, fromDb } from '../db/pool';
 import { findDatasetById } from '../repositories/datasetRepo';
 import { getDatasetSource, loadSourceGrid } from '../repositories/datasetSourceRepo';
+import type { ActivityRow } from '../repositories/auditRepo';
 import { notFound } from '../http/errors';
 import {
   CallOutcome, CallOutcomeLabel, PropertyState, PropertyStateLabel,
@@ -91,6 +92,42 @@ export async function buildOriginalWorkbook(datasetId: string): Promise<{ buffer
   XLSX.utils.book_append_sheet(wb, ws, (src.sheetName || 'Sheet1').slice(0, 31));
   const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
   return { buffer, fileName: src.fileName || `${datasetId}.xlsx` };
+}
+
+/** The "Note / detail" cell for one activity row — note, else masked-number for
+ *  a reveal, else the raw detail. Never a real phone number. */
+export function activityDetailText(r: ActivityRow): string {
+  if (r.note && r.note.trim()) return r.note.trim();
+  if (r.numberMasked) return `revealed number ${r.numberMasked}`;
+  return r.detail ?? '';
+}
+
+/**
+ * Build the audit/activity export — ONE sheet, one readable row per event, with
+ * owner + unit resolved and every phone number MASKED. The rows are already the
+ * filtered feed; this just lays them out. Numbers never leave in the clear.
+ */
+export function buildActivityWorkbook(
+  rows: ActivityRow[],
+  actorName: (id: string | null) => string,
+): { buffer: Buffer; fileName: string } {
+  const headers = ['Time', 'Actor', 'Action', 'Owner', 'Unit', 'Result', 'Note / detail'];
+  const body = rows.map(r => [
+    dateTime(r.at),
+    actorName(r.actorId),
+    r.displayAction,
+    r.ownerName ?? '',
+    r.unitLabel ?? '',
+    r.outcome ? (CallOutcomeLabel[r.outcome as CallOutcome] ?? r.outcome) : '',
+    activityDetailText(r),
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...body]);
+  ws['!cols'] = [{ wch: 18 }, { wch: 16 }, { wch: 12 }, { wch: 24 }, { wch: 28 }, { wch: 16 }, { wch: 48 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Activity');
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  const stamp = new Date().toISOString().slice(0, 10);
+  return { buffer, fileName: `Prospector activity ${stamp}.xlsx` };
 }
 
 async function appendOwnerSheets(wb: XLSX.WorkBook, datasetId: string): Promise<void> {

@@ -1,6 +1,6 @@
 {
   "name": "prospector-react",
-  "version": "1.11.2",
+  "version": "1.12.0",
   "private": true,
   "dependencies": {
     "@testing-library/dom": "^10.4.1",

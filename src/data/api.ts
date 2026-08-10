@@ -1,6 +1,6 @@
 import { get, post, patch, del, download, upload, tzOffsetMinutes, setCsrfToken } from './apiClient';
 import {
-  Property, Lead, CallLog, BatchRequest, DataSet, AuditEntry, VaultSettings,
+  Property, Lead, CallLog, BatchRequest, DataSet, VaultSettings,
   PropertyState, CallOutcome, DataSetType, DataModule, RequestStatus,
 } from '../types/models';
 import type { PhoneEntry } from '../types/models';
@@ -370,11 +370,34 @@ export const settings = {
 
 // ── Audit ──────────────────────────────────────────────────────────────────
 
+/** One enriched activity row (audit event or call), owner/unit resolved, number masked. */
+export interface ActivityRow {
+  id: string;
+  at: string;
+  actorId: string | null;
+  action: string;
+  displayAction: string;
+  outcome?: string;
+  ownerName?: string;
+  unitLabel?: string;
+  unitCount: number;
+  note?: string;
+  numberMasked?: string;
+  detail: string;
+}
+
+export interface AuditFilter {
+  actorId?: string; action?: string; from?: string; to?: string;
+  search?: string; sort?: 'at' | 'actor' | 'action'; dir?: 'asc' | 'desc';
+  page?: number; pageSize?: number;
+}
+
 export const audit = {
-  async list(q: { actorId?: string; action?: string; page?: number; pageSize?: number } = {}) {
-    const r = await get<{ rows: Record<string, unknown>[]; total: number }>('/api/audit', q);
-    return { rows: r.rows.map(AuditEntry.fromJson), total: r.total };
+  async list(q: AuditFilter = {}) {
+    const r = await get<{ rows: ActivityRow[]; total: number }>('/api/audit', q as Record<string, unknown>);
+    return { rows: r.rows, total: r.total };
   },
+  exportBlob: (q: AuditFilter = {}) => download('/api/audit/export', q as Record<string, unknown>),
 };
 
 // ── Dashboards ─────────────────────────────────────────────────────────────

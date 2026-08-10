@@ -18,7 +18,31 @@ for what each part means for Prospector.
 
 ---
 
-## [1.11.2] — 2026-08-10
+## [1.12.0] — 2026-08-10
+
+The Audit section becomes a full **Activity Log** — readable, searchable, and
+exportable.
+
+### Added
+- **Rich activity feed.** The log now resolves unit IDs to **owner name + unit**
+  (community · cluster · number), and merges in the **call records** so each call
+  shows the **result selected and the note** the broker wrote — retroactively, from
+  your existing history. Reveals show which owner's number was seen, **masked**
+  (••••1234). Renamed "Audit Trail" → "Activity Log".
+- **More filters & sort.** Filter by **person**, by **date range**, and a
+  **free-text search** (owner, unit, note), on top of the action chips. Every
+  column header (Time / Person / Action) is now **sortable**.
+- **Export to Excel** of the currently-filtered log — one readable row per event.
+  Phone numbers are **masked in the export**, keeping the "numbers never leave in a
+  file" guarantee intact.
+
+### Changed
+- Action filter chips: removed the dead `cap-block`, added `export` and `edit`.
+
+### Notes
+- No schema change and no migration — the feed is built by enriching existing
+  `audit` and `calls` data at read time, so the richer history covers events you
+  already have.
 
 Dead-code cleanup from the removed view-cap and global-lock features, plus a bug
 fix found along the way. No behaviour change for brokers or managers.
