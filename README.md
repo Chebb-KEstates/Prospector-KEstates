@@ -116,7 +116,7 @@ cannot use a wildcard.
 | Command | Description |
 |---|---|
 | `npm start` / `npm run build` | Front-end dev server / production build |
-| `npm test` | Front-end tests (42) |
+| `npm test` | Front-end tests (88) |
 | `npm run e2e` | Browser smoke test — see `e2e/README.md` |
 | `server: npm run dev` | API with reload |
 | `server: npm run migrate` | Apply migrations (creates the database if absent) |

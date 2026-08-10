@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../state/AuthContext';
 import { auth } from '../data/api';
+import { APP_VERSION } from '../version';
 
 type DevUser = { id: string; name: string; email: string; role: string };
 
@@ -169,6 +170,9 @@ export function LoginScreen() {
 
         <p style={{ marginTop: 24, textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
           Accounts are created by your manager.
+        </p>
+        <p style={{ marginTop: 8, textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-tertiary)', letterSpacing: '0.02em' }}>
+          Prospector · v{APP_VERSION}
         </p>
       </div>
     </div>
