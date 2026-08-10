@@ -44,29 +44,6 @@ export async function writeAudit(
   return new AuditEntry(id, kOrgId, at.toISOString(), input.actorId ?? '', input.action, input.detail, ids);
 }
 
-/**
- * How many reveals this broker has spent today — the daily view cap.
- *
- * The client counted by filtering the whole in-memory audit array by local
- * calendar date. This mirrors that intent with an indexed range scan
- * (ix_audit_view_cap) over the caller's local day boundaries, computed by the
- * caller and passed in, so the definition of "today" doesn't silently become
- * the server's timezone.
- */
-export async function countViewsBetween(
-  actorId: string,
-  fromInclusive: Date,
-  toExclusive: Date,
-  cx?: PoolConnection,
-): Promise<number> {
-  const db = cx ?? pool;
-  const [rows] = await db.query<Row[]>(
-    `SELECT COUNT(*) AS n FROM audit
-     WHERE actor_id = ? AND action = 'view' AND at >= ? AND at < ?`,
-    [actorId, fromInclusive, toExclusive],
-  );
-  return Number(rows[0].n);
-}
 
 export interface AuditPage {
   entries: AuditEntry[];

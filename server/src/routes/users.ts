@@ -53,7 +53,6 @@ export default async function userRoutes(app: FastifyInstance) {
           permissions: {
             type: 'array', items: { type: 'string', enum: Object.values(Permission) },
           },
-          viewCapOverride: { type: 'integer', minimum: 1, maximum: 10000 },
           ipLocked: { type: 'boolean' },
           initialPassword: { type: 'string', minLength: 1, maxLength: 200 },
         },
@@ -62,7 +61,7 @@ export default async function userRoutes(app: FastifyInstance) {
   }, async (req) => {
     const body = req.body as {
       name: string; email: string; role: UserRole; team?: string;
-      active?: boolean; permissions?: Permission[]; viewCapOverride?: number;
+      active?: boolean; permissions?: Permission[];
       ipLocked?: boolean; initialPassword: string;
     };
 
@@ -80,7 +79,6 @@ export default async function userRoutes(app: FastifyInstance) {
       body.active ?? true, (body.team ?? '').trim(),
       // Matches the Users modal: no boxes ticked means "role defaults".
       body.permissions && body.permissions.length > 0 ? new Set(body.permissions) : undefined,
-      body.viewCapOverride,
       new Date().toISOString(),
       body.ipLocked ?? false,
     );
@@ -116,7 +114,6 @@ export default async function userRoutes(app: FastifyInstance) {
           permissions: {
             type: 'array', items: { type: 'string', enum: Object.values(Permission) },
           },
-          viewCapOverride: { type: ['integer', 'null'], minimum: 1, maximum: 10000 },
           ipLocked: { type: 'boolean' },
         },
       },
@@ -125,7 +122,7 @@ export default async function userRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const body = req.body as {
       name?: string; email?: string; role?: UserRole; team?: string;
-      active?: boolean; permissions?: Permission[]; viewCapOverride?: number | null;
+      active?: boolean; permissions?: Permission[];
       ipLocked?: boolean;
     };
     const me = req.currentUser!;
@@ -165,7 +162,6 @@ export default async function userRoutes(app: FastifyInstance) {
       permissions: body.permissions
         ? (body.permissions.length > 0 ? new Set(body.permissions) : null)
         : undefined,
-      viewCapOverride: body.viewCapOverride === null ? null : body.viewCapOverride,
       ipLocked: body.ipLocked,
     });
 

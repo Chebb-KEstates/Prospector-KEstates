@@ -8,7 +8,7 @@ import { kOrgId } from '../../../src/types/models';
  * calls `clearIpLockCache()`.
  */
 
-export interface IpLockState { wifiLockEnabled: boolean; officeIp: string }
+export interface IpLockState { officeIp: string }
 
 let cache: { state: IpLockState; at: number } | null = null;
 const TTL_MS = 10_000;
@@ -17,10 +17,9 @@ export async function getIpLock(): Promise<IpLockState> {
   const now = Date.now();
   if (cache && now - cache.at < TTL_MS) return cache.state;
   const [rows] = await pool.query<Row[]>(
-    'SELECT wifi_lock_enabled, office_ip FROM settings WHERE org_id = ? LIMIT 1', [kOrgId],
+    'SELECT office_ip FROM settings WHERE org_id = ? LIMIT 1', [kOrgId],
   );
   const state: IpLockState = {
-    wifiLockEnabled: rows.length ? !!rows[0].wifi_lock_enabled : false,
     officeIp: rows.length ? String(rows[0].office_ip ?? '') : '',
   };
   cache = { state, at: now };

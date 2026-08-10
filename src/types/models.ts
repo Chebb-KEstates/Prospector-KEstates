@@ -559,8 +559,6 @@ export class VaultSettings {
     public maxNoAnswerAttempts = 3,
     public assignmentExpiryDays = 14,
     public portfolioStaleDays = 21,
-    public dailyViewCap = 100,
-    public wifiLockEnabled = false,
     public officeIp = '',
     // Assignment timer — the per-unit countdown that recycles neglected units.
     public assignmentSlaHours = 48,      // fresh assignment → time to make contact
@@ -577,8 +575,6 @@ export class VaultSettings {
       maxNoAnswerAttempts: this.maxNoAnswerAttempts,
       assignmentExpiryDays: this.assignmentExpiryDays,
       portfolioStaleDays: this.portfolioStaleDays,
-      dailyViewCap: this.dailyViewCap,
-      wifiLockEnabled: this.wifiLockEnabled,
       officeIp: this.officeIp,
       assignmentSlaHours: this.assignmentSlaHours,
       noAnswerExtensionHours: this.noAnswerExtensionHours,
@@ -596,8 +592,6 @@ export class VaultSettings {
       _int(j.maxNoAnswerAttempts, d.maxNoAnswerAttempts),
       _int(j.assignmentExpiryDays, d.assignmentExpiryDays),
       _int(j.portfolioStaleDays, d.portfolioStaleDays),
-      _int(j.dailyViewCap, d.dailyViewCap),
-      (j.wifiLockEnabled as boolean) ?? d.wifiLockEnabled,
       (j.officeIp as string) ?? d.officeIp,
       _int(j.assignmentSlaHours, d.assignmentSlaHours),
       _int(j.noAnswerExtensionHours, d.noAnswerExtensionHours),

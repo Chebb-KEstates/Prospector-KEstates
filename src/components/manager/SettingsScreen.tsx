@@ -26,8 +26,6 @@ export function SettingsScreen() {
         form.maxNoAnswerAttempts,
         form.assignmentExpiryDays,
         form.portfolioStaleDays,
-        form.dailyViewCap,
-        form.wifiLockEnabled,
         form.officeIp,
         form.assignmentSlaHours,
         form.noAnswerExtensionHours,

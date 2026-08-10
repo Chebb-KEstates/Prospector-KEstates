@@ -10,7 +10,7 @@
 
 | | |
 |---|---|
-| **Current version** | v1.11.1 |
+| **Current version** | v1.11.2 |
 | **Last updated** | 2026-08-10 |
 | **Live site** | owners-crm.kestates.ae |
 | **Repository** | github.com/Chebb-KEstates/Prospector-KEstates |

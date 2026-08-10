@@ -52,12 +52,3 @@ export const unprocessable = (msg: string, details?: unknown) =>
 
 export const tooManyRequests = (msg: string) =>
   new ApiError(429, 'too_many_requests', msg);
-
-/** The daily reveal cap — its own code so the UI can react specifically. */
-export const viewCapReached = (cap: number) =>
-  new ApiError(
-    429,
-    'view_cap_reached',
-    `Daily view cap (${cap}) reached. Ask your manager if you need more.`,
-    { cap },
-  );

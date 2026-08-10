@@ -18,6 +18,37 @@ for what each part means for Prospector.
 
 ---
 
+## [1.11.2] — 2026-08-10
+
+Dead-code cleanup from the removed view-cap and global-lock features, plus a bug
+fix found along the way. No behaviour change for brokers or managers.
+
+### Fixed
+- The manager's Users list and edit dialog never reflected a broker's saved
+  **office-network lock** state — the server sent `ipLocked` but the frontend
+  dropped it, so the column always showed "—" and the checkbox always opened
+  unchecked. (The lock itself worked server-side; only the display was wrong.)
+
+### Changed
+- Removed all dead plumbing left over from the removed daily view cap and the old
+  global Wi-Fi lock: the `enforceCap`/`used`/`cap`/`viewCapOverride`/`dailyViewCap`
+  /`wifiLockEnabled` fields and the per-reveal view-count query. The reveal is
+  unchanged in behaviour — single record, audited.
+- Deleted two unused source files (`PropertyDetail.tsx`, `AppTable.tsx`) and two
+  unused dependencies (`idb`, `web-vitals`). ~500 fewer lines.
+
+### Data
+- Migration **012** drops three now-dead columns: `settings.daily_view_cap`,
+  `settings.wifi_lock_enabled`, `users.view_cap_override`. No live code read or
+  wrote them. Verified on a fresh database end-to-end.
+
+### Deploy
+- After 011, migration **012** runs on the next `npm run migrate`. Deploy the new
+  code, then migrate, then restart — so the running server never references a
+  dropped column.
+
+---
+
 ## [1.11.1] — 2026-08-10
 
 The first release under formal version control. The number is shown on the login

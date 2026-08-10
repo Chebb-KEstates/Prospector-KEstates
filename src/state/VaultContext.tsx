@@ -62,7 +62,7 @@ interface VaultContextValue {
   saveUser: (input: {
     id?: string; name: string; email: string; role: UserRole; team?: string;
     active?: boolean; permissions?: Permission[];
-    viewCapOverride?: number | null; ipLocked?: boolean; initialPassword?: string;
+    ipLocked?: boolean; initialPassword?: string;
   }) => Promise<AppUser>;
   setUserActive: (user: AppUser, active: boolean) => Promise<void>;
   resetUserPassword: (userId: string, newPassword: string) => Promise<void>;
@@ -93,10 +93,10 @@ interface VaultContextValue {
   logCall: (properties: Property[], outcome: CallOutcome, note?: string, followUpAt?: string, ownerName?: string) => Promise<void>;
   logLeadCall: (lead: Lead, outcome: CallOutcome, note?: string, followUpAt?: string) => Promise<void>;
 
-  /** The sanctioned reveal — single record, capped, audited server-side. */
-  revealPhone: (propertyId: string, enforceCap?: boolean) => Promise<api.RevealResult>;
-  revealLeadPhone: (leadId: string, enforceCap?: boolean) => Promise<api.RevealResult>;
-  recordView: (propertyId: string, what: string) => Promise<{ used: number; cap: number }>;
+  /** The sanctioned reveal — single record, audited server-side. */
+  revealPhone: (propertyId: string) => Promise<api.RevealResult>;
+  revealLeadPhone: (leadId: string) => Promise<api.RevealResult>;
+  recordView: (propertyId: string, what: string) => Promise<{ ok: true }>;
 
   /** Bumped after any write, so paged views know to refetch. */
   revision: number;
@@ -207,19 +207,18 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
   const saveUser = useCallback(async (input: {
     id?: string; name: string; email: string; role: UserRole; team?: string;
     active?: boolean; permissions?: Permission[];
-    viewCapOverride?: number | null; ipLocked?: boolean; initialPassword?: string;
+    ipLocked?: boolean; initialPassword?: string;
   }): Promise<AppUser> => {
     const saved = input.id
       ? await api.users.update(input.id, {
           name: input.name, email: input.email, role: input.role,
           team: input.team, active: input.active,
-          permissions: input.permissions, viewCapOverride: input.viewCapOverride,
+          permissions: input.permissions,
           ipLocked: input.ipLocked,
         })
       : await api.users.create({
           name: input.name, email: input.email, role: input.role,
           team: input.team, active: input.active, permissions: input.permissions,
-          viewCapOverride: input.viewCapOverride ?? undefined,
           ipLocked: input.ipLocked,
           initialPassword: input.initialPassword!,
         });
@@ -345,11 +344,11 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
   // ── Reveal ───────────────────────────────────────────────────────────────
 
   const revealPhone = useCallback(
-    (propertyId: string, enforceCap = false) => api.properties.reveal(propertyId, enforceCap),
+    (propertyId: string) => api.properties.reveal(propertyId),
     [],
   );
   const revealLeadPhone = useCallback(
-    (leadId: string, enforceCap = false) => api.leads.reveal(leadId, enforceCap),
+    (leadId: string) => api.leads.reveal(leadId),
     [],
   );
   const recordView = useCallback(

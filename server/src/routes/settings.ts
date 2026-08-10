@@ -32,15 +32,13 @@ export default async function settingsRoutes(app: FastifyInstance) {
         type: 'object',
         additionalProperties: false,
         properties: {
-          // Bounded rather than free integers: a 0-day cooldown or a
-          // 100k view cap would quietly disable a protection.
+          // Bounded rather than free integers: a 0-day cooldown would quietly
+          // disable a protection.
           notInterestedCooldownDays: { type: 'integer', minimum: 1, maximum: 365 },
           listedCooldownDays: { type: 'integer', minimum: 1, maximum: 365 },
           maxNoAnswerAttempts: { type: 'integer', minimum: 1, maximum: 20 },
           assignmentExpiryDays: { type: 'integer', minimum: 1, maximum: 365 },
           portfolioStaleDays: { type: 'integer', minimum: 1, maximum: 365 },
-          dailyViewCap: { type: 'integer', minimum: 1, maximum: 10000 },
-          wifiLockEnabled: { type: 'boolean' },
           officeIp: { type: 'string', maxLength: 64 },
           // Assignment timer. Hours 0–720 (30 days), days 0–365. 0 = no limit
           // (the timer is removed — see dispositions.ts).
@@ -62,8 +60,6 @@ export default async function settingsRoutes(app: FastifyInstance) {
       body.maxNoAnswerAttempts ?? current.maxNoAnswerAttempts,
       body.assignmentExpiryDays ?? current.assignmentExpiryDays,
       body.portfolioStaleDays ?? current.portfolioStaleDays,
-      body.dailyViewCap ?? current.dailyViewCap,
-      body.wifiLockEnabled ?? current.wifiLockEnabled,
       body.officeIp ?? current.officeIp,
       body.assignmentSlaHours ?? current.assignmentSlaHours,
       body.noAnswerExtensionHours ?? current.noAnswerExtensionHours,

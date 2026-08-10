@@ -36,7 +36,7 @@ test.before(async () => {
   userId = newUserId();
   await insertUser({
     user: new AppUser(userId, 'Import Tester', `import-${userId}@test.local`,
-      UserRole.manager, true, 'QA', undefined, undefined, new Date().toISOString()),
+      UserRole.manager, true, 'QA', undefined, new Date().toISOString()),
     passwordHash: 'scrypt$131072$8$1$AAAA$AAAA',
     mustChangePassword: false,
   });
@@ -207,7 +207,7 @@ test('a second user cannot touch someone else\'s staged owner data', async () =>
   const otherId = newUserId();
   await insertUser({
     user: new AppUser(otherId, 'Other', `other-${otherId}@test.local`,
-      UserRole.manager, true, '', undefined, undefined, new Date().toISOString()),
+      UserRole.manager, true, '', undefined, new Date().toISOString()),
     passwordHash: 'scrypt$131072$8$1$AAAA$AAAA', mustChangePassword: false,
   });
 

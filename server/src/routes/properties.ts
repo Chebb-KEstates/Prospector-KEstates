@@ -331,8 +331,8 @@ export default async function propertyRoutes(app: FastifyInstance) {
   });
 
   /**
-   * The sanctioned reveal. Single record. Counts against the daily cap and is
-   * audited in the same transaction — see services/revealService.
+   * The sanctioned reveal. Single record, audited in the same transaction —
+   * see services/revealService.
    */
   app.post('/api/properties/:id/reveal', {
     preHandler: [app.authenticate, app.requirePermission(Permission.callOwners)],
@@ -342,19 +342,10 @@ export default async function propertyRoutes(app: FastifyInstance) {
         type: 'object', required: ['id'],
         properties: { id: { type: 'string', maxLength: 64 } },
       },
-      body: {
-        type: 'object', additionalProperties: false,
-        properties: {
-          tzOffsetMinutes: { type: 'integer', minimum: -840, maximum: 840 },
-          // The dialer's in-call reveal doesn't spend cap (the view was already
-          // counted when the session opened) — mirrors recordView(enforceCap:false).
-          enforceCap: { type: 'boolean' },
-        },
-      },
+      body: { type: 'object', additionalProperties: false, properties: {} },
     },
   }, async (req) => {
     const { id } = req.params as { id: string };
-    const body = (req.body ?? {}) as { tzOffsetMinutes?: number; enforceCap?: boolean };
     const me = req.currentUser!;
 
     const p = await findPropertyById(id);
@@ -363,14 +354,10 @@ export default async function propertyRoutes(app: FastifyInstance) {
       throw forbidden('That unit is not assigned to you.');
     }
 
-    return revealOwnerPhone(id, {
-      user: me,
-      tzOffsetMinutes: body.tzOffsetMinutes ?? 0,
-      enforceCap: body.enforceCap ?? false,
-    });
+    return revealOwnerPhone(id, { user: me });
   });
 
-  /** A non-phone view (opening an owner's detail): audited, counts against cap. */
+  /** A non-phone view (opening an owner's detail): audited, returns no number. */
   app.post('/api/properties/:id/view', {
     preHandler: [app.authenticate],
     schema: {
@@ -382,13 +369,12 @@ export default async function propertyRoutes(app: FastifyInstance) {
         type: 'object', additionalProperties: false,
         properties: {
           what: { type: 'string', maxLength: 200 },
-          tzOffsetMinutes: { type: 'integer', minimum: -840, maximum: 840 },
         },
       },
     },
   }, async (req) => {
     const { id } = req.params as { id: string };
-    const body = (req.body ?? {}) as { what?: string; tzOffsetMinutes?: number };
+    const body = (req.body ?? {}) as { what?: string };
     const me = req.currentUser!;
 
     const p = await findPropertyById(id);
@@ -396,8 +382,6 @@ export default async function propertyRoutes(app: FastifyInstance) {
 
     return recordView({
       user: me,
-      tzOffsetMinutes: body.tzOffsetMinutes ?? 0,
-      enforceCap: true,
       what: body.what ?? `Viewed owner detail ${id}`,
     });
   });

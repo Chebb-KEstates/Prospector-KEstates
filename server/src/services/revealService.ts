@@ -3,22 +3,21 @@ import { AppUser } from '../../../src/types/user';
 import { prettyPhone } from '../../../src/utils/format';
 import { findPropertyById, findByOwnerKey } from '../repositories/propertyRepo';
 import { findLeadById } from '../repositories/leadRepo';
-import { loadSettings } from '../repositories/settingsRepo';
-import { countViewsBetween, writeAudit } from '../repositories/auditRepo';
+import { writeAudit } from '../repositories/auditRepo';
 import { ownerKeyOf } from '../../../src/logic/ownerGrouping';
-import { notFound, viewCapReached } from '../http/errors';
+import { notFound } from '../http/errors';
 
 /**
  * The sanctioned reveal.
  *
  * This is the only path by which a real phone number leaves the server, and the
- * cap check + audit write happen in ONE transaction — so "was allowed to
- * reveal" and "revealed" cannot come apart. Client-side these were two
- * independent steps a caller could simply skip.
+ * reveal + the audit write happen in ONE transaction — so "revealed" can never
+ * come apart from "left a trace". Client-side these were two independent steps a
+ * caller could simply skip.
  *
  * Deliberately single-record: reveal takes one id, never a list. There is no
- * bulk endpoint and no export, because the moment one exists the daily cap
- * stops meaning anything.
+ * bulk endpoint and no export — the audit trail is only meaningful if a number
+ * can only leave one record at a time.
  */
 
 export interface RevealResult {
@@ -26,42 +25,21 @@ export interface RevealResult {
   phone: string;
   /**
    * Every number on record, labelled (Mobile 1 / Mobile 2 / …) and grouped the
-   * same way. Revealing an owner reveals their contact card, so this is ONE
-   * reveal: one cap decrement and one audit entry, not one per number. Charging
-   * three reveals for one owner would burn a broker's daily cap for no gain,
-   * and splitting it into three audit lines would misreport what happened.
-   * Always contains at least the primary.
+   * same way. Revealing an owner reveals their whole contact card, so this is ONE
+   * reveal and ONE audit entry, not one per number. Always contains at least the
+   * primary.
    */
   phones: { label: string; number: string }[];
   /**
    * Per co-owner, each with their OWN number(s) — the ownership register lists
    * co-owners separately. One reveal returns the whole card (all owners), one
-   * cap decrement. Absent for a single-owner unit (use `phone`/`phones`).
+   * audit entry. Absent for a single-owner unit (use `phone`/`phones`).
    */
   owners?: { name: string; phones: { label: string; number: string }[] }[];
-  /** Reveals spent today, after this one. */
-  used: number;
-  cap: number;
-}
-
-/** Local-day bounds for the caller, so "today" isn't silently the server's day. */
-function dayBounds(nowIso: string, tzOffsetMinutes: number): { from: Date; to: Date } {
-  const now = new Date(nowIso);
-  const shifted = new Date(now.getTime() - tzOffsetMinutes * 60_000);
-  const startShifted = Date.UTC(
-    shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate(),
-  );
-  const from = new Date(startShifted + tzOffsetMinutes * 60_000);
-  const to = new Date(from.getTime() + 24 * 3600_000);
-  return { from, to };
 }
 
 interface RevealInput {
   user: AppUser;
-  /** Minutes to subtract from UTC to reach the caller's local time. */
-  tzOffsetMinutes: number;
-  /** Whether this reveal counts against the cap. */
-  enforceCap: boolean;
   what: string;
   /** Properties this reveal touches — linked in the audit so it shows on the
    *  record's history journal. */
@@ -74,30 +52,16 @@ async function revealGuard(
   phones: { label: string; number: string }[] = [],
   owners: { name: string; phones: { label: string; number: string }[] }[] = [],
 ): Promise<RevealResult> {
-  const settings = await loadSettings();
-  const cap = input.user.viewCapOverride ?? settings.dailyViewCap;
-  const nowIso = new Date().toISOString();
-  const { from, to } = dayBounds(nowIso, input.tzOffsetMinutes);
-
-  // The transaction COMMITS in both cases and reports the decision; the throw
-  // happens after it returns.
-  //
-  // This must not be "write cap-block, then throw" inside the transaction: the
-  // throw rolls the transaction back, taking the cap-block entry with it. A
-  // broker hitting the cap would be blocked but leave no trace — the opposite
-  // of the point. Hitting a limit is exactly the event worth recording.
-  const decision = await transaction(async (cx) => {
-    const used = await countViewsBetween(input.user.id, from, to, cx);
-
-    // Daily view cap removed — every view/reveal is allowed and simply audited.
+  // Every reveal/view is allowed and audited — the audit IS the control (there is
+  // no daily cap). Reveal and audit share one transaction, so a revealed number
+  // always leaves a trace even if the request fails afterwards.
+  await transaction(async (cx) => {
     await writeAudit({
       actorId: input.user.id,
       action: 'view',
       detail: input.what,
       propertyIds: input.propertyIds,
     }, cx);
-
-    return { blocked: false as const, used };
   });
 
   // Fall back to the primary so callers always get a non-empty list.
@@ -114,8 +78,6 @@ async function revealGuard(
           phones: o.phones.map(e => ({ label: e.label, number: prettyPhone(e.number) })),
         }))
       : undefined,
-    used: decision.used + 1,
-    cap,
   };
 }
 
@@ -157,14 +119,11 @@ export async function revealLeadPhone(
 }
 
 /**
- * A non-phone view (opening an owner's detail). Counts against the cap and is
- * audited, but returns no number — mirrors recordView() with enforceCap=true.
+ * A non-phone view (opening an owner's detail). Audited, but returns no number.
  */
-export async function recordView(
-  input: RevealInput,
-): Promise<{ used: number; cap: number }> {
-  const r = await revealGuard(input, undefined);
-  return { used: r.used, cap: r.cap };
+export async function recordView(input: RevealInput): Promise<{ ok: true }> {
+  await revealGuard(input, undefined);
+  return { ok: true };
 }
 
 /** Every unit of the owner behind a property — the dialer's grouped card. */

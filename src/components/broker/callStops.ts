@@ -214,11 +214,9 @@ export function buildOwnerStop(
     // Every number the primary owner has, still masked — lets the card show
     // "N numbers on file" up front and reveal all of them at once.
     phonesMasked: owner.allPhones,
-    // enforceCap:false — opening the session already counted as the view, the
-    // same rule the client's recordView(…, false) applied at this point. One
-    // reveal returns the whole card, including each co-owner's own number.
+    // One reveal returns the whole card, including each co-owner's own number.
     reveal: async () => {
-      const r = await api.properties.reveal(g0.id, false);
+      const r = await api.properties.reveal(g0.id);
       return { phones: r.phones, owners: r.owners ?? [] };
     },
     // Co-owners of the unit being called (masked) — drives the owner switcher.
@@ -267,7 +265,7 @@ export function buildLeadStop(l: Lead, calls: CallLog[], deps: StopDeps): CallSt
     buyer: true,
     phoneMasked: l.phone,
     // A lead has a single number and no co-owners.
-    reveal: async () => ({ phones: (await api.leads.reveal(l.id, false)).phones, owners: [] }),
+    reveal: async () => ({ phones: (await api.leads.reveal(l.id)).phones, owners: [] }),
     subtitle: `Buyer lead · ${l.project ?? l.source ?? 'enquiry'}`,
     assetsTitle: 'Enquiry',
     assets,

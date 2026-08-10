@@ -34,7 +34,7 @@ export interface UserPayload {
   active: boolean;
   team: string;
   permissions: Permission[];
-  viewCapOverride?: number;
+  ipLocked?: boolean;
   createdAt?: string;
 }
 
@@ -48,7 +48,7 @@ function toUser(j: UserPayload): AppUser {
   return new AppUser(
     j.id, j.name, j.email, j.role, j.active, j.team,
     j.permissions ? new Set(j.permissions) : undefined,
-    j.viewCapOverride, j.createdAt,
+    j.createdAt, j.ipLocked ?? false,
   );
 }
 
@@ -102,14 +102,14 @@ export const users = {
 
   async create(input: {
     name: string; email: string; role: UserRole; team?: string; active?: boolean;
-    permissions?: Permission[]; viewCapOverride?: number; ipLocked?: boolean; initialPassword: string;
+    permissions?: Permission[]; ipLocked?: boolean; initialPassword: string;
   }): Promise<AppUser> {
     return toUser(await post('/api/users', input));
   },
 
   async update(id: string, input: {
     name?: string; email?: string; role?: UserRole; team?: string; active?: boolean;
-    permissions?: Permission[]; viewCapOverride?: number | null; ipLocked?: boolean;
+    permissions?: Permission[]; ipLocked?: boolean;
   }): Promise<AppUser> {
     return toUser(await patch(`/api/users/${id}`, input));
   },
@@ -147,8 +147,7 @@ export interface PropertyFacets {
 /**
  * `phone` is the primary; `phones` is EVERY number on record, labelled
  * (Mobile 1 / Mobile 2 / …). Both grouped for display. Mirrors the server's
- * RevealResult — one reveal returns the owner's whole contact card, and costs
- * one cap decrement.
+ * RevealResult — one reveal returns the owner's whole contact card.
  */
 export interface RevealResult {
   phone: string;
@@ -156,8 +155,6 @@ export interface RevealResult {
   /** Per co-owner, each with their own real number(s). Present only for a
    *  multi-owner unit; one reveal returns the whole card. */
   owners?: { name: string; phones: PhoneEntry[] }[];
-  used: number;
-  cap: number;
 }
 
 /** One entry in a unit's history journal — a call, a record event, or its import. */
@@ -200,17 +197,13 @@ export const properties = {
     return get<PropertyEvent[]>(`/api/properties/${id}/events`);
   },
 
-  /** The sanctioned reveal: single record, capped, audited. */
-  reveal: (id: string, enforceCap = false) =>
-    post<RevealResult>(`/api/properties/${id}/reveal`, {
-      enforceCap, tzOffsetMinutes: tzOffsetMinutes(),
-    }),
+  /** The sanctioned reveal: single record, audited. */
+  reveal: (id: string) =>
+    post<RevealResult>(`/api/properties/${id}/reveal`, {}),
 
-  /** An audited, cap-counted view that returns no number. */
+  /** An audited view that returns no number. */
   recordView: (id: string, what: string) =>
-    post<{ used: number; cap: number }>(`/api/properties/${id}/view`, {
-      what, tzOffsetMinutes: tzOffsetMinutes(),
-    }),
+    post<{ ok: true }>(`/api/properties/${id}/view`, { what }),
 
   assign: (propertyIds: string[], brokerId: string, note?: string) =>
     post<{ assigned: number; ownerLinkedExtra: number }>('/api/properties/assign', {
@@ -267,10 +260,8 @@ export const leads = {
     return rows.map(CallLog.fromJson);
   },
 
-  reveal: (id: string, enforceCap = false) =>
-    post<RevealResult>(`/api/leads/${id}/reveal`, {
-      enforceCap, tzOffsetMinutes: tzOffsetMinutes(),
-    }),
+  reveal: (id: string) =>
+    post<RevealResult>(`/api/leads/${id}/reveal`, {}),
 
   assign: (leadIds: string[], brokerId: string, note?: string) =>
     post<{ assigned: number }>('/api/leads/assign', { leadIds, brokerId, note }),

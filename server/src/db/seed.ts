@@ -141,7 +141,7 @@ async function bootstrapManager(log: (m: string) => void): Promise<void> {
 
   const user = new AppUser(
     'u-director', env.bootstrap.name, env.bootstrap.email.toLowerCase(),
-    UserRole.manager, true, 'Leadership', undefined, undefined,
+    UserRole.manager, true, 'Leadership', undefined,
     new Date().toISOString(),
   );
   await insertUser({

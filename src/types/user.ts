@@ -54,7 +54,6 @@ export class AppUser {
     public active = true,
     public team = '',
     permissions?: Set<Permission>,
-    public viewCapOverride?: number,
     public createdAt?: string,
     /** When true, this user can only use the app from the office IP (see settings). */
     public ipLocked = false,
@@ -74,7 +73,7 @@ export class AppUser {
 
   copyWith(fields: {
     name?: string; email?: string; role?: UserRole; active?: boolean;
-    team?: string; permissions?: Set<Permission> | null; viewCapOverride?: number | null;
+    team?: string; permissions?: Set<Permission> | null;
     ipLocked?: boolean;
   }): AppUser {
     return new AppUser(
@@ -85,7 +84,6 @@ export class AppUser {
       fields.active ?? this.active,
       fields.team ?? this.team,
       fields.permissions !== undefined ? (fields.permissions ?? undefined) : this._permissions,
-      fields.viewCapOverride !== undefined ? (fields.viewCapOverride ?? undefined) : this.viewCapOverride,
       this.createdAt,
       fields.ipLocked ?? this.ipLocked,
     );
@@ -96,7 +94,6 @@ export class AppUser {
       id: this.id, name: this.name, email: this.email,
       role: this.role, active: this.active, team: this.team,
       permissions: Array.from(this.permissions).map(p => p),
-      viewCapOverride: this.viewCapOverride,
       createdAt: this.createdAt,
       ipLocked: this.ipLocked,
     };
@@ -113,7 +110,6 @@ export class AppUser {
       j.id as string, (j.name as string) ?? '', (j.email as string) ?? '',
       role, (j.active as boolean) ?? true, (j.team as string) ?? '',
       perms ? new Set(perms) : undefined,
-      j.viewCapOverride != null ? (j.viewCapOverride as number) : undefined,
       j.createdAt as string | undefined,
       (j.ipLocked as boolean) ?? false,
     );
@@ -125,15 +121,15 @@ export const demoPassword = 'demo1234';
 export const demoUsers: AppUser[] = [
   new AppUser(
     'u-director', 'The Director', 'director@demo.ae',
-    UserRole.manager, true, 'Leadership', undefined, undefined, '2026-01-01T00:00:00.000Z',
+    UserRole.manager, true, 'Leadership', undefined, '2026-01-01T00:00:00.000Z',
   ),
   new AppUser(
     'u-sara', 'Sara Malik', 'sara@demo.ae',
-    UserRole.broker, true, 'Secondary Market', undefined, undefined, '2026-01-01T00:00:00.000Z',
+    UserRole.broker, true, 'Secondary Market', undefined, '2026-01-01T00:00:00.000Z',
   ),
   new AppUser(
     'u-omar', 'Omar Farouk', 'omar@demo.ae',
-    UserRole.broker, true, 'Secondary Market', undefined, undefined, '2026-01-01T00:00:00.000Z',
+    UserRole.broker, true, 'Secondary Market', undefined, '2026-01-01T00:00:00.000Z',
   ),
 ];
 

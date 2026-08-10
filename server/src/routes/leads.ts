@@ -146,17 +146,10 @@ export default async function leadRoutes(app: FastifyInstance) {
     config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
     schema: {
       params: { type: 'object', required: ['id'], properties: { id: { type: 'string', maxLength: 64 } } },
-      body: {
-        type: 'object', additionalProperties: false,
-        properties: {
-          tzOffsetMinutes: { type: 'integer', minimum: -840, maximum: 840 },
-          enforceCap: { type: 'boolean' },
-        },
-      },
+      body: { type: 'object', additionalProperties: false, properties: {} },
     },
   }, async (req) => {
     const { id } = req.params as { id: string };
-    const body = (req.body ?? {}) as { tzOffsetMinutes?: number; enforceCap?: boolean };
     const me = req.currentUser!;
 
     const l = await findLeadById(id);
@@ -165,11 +158,7 @@ export default async function leadRoutes(app: FastifyInstance) {
       throw forbidden('That lead is not assigned to you.');
     }
 
-    return revealLeadPhone(id, {
-      user: me,
-      tzOffsetMinutes: body.tzOffsetMinutes ?? 0,
-      enforceCap: body.enforceCap ?? false,
-    });
+    return revealLeadPhone(id, { user: me });
   });
 
   app.post('/api/leads/assign', {
