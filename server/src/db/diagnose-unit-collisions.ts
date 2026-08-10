@@ -7,21 +7,22 @@ import { env } from '../config/env';
  * Migration 010 collapses the unit key
  *     u|community|cluster|building|unit  ->  u|building|unit
  *     p|community|plot                   ->  p|plot
- * so a unit is identified by its number alone. On real data, rows that were
- * historically imported with DIFFERENT community labels but the SAME building +
- * unit collapse to the same key and collide on UNIQUE (org_id, unit_key_hash) —
- * which is exactly the 010 failure we hit on the server.
+ * so a unit is identified by its NUMBER + BUILDING alone. That assumes the tower
+ * lives in the `building` field. In real KEstates data the building field is
+ * often EMPTY and the tower/development name sits in community/cluster — so
+ * "unit 101" in five different towers all collapse to `u||101` and collide on
+ * UNIQUE (org_id, unit_key_hash). That is the 010 failure on the server.
  *
- * This script does NOT change anything. It reports how many such collisions
- * exist and, crucially, whether any of the colliding rows carry real work
- * (a broker's portfolio/assignment, logged calls, saved notes). That decides
- * whether the fix can simply drop inert duplicates or has to merge histories.
+ * The critical question this answers: of the colliding rows, how many are GENUINE
+ * duplicates (same physical building, only the community label differs — safe to
+ * merge) versus DIFFERENT buildings that merely share a unit number (must NOT be
+ * merged — merging would delete real, distinct inventory)?
  *
- * Run from server/:  npm run diagnose:units
+ * Read-only. Changes nothing. Run from server/:  npm run diagnose:units
  */
 
-// The projected new key each row WOULD get from migration 010. Kept identical
-// to 010_unit_key_drop_community.sql so the collision picture matches reality.
+// The projected new key each row WOULD get from migration 010. Identical to
+// 010_unit_key_drop_community.sql so the collision picture matches reality.
 const NEWKEY = `
   CASE
     WHEN p.unit_key LIKE 'u|%|%|%|%'
@@ -33,6 +34,14 @@ const NEWKEY = `
     ELSE p.unit_key
   END`;
 
+// The physical building of a unit = cluster + building, case/space-insensitive.
+// Community is treated as the correctable LABEL (the thing 010 wanted to drop),
+// so two rows are genuine duplicates when their cluster+building match and only
+// the community differs. Different cluster/building = genuinely different towers.
+const TOWER = `CONCAT_WS('§',
+  LOWER(TRIM(COALESCE(p.cluster, ''))),
+  LOWER(TRIM(COALESCE(p.building, ''))))`;
+
 // A row "has work" if losing it would lose something a broker cares about.
 const HAS_WORK = `(
   p.state <> 'pool'
@@ -41,6 +50,9 @@ const HAS_WORK = `(
   OR p.notes IS NOT NULL
   OR EXISTS (SELECT 1 FROM call_properties cp WHERE cp.property_id = p.id)
 )`;
+
+const towerSig = (r: mysql.RowDataPacket) =>
+  `${(r.cluster ?? '').trim().toLowerCase()}§${(r.building ?? '').trim().toLowerCase()}`;
 
 async function main() {
   const cx = await mysql.createConnection({
@@ -66,62 +78,79 @@ async function main() {
       SELECT
         COUNT(*)                                               AS total,
         SUM(unit_key LIKE 'u|%|%|%|%')                         AS old_unit_format,
-        SUM(unit_key LIKE 'p|%|%')                             AS old_plot_format
+        SUM(unit_key LIKE 'p|%|%')                             AS old_plot_format,
+        SUM(building IS NULL OR building = '')                 AS blank_building
       FROM properties p`);
     console.log(
       `\nProperties total: ${totals.total}` +
       `\n  in old 5-part unit format (u|...):  ${totals.old_unit_format}` +
-      `\n  in old 3-part plot format (p|...):  ${totals.old_plot_format}`,
+      `\n  in old 3-part plot format (p|...):  ${totals.old_plot_format}` +
+      `\n  with a BLANK building field:        ${totals.blank_building}   (tower name is in community/cluster instead)`,
     );
 
-    // Groups of rows that would collapse onto the same (org_id, new key).
+    // Collision groups + how many rows carry work + how many DISTINCT physical
+    // buildings each group actually spans.
     const groups = await q(`
-      SELECT org_id, newkey, COUNT(*) AS n, SUM(has_work) AS work_rows
+      SELECT org_id, newkey, COUNT(*) AS n, SUM(has_work) AS work_rows,
+             COUNT(DISTINCT tower) AS towers
       FROM (
-        SELECT p.org_id, (${NEWKEY}) COLLATE utf8mb4_bin AS newkey, ${HAS_WORK} AS has_work
+        SELECT p.org_id,
+               (${NEWKEY}) COLLATE utf8mb4_bin AS newkey,
+               ${TOWER} AS tower,
+               ${HAS_WORK} AS has_work
         FROM properties p
       ) t
       GROUP BY org_id, newkey
       HAVING n > 1
-      ORDER BY work_rows DESC, n DESC`);
+      ORDER BY (n - towers) DESC, work_rows DESC, n DESC`);
 
-    const totalDupRows = groups.reduce((s, g) => s + Number(g.n), 0);
-    const rowsToRemove = groups.reduce((s, g) => s + (Number(g.n) - 1), 0);
-    const hardGroups = groups.filter(g => Number(g.work_rows) > 1);
-
-    console.log(`\n${line}\nSUMMARY\n${line}`);
     if (groups.length === 0) {
+      console.log(`\n${line}\nSUMMARY\n${line}`);
       console.log('\n✅ No collisions. Migration 010 will apply cleanly — just re-run `npm run migrate`.');
       return;
     }
+
+    const totalDupRows = groups.reduce((s, g) => s + Number(g.n), 0);
+    const trueDupeRows = groups.reduce((s, g) => s + (Number(g.n) - Number(g.towers)), 0);
+    const distinctGroups = groups.filter(g => Number(g.towers) === Number(g.n)).length;   // every row a different building
+    const dupeGroups = groups.filter(g => Number(g.towers) < Number(g.n)).length;         // at least one genuine duplicate
+    const distinctUnitsLost = totalDupRows - groups.length - trueDupeRows;                 // distinct units 010 would delete
+
+    console.log(`\n${line}\nSUMMARY\n${line}`);
     console.log(
-      `\nCollision groups (same unit, different community label): ${groups.length}` +
-      `\n  duplicate rows involved:            ${totalDupRows}` +
-      `\n  rows that must be removed/merged:   ${rowsToRemove}` +
-      `\n  groups where >1 row carries work:   ${hardGroups.length}  <-- these need a careful merge`,
-    );
-    console.log(
-      hardGroups.length === 0
-        ? '\n➡  Every group has at most ONE row with real work (calls/notes/portfolio).' +
-          '\n   The fix is safe & simple: keep the working (or newest) row, drop the inert duplicates.'
-        : '\n⚠  Some groups have MORE THAN ONE row carrying real work — a broker\'s calls,' +
-          '\n   notes or portfolio sit on both copies. These are listed below and need a' +
-          '\n   merge decision before anything is deleted. Do NOT force the migration.',
+      `\nCollision groups (rows that 010 would merge into one): ${groups.length}` +
+      `\n  total rows in those groups:                 ${totalDupRows}` +
+      `\n  groups that are DIFFERENT buildings:        ${distinctGroups}   (NOT duplicates — must not merge)` +
+      `\n  groups containing genuine duplicates:       ${dupeGroups}` +
+      `\n  genuine duplicate rows (safe to merge):     ${trueDupeRows}` +
+      `\n  DISTINCT units 010 would wrongly delete:    ${distinctUnitsLost}   <-- data loss if forced`,
     );
 
-    // Per-row detail for the worst (most-conflicted) groups first. Capped so the
-    // paste stays manageable; the summary above already counts everything. No
-    // window functions here on purpose — this must run on MySQL 5.7 / MariaDB too,
-    // so we drive it from the group list we already have and a tuple filter.
+    if (trueDupeRows === 0) {
+      console.log(
+        '\n⛔ NONE of these are duplicates. Every collision is DIFFERENT buildings that share a' +
+        '\n   unit number, because the building field is blank and the tower name lives in' +
+        '\n   community/cluster. Migration 010 (identity = number only) is wrong for this data —' +
+        `\n   forcing it would delete ${distinctUnitsLost} real, distinct units. The identity must keep the tower.`,
+      );
+    } else {
+      console.log(
+        `\n⚠  Mixed: ${trueDupeRows} genuine duplicate row(s) could be merged, but ${distinctUnitsLost} rows are` +
+        '\n   DISTINCT buildings that 010 would wrongly delete. Do NOT force 010 — the identity' +
+        '\n   needs to keep the tower, and only the genuine duplicates should be merged.',
+      );
+    }
+
+    // Per-group detail, groups with the most genuine duplicates first.
     const shown = groups.slice(0, 40);
     const grpMeta = new Map(shown.map(g => [`${g.org_id}::${g.newkey}`, g]));
-    const params: string[] = [];
-    const tuples = shown.map(g => { params.push(g.org_id as string, g.newkey as string); return '(?, ?)'; }).join(', ');
+    const p: string[] = [];
+    const tuples = shown.map(g => { p.push(g.org_id as string, g.newkey as string); return '(?, ?)'; }).join(', ');
     const [detail] = await cx.query<mysql.RowDataPacket[]>(
       `SELECT
          p.org_id,
          (${NEWKEY}) COLLATE utf8mb4_bin                                        AS newkey,
-         p.id, p.unit_key, p.state, p.assigned_to,
+         p.id, p.unit_key, p.community, p.cluster, p.building, p.state, p.assigned_to,
          p.call_attempts                                                        AS attempts,
          (p.notes IS NOT NULL)                                                  AS has_notes,
          (SELECT COUNT(*) FROM call_properties cp WHERE cp.property_id = p.id)   AS calls,
@@ -131,11 +160,10 @@ async function main() {
        FROM properties p
        WHERE (p.org_id, (${NEWKEY}) COLLATE utf8mb4_bin) IN (${tuples})
        ORDER BY newkey, has_work DESC`,
-      params,
+      p,
     );
 
-    console.log(`\n${line}\nDETAIL — first ${shown.length} group(s), most-conflicted first (★ = row carries work)\n${line}`);
-    // Print in the group order the summary chose (conflicted groups first).
+    console.log(`\n${line}\nDETAIL — first ${shown.length} group(s)  (★ = row carries work)\n${line}`);
     const byKey = new Map<string, mysql.RowDataPacket[]>();
     for (const r of detail) {
       const k = `${r.org_id}::${r.newkey}`;
@@ -143,7 +171,11 @@ async function main() {
     }
     for (const [k, meta] of grpMeta) {
       const rows = byKey.get(k) ?? [];
-      console.log(`\n[${meta.newkey}]  (${meta.n} copies, ${meta.work_rows} with work)`);
+      const towers = new Set(rows.map(towerSig));
+      const verdict = towers.size === rows.length
+        ? `⛔ ${rows.length} DIFFERENT buildings — NOT duplicates`
+        : `✓ contains ${rows.length - towers.size} genuine duplicate(s) across ${towers.size} building(s)`;
+      console.log(`\n[${meta.newkey}]  ${verdict}`);
       for (const r of rows) {
         const flags = [
           r.state !== 'pool' ? r.state : null,
