@@ -21,19 +21,13 @@ describe('phone normalisation', () => {
 });
 
 describe('unit key (vault-wide dedupe)', () => {
-  it('builds a unit key from building + unit, normalised', () => {
+  it('builds a unit key from community + building + unit', () => {
     const a = ImportPipeline.unitKeyFor({ community: 'Dubai Hills', building: 'T1', unitNumber: '101' });
     const b = ImportPipeline.unitKeyFor({ community: 'dubai hills', building: ' t1 ', unitNumber: '101' });
     expect(a).toBe(b); // normalisation makes them the same unit
-    expect(a).toBe('u|t1|101');
   });
-  it('ignores community / sub-community — they are labels, not identity', () => {
-    const dhe = ImportPipeline.unitKeyFor({ community: 'Dubai Hills Estate', cluster: 'Maple 3', building: 'T1', unitNumber: '101' });
-    const palm = ImportPipeline.unitKeyFor({ community: 'Palm Jumeirah', cluster: 'Frond A', building: 'T1', unitNumber: '101' });
-    expect(dhe).toBe(palm); // same building+unit ⇒ same unit even if community differs
-  });
-  it('falls back to a plot key (community-agnostic) when there is no unit number', () => {
-    expect(ImportPipeline.unitKeyFor({ community: 'Ranches', plotNumber: '55' })).toBe('p|55');
+  it('falls back to a plot key when there is no unit number', () => {
+    expect(ImportPipeline.unitKeyFor({ community: 'Ranches', plotNumber: '55' })).toBe('p|ranches|55');
   });
   it('returns null when the row identifies no unit at all', () => {
     expect(ImportPipeline.unitKeyFor({ community: 'Ranches' })).toBeNull();
@@ -201,19 +195,6 @@ describe('update import — blank keeps, changes merge, work is preserved', () =
     expect(u.propertyType).toBe('Apartment');          // absent column → kept
     expect(u.extra.Location).toBe('Near park');        // new column added
     expect(u.extra.View).toBe('Golf');                 // old column survived
-  });
-
-  it('a changed community updates the SAME unit (no duplicate) and corrects the label', () => {
-    const { byKey } = seeded(); // seeded under community 'Dubai Hills'
-    const res = update([
-      ['Community', 'Building', 'Unit No', 'Owner Name', 'Mobile'],
-      ['Palm Jumeirah', 'T1', '101', 'Amir Haddad', '0501234567'],
-    ], byKey, true);
-
-    expect(res.newProperties).toHaveLength(0);        // NOT seen as a new unit
-    expect(res.updatedProperties).toHaveLength(1);    // matched the existing one
-    expect(res.updatedProperties[0].community).toBe('Palm Jumeirah'); // label corrected
-    expect(res.updatedProperties[0].notes).toBe('call back Tuesday'); // work preserved
   });
 
   it('a blank cell never erases an existing value', () => {

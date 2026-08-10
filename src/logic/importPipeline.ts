@@ -142,23 +142,14 @@ export abstract class ImportPipeline {
     return undefined;
   }
 
-  /**
-   * A unit's IDENTITY — what makes two rows "the same unit". Deliberately built
-   * from the STABLE number only: the plot number (globally unique in Dubai) or
-   * the unit number within its building. The master community and sub-community
-   * are NOT part of it — they're correctable labels, so fixing a community on a
-   * later upload updates the unit in place instead of creating a duplicate.
-   * (Building stays in the key: it genuinely distinguishes unit "101" in two
-   * different towers.)
-   */
   static unitKeyFor(fields: {
-    community?: string; cluster?: string; building?: string;
+    community: string; cluster?: string; building?: string;
     unitNumber?: string; plotNumber?: string;
   }): string | null {
     const u = norm(fields.unitNumber);
-    if (u.length > 0) return `u|${norm(fields.building)}|${u}`;
+    if (u.length > 0) return `u|${norm(fields.community)}|${norm(fields.cluster)}|${norm(fields.building)}|${u}`;
     const p = norm(fields.plotNumber);
-    if (p.length > 0) return `p|${p}`;
+    if (p.length > 0) return `p|${norm(fields.community)}|${p}`;
     return null;
   }
 
@@ -417,10 +408,6 @@ export abstract class ImportPipeline {
       updated.push(existing.copyWith({
         // Update mode keeps the unit in its own set; a fresh import re-tags it.
         datasetId: params.keepExistingDataset ? existing.datasetId : candidate.datasetId,
-        // Community / sub-community are correctable LABELS, not identity — so an
-        // update fixes them in place (blank-safe) rather than making a new unit.
-        community: candidate.community.trim().length > 0 ? candidate.community : existing.community,
-        cluster: (candidate.cluster ?? '').trim().length > 0 ? candidate.cluster : existing.cluster,
         owner: primaryOwner,
         owners: coOwners,
         propertyType: candidate.propertyType ?? existing.propertyType,
