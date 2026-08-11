@@ -10,8 +10,8 @@
 
 | | |
 |---|---|
-| **Current version** | v1.12.0 |
-| **Last updated** | 2026-08-10 |
+| **Current version** | v1.12.1 |
+| **Last updated** | 2026-08-11 |
 | **Live site** | owners-crm.kestates.ae |
 | **Repository** | github.com/Chebb-KEstates/Prospector-KEstates |
 | **Companion docs** | [README.md](../README.md) (developer quick-start) · [CHANGELOG.md](../CHANGELOG.md) (release log) · [PORT-PROGRESS.md](../PORT-PROGRESS.md) (the original port) |
@@ -292,9 +292,31 @@ rather than creating a new one. The rules that protect the team's work:
 
 ### Editing a data set
 
-A manager can edit a set's **details and price**, and **re-map its columns** — and,
-for sets uploaded after the source-retention feature, **re-download the original
-file** and **re-map in-app** without re-uploading.
+A manager can edit a set's **details and price**, and **re-download the original
+file**. For sets uploaded after the source-retention feature, they can also
+**re-map the columns in-app** without re-uploading.
+
+### Re-map vs. update — two different operations (important)
+
+These are **not** the same, and conflating them was a real bug:
+
+- **Update with a file** re-interprets a *new* file and **merges** it into the set:
+  blank keeps, changes merge, matched by identity key. Use it for *newer data*.
+- **Re-map** re-interprets the set's **own retained source** with a *corrected
+  mapping* and **fixes the existing units in place**. It is matched by **source
+  position**, not by the key — because the whole point is that the key columns
+  (community/cluster/building) were mapped wrong. It is **authoritative**: the
+  corrected values overwrite the old ones, *including clearing a value that was
+  wrong* (e.g. a sale figure that was actually the rent). It **never creates a
+  duplicate**, and it **preserves all broker work** (calls, notes, portfolio and
+  assignment state, and the property's identity so linked call/audit records
+  survive). If the corrected mapping would change how rows group into units — or
+  merge two units into one — the re-map **stops with a clear message** rather than
+  guessing. Use it to *fix a mapping mistake*.
+
+> **Rule of thumb:** wrong columns → **re-map**; newer data → **update**. A unit's
+> identity is fixed the day it's imported; re-map corrects its *attributes*
+> (including its labels) without making it a different unit.
 
 ### Exporting
 

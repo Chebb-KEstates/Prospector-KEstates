@@ -546,6 +546,8 @@ export const imports = {
     targetDatasetId?: string;
     /** Owner reconciliation for matched units (update mode). */
     ownerMode?: 'replace' | 'patch';
+    /** Re-map the set's own retained source (correct in place, no duplicates). */
+    remap?: boolean;
   }) => post<OwnerDryRun>(`/api/imports/${sessionId}/dry-run`, body),
 
   dryRunLeads: (sessionId: string, body: {
@@ -560,6 +562,8 @@ export const imports = {
     targetDatasetId?: string;
     /** Owner reconciliation for matched units (update mode). */
     ownerMode?: 'replace' | 'patch';
+    /** Re-map the set's own retained source (correct in place, no duplicates). */
+    remap?: boolean;
   }) => post<{ datasetId: string; imported: number }>(`/api/imports/${sessionId}/commit`, body),
 
   commitLeads: (sessionId: string, body: {

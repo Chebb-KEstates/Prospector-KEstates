@@ -18,6 +18,37 @@ for what each part means for Prospector.
 
 ---
 
+## [1.12.1] — 2026-08-11
+
+Two serious data-management bugs fixed, and re-map rebuilt on a solid footing.
+
+### Fixed
+- **Rental value no longer lands in the sale field.** The column auto-mapper read
+  any header containing "transaction value" / "price" as the **sale** figure
+  before the (too-narrow) rental check ran — so `Rental Transaction Value`,
+  `Rental Price`, `Rent Value` were mapped to sale (or dropped). Rental value
+  columns now map to rent, and sale-value columns still map to sale. Guarded by
+  new regression tests.
+- **Re-mapping columns no longer creates duplicate units.** A unit's identity is
+  built from the community/cluster/building columns, so re-mapping those changed
+  the key and the old "update" flow inserted a duplicate instead of correcting the
+  existing unit.
+
+### Changed (Data)
+- **Re-map is now its own operation, distinct from an update-with-a-file.** It
+  re-interprets the data set's *own retained source* with the corrected mapping and
+  **fixes the existing units in place**, matched by source position (not by the
+  now-changed key). It is *authoritative*: corrected values overwrite the old ones,
+  **including clearing a value that was wrong** (e.g. a sale figure that was really
+  rent). All broker work — call history, notes, portfolio/assignment state, the
+  property's identity for linked records — is **preserved**. If the corrected
+  mapping would change how rows group into units (or merge two units into one), the
+  re-map stops with a clear message instead of guessing. Verified end-to-end.
+- No schema change / no migration. (Re-map uses the retained source, so a data set
+  imported before file-keeping must be re-imported once to enable in-app re-map.)
+
+---
+
 ## [1.12.0] — 2026-08-10
 
 The Audit section becomes a full **Activity Log** — readable, searchable, and

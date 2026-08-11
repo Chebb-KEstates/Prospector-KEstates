@@ -64,6 +64,9 @@ export function ImportWizard({ remapRequest, restageRequest }: {
   // Update mode only: is this file the full owner list (replace), or an add-only
   // patch (keep existing owners, never remove)?
   const [ownerMode, setOwnerMode] = useState<'replace' | 'patch'>('replace');
+  // True only for an IN-APP re-map (the set's own retained source, re-mapped) —
+  // corrects existing units in place instead of matching by (now-changed) key.
+  const [isRemap, setIsRemap] = useState(false);
   const [dryRun, setDryRun] = useState<api.OwnerDryRun | null>(null);
   const [imported, setImported] = useState(0);
 
@@ -75,7 +78,7 @@ export function ImportWizard({ remapRequest, restageRequest }: {
   const reset = () => {
     setStep(0); setStaged(null); setDryRun(null); setError(null);
     setColumns([]); setActiveSheet(0); setHeaderRow(0); setCost('');
-    setMode('new'); setTargetDatasetId(''); setOwnerMode('replace');
+    setMode('new'); setTargetDatasetId(''); setOwnerMode('replace'); setIsRemap(false);
   };
 
   // A "Re-map columns…" click on a data set drops the wizard into Update mode for
@@ -107,6 +110,7 @@ export function ImportWizard({ remapRequest, restageRequest }: {
     setActiveSheet(0);
     setMode('update');
     setTargetDatasetId(p.targetDatasetId);
+    setIsRemap(true); // correcting the set's own source in place — never duplicate
     setStep(1);
     rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [restageRequest]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -116,6 +120,7 @@ export function ImportWizard({ remapRequest, restageRequest }: {
     if (!file) return;
     setBusy(true);
     setError(null);
+    setIsRemap(false); // a picked file is a fresh import/update, not a source re-map
     try {
       const s = await api.imports.stage(file, DataModule.owners);
       setStaged(s);
@@ -192,6 +197,7 @@ export function ImportWizard({ remapRequest, restageRequest }: {
         communityFallback: communityLabel,
         targetDatasetId: updating ? targetDatasetId : undefined,
         ownerMode: updating ? ownerMode : undefined,
+        remap: updating ? isRemap : undefined,
       });
       setDryRun(result);
       setStep(2);
@@ -215,6 +221,7 @@ export function ImportWizard({ remapRequest, restageRequest }: {
         cost: cost ? parseFloat(cost) : undefined,
         targetDatasetId: updating ? targetDatasetId : undefined,
         ownerMode: updating ? ownerMode : undefined,
+        remap: updating ? isRemap : undefined,
       });
       setImported(r.imported);
       await reloadDatasets();

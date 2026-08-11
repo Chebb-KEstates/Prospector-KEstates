@@ -44,6 +44,22 @@ describe('header auto-mapping', () => {
   it('ignores headers it does not know', () => {
     expect(ImportPipeline.autoMapHeader('Some Vendor Field')).toBe(ImportField.ignore);
   });
+  // Regression: a RENTAL value column must never be read as the SALE value. Any
+  // header with "transaction value"/"price" used to be grabbed as the sale figure,
+  // which put the rent into the sale slot.
+  it('maps rental value columns to rent, not sale', () => {
+    for (const h of ['Rental Transaction Value', 'Rental Price', 'Rent Value', 'Rental Value', 'Annual Rent', 'Rent']) {
+      expect(ImportPipeline.autoMapHeader(h)).toBe(ImportField.rentAmount);
+    }
+  });
+  it('still maps sale value columns to the transaction value', () => {
+    for (const h of ['Sale Transaction Value', 'Sale Value', 'Transaction Value', 'Procedure Value']) {
+      expect(ImportPipeline.autoMapHeader(h)).toBe(ImportField.transactionValue);
+    }
+  });
+  it('does not mistake "Current Owner" for a rent column', () => {
+    expect(ImportPipeline.autoMapHeader('Current Owner')).not.toBe(ImportField.rentAmount);
+  });
 });
 
 // The table must adapt to whatever is uploaded: unmapped columns are kept.

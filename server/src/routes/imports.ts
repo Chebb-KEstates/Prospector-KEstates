@@ -154,6 +154,7 @@ export default async function importRoutes(app: FastifyInstance) {
           communityFallback: { type: 'string', maxLength: 255 },
           targetDatasetId: { type: 'string', maxLength: 64 },
           ownerMode: { type: 'string', enum: ['replace', 'patch'] },
+          remap: { type: 'boolean' },
         },
       },
     },
@@ -162,7 +163,7 @@ export default async function importRoutes(app: FastifyInstance) {
     const body = req.body as {
       sheetIndex?: number; headerRow: number; columns: unknown[];
       type?: DataSetType; communityFallback?: string; targetDatasetId?: string;
-      ownerMode?: 'replace' | 'patch';
+      ownerMode?: 'replace' | 'patch'; remap?: boolean;
     };
     const userId = req.currentUser!.id;
     const sheetIndex = body.sheetIndex ?? 0;
@@ -175,6 +176,7 @@ export default async function importRoutes(app: FastifyInstance) {
         communityFallback: body.communityFallback ?? '',
         targetDatasetId: body.targetDatasetId,
         ownerMode: body.ownerMode,
+        remap: body.remap,
       });
     }
     return dryRunLeads({
@@ -205,6 +207,7 @@ export default async function importRoutes(app: FastifyInstance) {
           cost: { type: 'number', minimum: 0, maximum: 1e12 },
           targetDatasetId: { type: 'string', maxLength: 64 },
           ownerMode: { type: 'string', enum: ['replace', 'patch'] },
+          remap: { type: 'boolean' },
         },
       },
     },
@@ -214,7 +217,7 @@ export default async function importRoutes(app: FastifyInstance) {
       sheetIndex?: number; headerRow: number; columns: unknown[];
       type?: DataSetType; communityFallback?: string;
       datasetName?: string; source?: string; cost?: number;
-      targetDatasetId?: string; ownerMode?: 'replace' | 'patch';
+      targetDatasetId?: string; ownerMode?: 'replace' | 'patch'; remap?: boolean;
     };
     const userId = req.currentUser!.id;
     const sheetIndex = body.sheetIndex ?? 0;
@@ -236,6 +239,7 @@ export default async function importRoutes(app: FastifyInstance) {
         cost: body.cost,
         targetDatasetId: body.targetDatasetId,
         ownerMode: body.ownerMode,
+        remap: body.remap,
       });
     }
     return commitLeads({

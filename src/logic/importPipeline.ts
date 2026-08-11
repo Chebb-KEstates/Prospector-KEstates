@@ -62,14 +62,28 @@ export abstract class ImportPipeline {
     // Rental STATUS ("New" / "Renewed" / "No Rental") before amount/dates so it
     // isn't swallowed by the "rental…" rules below.
     if (has('rentalstatus') || has('rentstatus') || has('tenancystatus')) return ImportField.rentalStatus;
-    if (has('rentalamount') || has('rentamount') || has('annualrent')) return ImportField.rentAmount;
     if (has('rentstart')) return ImportField.rentStart;
     if (has('rentend')) return ImportField.rentEnd;
+    // Rent VALUE/AMOUNT — matched BEFORE the generic sale "transaction value" rule
+    // below, so a "Rental Transaction Value" / "Rental Price" / "Rent Value" column
+    // is never misread as the SALE figure (the bug that put rent into the sale
+    // slot). 'rental' is a safe token — "current"/"parent" don't contain it — and
+    // the plain 'rent…' variants are matched explicitly.
+    if (has('rentalamount') || has('rentamount') || has('annualrent') ||
+        has('rentvalue') || has('rentprice') || h === 'rent' ||
+        (has('rental') && (has('amount') || has('value') || has('price') || has('transaction')))) {
+      return ImportField.rentAmount;
+    }
     // Sale type ("Initial Sale" / "Resale") is a descriptive tag — check before
     // the generic property-"type" rule so it doesn't become the property type.
     if (has('saletype') || has('salestype') || has('transactiontype')) return ImportField.saleType;
     if (has('procedureparty') || has('partytype') || has('buyerseller')) return ImportField.partyType;
-    if (has('procedurevalue') || has('transactionvalue') || has('worth') || has('price')) return ImportField.transactionValue;
+    // Sale/transaction value. Rental value is already claimed above, so a leftover
+    // "…transaction value" / "sale value/amount/price" here is the sale figure.
+    if (has('procedurevalue') || has('transactionvalue') || has('worth') || has('price') ||
+        (has('sale') && (has('value') || has('amount') || has('price')))) {
+      return ImportField.transactionValue;
+    }
     if (has('regis') || has('transactiondate') || has('instancedate')) return ImportField.transactionDate;
     // Master community first — "Development" and "Master Community/Project" are
     // the top level. A plain "Community" stays master for template/DLD sheets; a

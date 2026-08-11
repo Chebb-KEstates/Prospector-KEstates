@@ -5,7 +5,7 @@ import {
 import { ImportPipeline, OwnerMode } from '../../../src/logic/importPipeline';
 import type { ChangeTally } from '../../../src/logic/importModels';
 import { LeadPipeline, LeadColumnSpec, LeadField } from '../../../src/logic/leadPipeline';
-import { ColumnSpec, ImportField, ParsedSheet } from '../../../src/logic/importModels';
+import { ColumnSpec, ImportField, ParsedSheet, emptyChangeTally } from '../../../src/logic/importModels';
 import { parseVendorFile } from '../../../src/logic/fileParser';
 import {
   createStagingSession, findStagingSession, loadStagedSheet, loadStagedPreview,
@@ -205,6 +205,8 @@ export async function dryRunOwners(input: {
   targetDatasetId?: string;
   /** How matched units' owners reconcile with the file (update mode). */
   ownerMode?: OwnerMode;
+  /** Re-map preview: corrects existing units in place (mirrors commit). */
+  remap?: boolean;
 }): Promise<OwnerDryRunSummary> {
   const session = await requireOwnedSession(input.sessionId, input.userId);
   if (session.module !== DataModule.owners) {
@@ -216,6 +218,33 @@ export async function dryRunOwners(input: {
 
   const rows = await loadStagedSheet(input.sessionId, input.sheetIndex);
   const sheet = new ParsedSheet(session.sheetNames[input.sheetIndex] ?? 'Sheet1', rows);
+
+  // ── RE-MAP preview: same source re-interpreted, units corrected in place ────
+  if (input.remap && updateMode) {
+    const plan = await planRemap({
+      sheet, headerRow: input.headerRow, datasetId,
+      newColumns: input.columns, newType: input.type, newCommunity: input.communityFallback,
+    });
+    if (plan.error) throw unprocessable(plan.error);
+    return {
+      type: input.type,
+      sourceRows: plan.newUnits.length,
+      invalidRows: 0,
+      inFileDuplicates: 0,
+      // A clean re-map corrects existing units and adds none.
+      newCount: plan.newUnits.length - plan.matched,
+      updatedCount: plan.matched,
+      uniqueUnits: plan.newUnits.length,
+      callable: plan.newUnits.filter(p => p.callable).length,
+      changes: emptyChangeTally(),
+      sample: plan.newUnits.slice(0, 20).map(p => ({
+        owner: p.owner.name,
+        community: p.community,
+        unit: p.unitLabel,
+        phone: p.owner.phone ? maskForPreview(p.owner.phone) : '—',
+      })),
+    };
+  }
 
   // Which existing units this file touches — the dedupe key set. Computed by
   // running the pipeline once with an empty map to learn the unit keys, then
@@ -268,6 +297,100 @@ function maskForPreview(phone: string): string {
   return phone.slice(0, -4).replace(/\d/g, '•') + phone.slice(-4);
 }
 
+// ── Re-map (correcting the column mapping of an existing set) ─────────────────
+//
+// Re-map ≠ update-with-a-new-file. It re-interprets the SAME retained source rows
+// with a corrected mapping and fixes the existing units IN PLACE — it must never
+// create a duplicate, and it must be able to CORRECT a wrong value (even to blank),
+// unlike a blank-keeps update. Identity can't be the unit key here (the whole
+// point is the key columns changed), so we match by SOURCE POSITION: run the same
+// rows through the OLD mapping (reproducing the current keys, in order) and the NEW
+// mapping (the corrected units, in order) and zip them 1:1.
+
+interface RemapPlan {
+  oldUnits: Property[];   // units as the CURRENT mapping produced them (source order)
+  newUnits: Property[];   // units as the CORRECTED mapping produces them (source order)
+  existingByUnitKey: Map<string, Property>;
+  matched: number;
+  error?: string;
+}
+
+async function planRemap(input: {
+  sheet: ParsedSheet; headerRow: number; datasetId: string;
+  newColumns: ColumnSpec[]; newType: DataSetType; newCommunity: string;
+}): Promise<RemapPlan> {
+  const source = await getDatasetSource(input.datasetId);
+  if (!source) {
+    return {
+      oldUnits: [], newUnits: [], existingByUnitKey: new Map(), matched: 0,
+      error: 'This data set has no retained source to re-map. Re-import it once (after this update) to enable in-app re-mapping.',
+    };
+  }
+  // OLD mapping → the keys the current DB rows already have.
+  const oldProbe = ImportPipeline.dryRun({
+    sheet: input.sheet, headerRow: source.headerRow, columns: source.columns as ColumnSpec[],
+    type: source.type, communityFallback: source.community, datasetId: input.datasetId,
+    existingByUnitKey: new Map(),
+  });
+  // NEW mapping → the corrected units.
+  const newProbe = ImportPipeline.dryRun({
+    sheet: input.sheet, headerRow: input.headerRow, columns: input.newColumns,
+    type: input.newType, communityFallback: input.newCommunity, datasetId: input.datasetId,
+    existingByUnitKey: new Map(),
+  });
+  const oldUnits = oldProbe.newProperties;
+  const newUnits = newProbe.newProperties;
+  const existingByUnitKey = await findByUnitKeys(oldUnits.map(u => u.unitKey));
+
+  let error: string | undefined;
+  if (oldUnits.length !== newUnits.length) {
+    error = `The corrected mapping changes how the rows group into units (${oldUnits.length} → ${newUnits.length}). That happens when the unit-number or building column is re-mapped in a way that changes which rows are the same unit — re-check those columns.`;
+  } else {
+    const seen = new Set<string>();
+    for (const u of newUnits) {
+      if (seen.has(u.unitKey)) {
+        error = 'The corrected mapping makes two different units identical (same building + unit number), which would merge them. Re-check the building and unit columns.';
+        break;
+      }
+      seen.add(u.unitKey);
+    }
+  }
+  const matched = error ? 0 : oldUnits.filter(u => existingByUnitKey.has(u.unitKey)).length;
+  return { oldUnits, newUnits, existingByUnitKey, matched, error };
+}
+
+/**
+ * Build the corrected row for one unit: keep the existing row's IDENTITY-INDEPENDENT
+ * work (id, state, assignment, portfolio, calls links, notes, created date) and take
+ * every DERIVED field — including the unit key and, crucially, values that are now
+ * blank — from the re-interpreted source. This is authoritative on purpose: re-map
+ * fixes a mapping mistake, so the source is the truth for the mapped fields.
+ */
+function remapMerge(existing: Property, cand: Property, now: string): Property {
+  const p = Property.fromJson(existing.toJson()); // clone: keeps id/state/assignment/notes/…
+  p.unitKey = cand.unitKey;
+  p.community = cand.community;
+  p.cluster = cand.cluster;
+  p.building = cand.building;
+  p.unitNumber = cand.unitNumber;
+  p.plotNumber = cand.plotNumber;
+  p.propertyType = cand.propertyType;
+  p.beds = cand.beds;
+  p.sizeSqft = cand.sizeSqft;
+  p.plotSqft = cand.plotSqft;
+  p.lastTransactionDate = cand.lastTransactionDate;
+  p.lastTransactionValue = cand.lastTransactionValue;
+  p.txCount = cand.txCount;
+  p.rentStart = cand.rentStart;
+  p.rentEnd = cand.rentEnd;
+  p.rentAmount = cand.rentAmount;
+  p.owner = cand.owner;
+  p.owners = cand.owners;
+  p.extra = cand.extra;
+  p.updatedAt = now;
+  return p;
+}
+
 export interface CommitOwnersInput {
   sessionId: string;
   userId: string;
@@ -287,6 +410,12 @@ export interface CommitOwnersInput {
   targetDatasetId?: string;
   /** How matched units' owners reconcile with the file (update mode). */
   ownerMode?: OwnerMode;
+  /**
+   * Re-map mode: this staged data IS the set's own retained source, re-mapped.
+   * Correct the existing units in place (matched by source position, not key) —
+   * never duplicate — and let corrected values override, even to blank.
+   */
+  remap?: boolean;
 }
 
 /**
@@ -314,6 +443,42 @@ export async function commitOwners(input: CommitOwnersInput): Promise<{
   }
   // Create-new mints its own id (the staging id); update merges into the target.
   const datasetId = updateMode ? input.targetDatasetId! : input.sessionId;
+
+  // ── RE-MAP: correct the existing units in place, no duplicates ──────────────
+  if (input.remap && updateMode) {
+    const plan = await planRemap({
+      sheet, headerRow: input.headerRow, datasetId,
+      newColumns: input.columns, newType: input.type, newCommunity: input.communityFallback,
+    });
+    if (plan.error) throw unprocessable(plan.error);
+
+    const now = new Date().toISOString();
+    const toSave: Property[] = plan.newUnits.map((cand, i) => {
+      const existing = plan.existingByUnitKey.get(plan.oldUnits[i].unitKey);
+      // Matched → correct in place (keep work); unmatched (rare — set changed
+      // since import) → treat as a new unit rather than silently dropping it.
+      return existing ? remapMerge(existing, cand, now) : cand;
+    });
+
+    await transaction(async (cx) => {
+      await saveProperties(toSave, cx);
+      await refreshDatasetStats(datasetId, plan.matched, session.fileName, input.cost, cx);
+      await retainSource({
+        datasetId, fileName: session.fileName, module: DataModule.owners,
+        sheetName: session.sheetNames[input.sheetIndex] ?? 'Sheet1',
+        headerRow: input.headerRow, columns: input.columns, type: input.type,
+        community: input.communityFallback, rowCount: rows.length,
+        sessionId: input.sessionId, sheetIndex: input.sheetIndex,
+      }, cx);
+      await markCommitted(input.sessionId, cx);
+      await dropStagedRows(input.sessionId, cx);
+      await writeAudit({
+        actorId: input.userId, action: 'edit',
+        detail: `Re-mapped columns of "${target!.name}" — ${plan.matched} unit${plan.matched === 1 ? '' : 's'} corrected in place`,
+      }, cx);
+    });
+    return { datasetId, imported: toSave.length };
+  }
 
   const probe = ImportPipeline.dryRun({
     sheet, headerRow: input.headerRow, columns: input.columns,
