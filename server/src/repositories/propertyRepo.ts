@@ -195,6 +195,12 @@ export async function saveProperties(
       VALUES ${chunk.map(() => PLACEHOLDERS).join(', ')}
       ON DUPLICATE KEY UPDATE
         dataset_id = VALUES(dataset_id), state = VALUES(state),
+        -- unit_key must be updatable so a re-map can persist a corrected identity.
+        -- A normal key-matched update keeps the same key (copyWith can't change it),
+        -- so this is a no-op there; only a re-map (which rebuilds the key from the
+        -- corrected mapping) actually changes it. Without this, the key stayed stale
+        -- and the next update couldn't match the unit → it inserted a duplicate.
+        unit_key = VALUES(unit_key),
         community = VALUES(community), cluster = VALUES(cluster), building = VALUES(building),
         unit_number = VALUES(unit_number), plot_number = VALUES(plot_number),
         property_type = VALUES(property_type), beds = VALUES(beds),

@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as XLSX from 'xlsx';
 import { pool, closePool } from '../src/db/pool';
-import { stageUpload, dryRunOwners, commitOwners } from '../src/services/importService';
+import { stageUpload, dryRunOwners, commitOwners, restageDatasetForRemap } from '../src/services/importService';
 import { insertUser } from '../src/repositories/userRepo';
 import { listDatasets } from '../src/repositories/datasetRepo';
 import { queryProperties } from '../src/repositories/propertyRepo';
 import { AppUser, UserRole } from '../../src/types/user';
 import { DataModule, DataSetType, kOrgId } from '../../src/types/models';
-import { ColumnSpec } from '../../src/logic/importModels';
+import { ColumnSpec, ImportField } from '../../src/logic/importModels';
 import { newUserId } from '../src/domain/ids';
 
 /**
@@ -228,6 +228,53 @@ test('rejects non-spreadsheet uploads', async () => {
     }),
     /Excel \(\.xlsx\) or CSV/,
   );
+});
+
+// Reproduces the real duplicate bug: import with one mapping → re-map to a
+// corrected mapping (which CHANGES the unit key) → update the set. If the re-map
+// doesn't PERSIST the new key, the update can't match the units and inserts
+// duplicates. Guards saveProperties updating unit_key + the re-map flow together.
+test('REGRESSION: import → re-map → update does not duplicate (key persists)', async () => {
+  await wipe();
+  const col = (i: number, header: string, field: ImportField) => new ColumnSpec(i, header, field, 2, 2, []);
+  const rows = [
+    ['Master Community', 'Project', 'Building', 'Unit No', 'Owner Name', 'Mobile'],
+    ['Dubai Water Canal', 'Eden House The Canal', 'Eden House Townhouses', '101', 'Owner A', '971501111111'],
+    ['Dubai Water Canal', 'Eden House The Canal', 'Eden House Townhouses', '102', 'Owner B', '971502222222'],
+  ];
+  // Mapping X (wrong): the Building column read as the CLUSTER, real building blank.
+  const mapX = [col(0, 'Master Community', ImportField.community), col(1, 'Project', ImportField.ignore), col(2, 'Building', ImportField.cluster), col(3, 'Unit No', ImportField.unitNumber), col(4, 'Owner Name', ImportField.ownerName), col(5, 'Mobile', ImportField.phone)];
+  // Mapping Y (right): Project = cluster, Building = building → a DIFFERENT unit key.
+  const mapY = [col(0, 'Master Community', ImportField.community), col(1, 'Project', ImportField.cluster), col(2, 'Building', ImportField.building), col(3, 'Unit No', ImportField.unitNumber), col(4, 'Owner Name', ImportField.ownerName), col(5, 'Mobile', ImportField.phone)];
+
+  // 1. Import with the wrong mapping.
+  const s1 = await stageUpload({ fileName: 'v1.xlsx', bytes: xlsxBuffer(rows), module: DataModule.owners, userId });
+  const { datasetId } = await commitOwners({ sessionId: s1.sessionId, userId, sheetIndex: 0, headerRow: 0, columns: mapX, type: DataSetType.register, communityFallback: '', datasetName: 'Dup Test', source: 't' });
+
+  const keyBefore = (await queryProperties({ datasetId, limit: 100, offset: 0 } as any)).rows.find(p => p.unitNumber === '101')!.unitKey;
+
+  // Broker work on one unit — must survive.
+  const p101 = (await queryProperties({ datasetId, limit: 100, offset: 0 } as any)).rows.find(p => p.unitNumber === '101')!;
+  await pool.query(`UPDATE properties SET state='portfolio', notes='keen seller' WHERE id=?`, [p101.id]);
+
+  // 2. Re-map to the corrected mapping (changes the key).
+  const rs = await restageDatasetForRemap(datasetId, userId);
+  await commitOwners({ sessionId: rs.sessionId, userId, sheetIndex: 0, headerRow: 0, columns: mapY, type: DataSetType.register, communityFallback: '', datasetName: '', source: '', targetDatasetId: datasetId, remap: true });
+
+  const afterRemap = (await queryProperties({ datasetId, limit: 100, offset: 0 } as any)).rows;
+  const remap101 = afterRemap.find(p => p.unitNumber === '101')!;
+  assert.equal(afterRemap.length, 2, 're-map must not duplicate');
+  assert.notEqual(remap101.unitKey, keyBefore, 're-map must persist the corrected key');
+
+  // 3. Update the set with the corrected mapping — must MATCH, not duplicate.
+  const s3 = await stageUpload({ fileName: 'v1.xlsx', bytes: xlsxBuffer(rows), module: DataModule.owners, userId });
+  await commitOwners({ sessionId: s3.sessionId, userId, sheetIndex: 0, headerRow: 0, columns: mapY, type: DataSetType.register, communityFallback: '', datasetName: '', source: '', targetDatasetId: datasetId });
+
+  const afterUpdate = (await queryProperties({ datasetId, limit: 100, offset: 0 } as any)).rows;
+  const u101 = afterUpdate.find(p => p.unitNumber === '101')!;
+  assert.equal(afterUpdate.length, 2, 'update after re-map must NOT create duplicates');
+  assert.equal(u101.state, 'portfolio', 'broker state preserved');
+  assert.equal(u101.notes, 'keen seller', 'broker note preserved');
 });
 
 test.after(async () => {

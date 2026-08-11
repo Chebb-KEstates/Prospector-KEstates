@@ -18,6 +18,24 @@ for what each part means for Prospector.
 
 ---
 
+## [1.12.2] — 2026-08-11
+
+### Fixed
+- **The persistence gap behind the duplicate-on-update bug.** `saveProperties`
+  updated a unit's displayed location columns but **not its `unit_key`** (the
+  identity). So a re-map corrected the *displayed* location while leaving the key
+  stale — and the next update, computing the corrected key, couldn't match the
+  unit and inserted a duplicate. The upsert now updates `unit_key` too, so a
+  re-map actually persists the corrected identity and later updates match it.
+  Diagnosed from the local data (import → re-map → update produced two rows per
+  unit with the same display but different keys). Guarded by a new end-to-end
+  regression test (`import → re-map → update` must not duplicate).
+
+> ⚠️ Data already duplicated by this bug isn't auto-repaired — delete the affected
+> data set and re-import it once on the fixed build.
+
+---
+
 ## [1.12.1] — 2026-08-11
 
 Two serious data-management bugs fixed, and re-map rebuilt on a solid footing.
