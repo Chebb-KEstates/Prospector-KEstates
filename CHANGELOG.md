@@ -18,6 +18,32 @@ for what each part means for Prospector.
 
 ---
 
+## [2.1.0] — 2026-08-12
+
+Broker workflow simplified; two UI fixes.
+
+### Removed
+- **The flipping "calling session" dialer is gone.** Brokers now work owners
+  straight from the **Database** table — click a unit to open the record popup
+  (reveal · call · outcome · notes · history) and page through units with ← / →.
+  Removed the coverflow calling session, its "Start calling" buttons, and the
+  session machinery (`CallSessionView`, `CallSessionContext`, `CallFlow`). The
+  shared call types moved to `state/callTypes.ts`. The buyer-lead single-call
+  dialog is unchanged.
+  - Note: the per-broker "Use the calling dialer" permission is now unused (nothing
+    gates on it). Left in place for now — say the word to remove it and its toggle.
+
+### Fixed
+- **Account menu** now opens **directly above the profile icon** (it used to appear
+  in the top-right corner), and the profile icon is **centred** in the sidebar.
+
+### Changed
+- **Broker Pool columns** are now a fixed, focused set: Unit, Beds, BUA, Plot, Type,
+  Last transaction, Tenancy, Last call, Outcome, State, Floor. The rest are removed
+  from the pool's column picker.
+
+---
+
 ## [2.0.0] — 2026-08-12
 
 **A change to the fundamentals: how a unit is identified** (director-approved — a

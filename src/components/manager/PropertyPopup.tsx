@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useVault } from '../../state/VaultContext';
-import { CallStop, CallUnit, OwnerNumbers } from '../../state/CallSessionContext';
+import { CallStop, CallUnit, OwnerNumbers } from '../../state/callTypes';
 import { CallOutcome, PropertyState } from '../../types/models';
 import type { PhoneEntry } from '../../types/models';
 import { StateChip, CountdownBadge, OutcomeChip } from '../common/StateChip';

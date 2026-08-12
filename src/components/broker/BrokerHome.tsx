@@ -1,13 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { useAuth } from '../../state/AuthContext';
 import { useVault } from '../../state/VaultContext';
-import { useCallSession } from '../../state/CallSessionContext';
 import { PropertyState, Property } from '../../types/models';
-import { Permission } from '../../types/user';
 import { groupByOwner } from '../../logic/ownerGrouping';
-import { ownerCallStops, ownerStopForProperty, stopDeps } from './callStops';
+import { ownerStopForProperty, stopDeps } from './callStops';
 import { CallDialog } from './CallDialog';
-import { CallStop } from '../../state/CallSessionContext';
+import { CallStop } from '../../state/callTypes';
 import { fmtInt, fmtDate, greetingName } from '../../utils/format';
 import {
   HeroSlab, SlabAction, DashColumns, DashCard, StatTile, SegmentBar, ProgressLine, Segment,
@@ -36,10 +34,8 @@ function partOfDay(now: Date) {
 export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
   const { user } = useAuth();
   const vault = useVault();
-  const { start } = useCallSession();
   const { rows: mine } = useMyProperties();
   const { data: dash } = useBrokerDashboard();
-  const [starting, setStarting] = useState(false);
   const [callStop, setCallStop] = useState<CallStop | null>(null);
   const nowMs = useNow(60_000);
 
@@ -101,7 +97,7 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
   const tips: string[] = [];
   const callableOwners = new Set(callable.map(p => p.owner.phone)).size;
   if (callable.length > 0 && callsToday === 0) {
-    tips.push(`You have ${callableOwners} callable owners and no calls yet today — start a session.`);
+    tips.push(`You have ${callableOwners} callable owners and no calls yet today — open your Database and start working the list.`);
   }
   if (dueNext.length > 0) {
     tips.push(`${dueNext.length} follow-up${dueNext.length === 1 ? '' : 's'} are due now — these are your warmest contacts.`);
@@ -113,15 +109,6 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
     tips.push('Your interest rate is low — try leading with the recent transaction on their unit.');
   }
   if (tips.length === 0) tips.push('You are on top of your list. Keep the momentum going.');
-
-  const startCalling = async () => {
-    setStarting(true);
-    try {
-      start(await ownerCallStops(mine, deps), 'Calling owners');
-    } finally {
-      setStarting(false);
-    }
-  };
 
   const openCall = async (p: Property) => {
     if (!p.callable) return;
@@ -143,18 +130,10 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
         ]}
         actions={
           <>
+            <SlabAction icon="table" label="Open database" onClick={() => onGo?.('today')} />
             <SlabAction icon="layers" label="Browse pool" onClick={() => onGo?.('pool')} />
             <SlabAction icon="star" label="My portfolio" onClick={() => onGo?.('portfolio')} />
           </>
-        }
-        side={
-          user?.can(Permission.useDialer) ? (
-            <button className="slab-action primary" onClick={startCalling}
-              disabled={callable.length === 0 || starting}
-              style={{ padding: '14px 22px', fontSize: '0.95rem' }}>
-              <Icon name="phoneCall" size={18} /> {starting ? 'Preparing…' : `Start calling (${callableOwners})`}
-            </button>
-          ) : undefined
         }
       />
 

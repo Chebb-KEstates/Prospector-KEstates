@@ -1,29 +1,24 @@
 import React, { useState, useMemo } from 'react';
 import { useAuth } from '../../state/AuthContext';
 import { useVault } from '../../state/VaultContext';
-import { useCallSession } from '../../state/CallSessionContext';
 import { PropertyState, CallOutcome } from '../../types/models';
-import { Permission } from '../../types/user';
 import { PropertyTable } from '../manager/PropertyTable';
 import { StateChip, OutcomeChip } from '../common/StateChip';
 import { Icon } from '../common/Icon';
 import { fmtDate } from '../../utils/format';
-import {
-  ownerCallStops, leadCallStops, leadStopFor, stopDeps,
-} from './callStops';
+import { leadStopFor, stopDeps } from './callStops';
 import { CallDialog } from './CallDialog';
-import { CallStop } from '../../state/CallSessionContext';
+import { CallStop } from '../../state/callTypes';
 import { PropertyPopup } from '../manager/PropertyPopup';
 import { ApiError } from '../../data/apiClient';
-import { useMyProperties, useMyLeads } from '../../data/hooks';
+import { useMyLeads } from '../../data/hooks';
 
 /**
- * Today — the broker's working list.
+ * Database — the broker's working list.
  *
- * A broker's own set is bounded (they hold tens of units, not the vault), so it
- * still loads whole via useMyProperties and the quick-filter chips still filter
- * in memory, exactly as before. The paginated PropertyTable underneath scopes
- * itself to `mine` server-side.
+ * Owners are worked straight from the paginated table: click a unit to open the
+ * record popup (reveal · call · outcome · notes · history) and page through units
+ * with ← / → from there. Buyer leads use a simple table + single-call dialog.
  */
 
 type Quick = 'all' | 'due' | 'fresh' | 'noAnswer' | 'interested' | 'expiring';
@@ -37,11 +32,9 @@ const QUICKS: { key: Quick; label: string }[] = [
 ];
 
 /**
- * Maps a quick chip onto server filters.
- *
- * `dueOnly` and `interestedOnly` are dedicated filters on the API: they're a
- * date comparison and a two-value set, neither of which the plain `outcome`
- * filter can express. Without them these two chips would silently do nothing.
+ * Maps a quick chip onto server filters. `dueOnly` and `interestedOnly` are
+ * dedicated API filters (a date comparison / a two-value set) the plain `outcome`
+ * filter can't express.
  */
 function quickToQuery(quick: Quick): {
   forcedOutcome?: string; dueOnly?: boolean; interestedOnly?: boolean; expiringSoon?: boolean;
@@ -59,53 +52,17 @@ function quickToQuery(quick: Quick): {
 export function TodayTab() {
   const { user } = useAuth();
   const vault = useVault();
-  const { start } = useCallSession();
   const [buyers, setBuyers] = useState(false);
   const [quick, setQuick] = useState<Quick>('all');
-  const [starting, setStarting] = useState(false);
-  // Row click opens the record popup (an audited, cap-counted owner view).
+  // Row click opens the record popup (an audited owner view).
   const [detailId, setDetailId] = useState<string | null>(null);
   const [pageIds, setPageIds] = useState<string[]>([]);
   const [capError, setCapError] = useState<string | null>(null);
 
-  const { rows: myProperties } = useMyProperties();
-  const { rows: myLeads } = useMyLeads();
-
-  const deps = useMemo(
-    () => stopDeps(vault.users, vault.logCall, vault.logLeadCall),
-    [vault.users, vault.logCall, vault.logLeadCall],
-  );
-
-  const leads = useMemo(
-    () => myLeads.filter(l => l.state === PropertyState.assigned || l.state === PropertyState.portfolio),
-    [myLeads],
-  );
-
-  const ownerCallable = useMemo(() => myProperties.filter(p => p.callable), [myProperties]);
-  const leadCallable = useMemo(() => leads.filter(l => l.callable), [leads]);
-
   if (!user) return null;
 
-  const startOwners = async () => {
-    setStarting(true);
-    try {
-      start(await ownerCallStops(myProperties, deps), 'Calling owners');
-    } finally {
-      setStarting(false);
-    }
-  };
-
-  const startLeads = async () => {
-    setStarting(true);
-    try {
-      start(await leadCallStops(leads, deps), 'Calling buyer leads');
-    } finally {
-      setStarting(false);
-    }
-  };
-
-  // Opening a unit is an audited, cap-counted owner view — same as the manager
-  // Vault. The record popup (with its own reveal) opens once the view is allowed.
+  // Opening a unit is an audited owner view — same as the manager Vault. The
+  // record popup (with its own reveal) opens once the view is recorded.
   const openDetail = async (id: string, orderedIds: string[]) => {
     setCapError(null);
     try {
@@ -116,9 +73,6 @@ export function TodayTab() {
       setCapError(e instanceof ApiError ? e.message : 'Could not open that record.');
     }
   };
-
-  // Owner counting mirrors the original: one caller per distinct number.
-  const ownerCount = new Set(ownerCallable.map(p => p.owner.phone)).size;
 
   return (
     <div>
@@ -134,7 +88,7 @@ export function TodayTab() {
         </div>
       )}
 
-      {/* Owners | Buyers switch + Start calling */}
+      {/* Owners | Buyers switch */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
           <button className="btn" style={{ borderRadius: 0, border: 'none', background: !buyers ? 'var(--primary)' : 'transparent', color: !buyers ? '#fff' : 'var(--text-secondary)' }} onClick={() => setBuyers(false)}>
@@ -144,20 +98,6 @@ export function TodayTab() {
             Buyer leads
           </button>
         </div>
-        <div style={{ flex: 1 }} />
-        {/* The auto-flipping calling dialer is per-broker: the manager can turn
-            it off under Users. Clicking a unit for the record popup still works. */}
-        {user.can(Permission.useDialer) && (!buyers ? (
-          <button className="btn btn-primary" onClick={startOwners} disabled={ownerCallable.length === 0 || starting}
-            style={{ background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013' }}>
-            <Icon name="phoneCall" size={16} /> {starting ? 'Preparing…' : `Start calling (${ownerCount})`}
-          </button>
-        ) : (
-          <button className="btn btn-primary" onClick={startLeads} disabled={leadCallable.length === 0 || starting}
-            style={{ background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013' }}>
-            <Icon name="phoneCall" size={16} /> {starting ? 'Preparing…' : `Start calling (${leadCallable.length})`}
-          </button>
-        ))}
       </div>
 
       {!buyers ? (

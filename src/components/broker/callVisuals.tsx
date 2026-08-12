@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CallUnit } from '../../state/CallSessionContext';
+import { CallUnit } from '../../state/callTypes';
 import { CallOutcome } from '../../types/models';
 import { StateChip } from '../common/StateChip';
 import { fmtDate, timeAgo } from '../../utils/format';

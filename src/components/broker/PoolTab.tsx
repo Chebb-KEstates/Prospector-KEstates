@@ -8,6 +8,15 @@ import { ApiError } from '../../data/apiClient';
 import * as api from '../../data/api';
 
 /**
+ * Columns a broker may show on the Pool (besides the always-present Unit):
+ * Beds, BUA (size), Plot, Type, Last transaction, Tenancy, Last call, Outcome,
+ * State, Floor (a mapped upload field, shown when present).
+ */
+const POOL_COLUMNS = [
+  'beds', 'size', 'plotSize', 'type', 'lastTx', 'tenancy', 'calledAt', 'outcome', 'state', 'extra:Floor',
+];
+
+/**
  * The broker's view of the pool: a teaser (owners hidden until assigned) where
  * they tick the units they want and submit a hand-picked request. The manager
  * approves in Assignments → Requests, which grants exactly those units.
@@ -153,6 +162,8 @@ export function PoolTab() {
         fixedState={PropertyState.pool}
         checkedIds={checked}
         onCheckedChanged={onCheckedChanged}
+        // The columns a broker may show on the pool: Unit (always) + these.
+        allowColumns={POOL_COLUMNS}
       />
     </div>
   );

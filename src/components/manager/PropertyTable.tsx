@@ -153,6 +153,12 @@ interface Props {
   onCheckedChanged?: (ids: Set<string>) => void;
   /** Manager view: show the "Assigned to" column and a filter-by-broker control. */
   showAssignee?: boolean;
+  /**
+   * Restrict the SELECTABLE columns to this allowlist of keys — the column picker
+   * offers only these, and they're all shown by default. "Unit" is always shown.
+   * Used to give the broker Pool a fixed, focused column set.
+   */
+  allowColumns?: string[];
 }
 
 const PAGE_SIZES = [10, 25, 50, 100, 250];
@@ -161,7 +167,7 @@ export function PropertyTable({
   scope, assignedTo, datasetId, fixedState,
   forcedOutcome, dueOnly, interestedOnly, expiringSoon,
   onSelect, selectedId, teaser, hideOwner, prefsKey,
-  checkedIds, onCheckedChanged, showAssignee,
+  checkedIds, onCheckedChanged, showAssignee, allowColumns,
 }: Props) {
   const ownerHidden = !!teaser || !!hideOwner;
   const selectable = !!checkedIds && !!onCheckedChanged;
@@ -270,15 +276,17 @@ export function PropertyTable({
         render: p => <span style={{ color: 'var(--text-secondary)' }}>{p.extra?.[k] ?? '—'}</span>,
       });
     }
-    return cols;
-  }, [ownerHidden, extraKeys, phoneLabels, showAssignee, userById, settings.expiringSoonHours]);
+    // A caller can pin the selectable set to a fixed allowlist (the broker Pool).
+    return allowColumns ? cols.filter(c => allowColumns.includes(c.key)) : cols;
+  }, [ownerHidden, extraKeys, phoneLabels, showAssignee, userById, settings.expiringSoonHours, allowColumns]);
 
   const unitCol: ColDef = useMemo(() => ({
     key: PINNED, label: 'Unit', flex: 3, sortable: true, render: () => null,
   }), []);
   const colByKey = useMemo(() => new Map([unitCol, ...allCols].map(c => [c.key, c])), [allCols, unitCol]);
   const available = useMemo(() => allCols.map(c => c.key), [allCols]);
-  const defaultVisible = teaser ? DEFAULT_VISIBLE.teaser
+  const defaultVisible = allowColumns ? available
+    : teaser ? DEFAULT_VISIBLE.teaser
     : hideOwner ? DEFAULT_VISIBLE.hideOwner
     : showAssignee ? [...DEFAULT_VISIBLE.normal, 'assignee']
     : DEFAULT_VISIBLE.normal;

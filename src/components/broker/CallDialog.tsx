@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CallStop } from '../../state/CallSessionContext';
+import { CallStop } from '../../state/callTypes';
 import { CallCard } from './CallCard';
 import { Icon } from '../common/Icon';
 

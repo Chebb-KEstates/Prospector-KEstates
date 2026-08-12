@@ -3,7 +3,6 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../state/AuthContext';
 import { useTheme } from '../../state/ThemeContext';
 import { useMyProperties, useMyLeads } from '../../data/hooks';
-import { CallSessionProvider, useCallSession } from '../../state/CallSessionContext';
 import { AccountSheet } from '../common/AccountSheet';
 import { MarbleBackground } from '../common/MarbleBackground';
 import { Icon, IconName } from '../common/Icon';
@@ -11,7 +10,6 @@ import { BrokerHome } from './BrokerHome';
 import { TodayTab } from './TodayTab';
 import { PoolTab } from './PoolTab';
 import { PortfolioTab } from './PortfolioTab';
-import { CallSessionView } from './CallSessionView';
 
 type Tab = 'home' | 'today' | 'pool' | 'portfolio';
 
@@ -22,11 +20,10 @@ const NAV: { key: Tab; label: string; icon: IconName }[] = [
   { key: 'portfolio', label: 'Portfolio', icon: 'star' },
 ];
 
-function BrokerShellInner() {
+export function BrokerShell() {
   const [activeTab, setActiveTab] = React.useState<Tab>('home');
   const { user } = useAuth();
   const { resolved } = useTheme();
-  const { session, minimize, resume, end } = useCallSession();
   // A broker's own set is bounded, so it loads whole — the badge still counts
   // in the browser's local day, exactly as it did before.
   const { rows: myProperties } = useMyProperties();
@@ -38,14 +35,6 @@ function BrokerShellInner() {
     myLeads.filter(l => l.lastCalledAt && new Date(l.lastCalledAt).toDateString() === now).length;
 
   if (!user) return <Navigate to="/login" />;
-
-  const go = (t: Tab) => {
-    setActiveTab(t);
-    if (session && !session.minimized) minimize();
-  };
-
-  const dialerOpen = session != null && !session.minimized;
-  const remaining = session ? session.stops.length - session.index - 1 : 0;
 
   return (
     <div style={{
@@ -67,10 +56,10 @@ function BrokerShellInner() {
             {NAV.map(tab => (
               <button key={tab.key} className="btn btn-ghost" style={{
                 justifyContent: 'flex-start', gap: 10, padding: '8px 12px', borderRadius: 8,
-                background: activeTab === tab.key && !dialerOpen ? 'var(--surface-2)' : 'transparent',
-                color: activeTab === tab.key && !dialerOpen ? 'var(--text)' : 'var(--text-secondary)',
+                background: activeTab === tab.key ? 'var(--surface-2)' : 'transparent',
+                color: activeTab === tab.key ? 'var(--text)' : 'var(--text-secondary)',
                 fontWeight: activeTab === tab.key ? 600 : 400,
-              }} onClick={() => go(tab.key)}>
+              }} onClick={() => setActiveTab(tab.key)}>
                 <Icon name={tab.icon} size={17} />
                 {tab.label}
                 {tab.key === 'today' && todayCount > 0 && (
@@ -91,52 +80,18 @@ function BrokerShellInner() {
             display: 'flex', alignItems: 'center', gap: 12, padding: '12px 24px',
             borderBottom: '1px solid var(--border)', minHeight: 56,
           }}>
-            {dialerOpen ? (
-              <>
-                <span style={{ fontWeight: 600 }}>{session!.title}</span>
-                <div style={{ flex: 1 }} />
-                <button className="btn btn-sm" onClick={minimize}>
-                  <Icon name="minimize" size={15} /> Minimize
-                </button>
-                <button className="btn btn-sm btn-danger" onClick={end}>End session</button>
-              </>
-            ) : session ? (
-              <>
-                <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>You have a calling session in progress.</span>
-                <div style={{ flex: 1 }} />
-                <button className="btn btn-sm btn-primary" onClick={resume}>
-                  <Icon name="play" size={15} /> Resume ({remaining + 1})
-                </button>
-                <button className="btn btn-sm btn-ghost" onClick={end}>End</button>
-              </>
-            ) : (
-              <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{NAV.find(n => n.key === activeTab)?.label ?? activeTab}</span>
-            )}
+            <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{NAV.find(n => n.key === activeTab)?.label ?? activeTab}</span>
           </div>
 
           {/* Body */}
           <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
-            {dialerOpen ? (
-              <CallSessionView />
-            ) : (
-              <>
-                {activeTab === 'home' && <BrokerHome onGo={(t) => setActiveTab(t as Tab)} />}
-                {activeTab === 'today' && <TodayTab />}
-                {activeTab === 'pool' && <PoolTab />}
-                {activeTab === 'portfolio' && <PortfolioTab />}
-              </>
-            )}
+            {activeTab === 'home' && <BrokerHome onGo={(t) => setActiveTab(t as Tab)} />}
+            {activeTab === 'today' && <TodayTab />}
+            {activeTab === 'pool' && <PoolTab />}
+            {activeTab === 'portfolio' && <PortfolioTab />}
           </div>
         </main>
       </div>
     </div>
-  );
-}
-
-export function BrokerShell() {
-  return (
-    <CallSessionProvider>
-      <BrokerShellInner />
-    </CallSessionProvider>
   );
 }

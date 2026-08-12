@@ -10,8 +10,8 @@
 
 | | |
 |---|---|
-| **Current version** | v2.0.0 |
-| **Last updated** | 2026-08-11 |
+| **Current version** | v2.1.0 |
+| **Last updated** | 2026-08-12 |
 | **Live site** | owners-crm.kestates.ae |
 | **Repository** | github.com/Chebb-KEstates/Prospector-KEstates |
 | **Companion docs** | [README.md](../README.md) (developer quick-start) · [CHANGELOG.md](../CHANGELOG.md) (release log) · [PORT-PROGRESS.md](../PORT-PROGRESS.md) (the original port) |
@@ -44,14 +44,14 @@ It exists to do two things well:
    valuable, most leakable asset. Prospector makes that data useful to brokers
    *without* letting it walk out the door.
 2. **Turn that data into disciplined calling activity** — managers import and
-   allocate records; brokers work their assigned records through a guided dialer;
+   allocate records; brokers work their assigned records straight from the database table + record popup;
    everyone's activity is measured.
 
 There are two kinds of user:
 
 - **Managers** (the director and team leads) — import data, allocate it, set the
   rules, watch the numbers, manage users.
-- **Brokers** — receive assigned units, call the owners through the dialer, log
+- **Brokers** — receive assigned units, call the owners from the database table (the record popup), log
   every outcome, and build a portfolio of interested owners.
 
 Everything else in this handbook exists to serve those two jobs while never
@@ -147,7 +147,7 @@ src/
   logic/       dispositions, import pipelines  ← shared with the server
   version.ts   the app version (single source of truth)
   data/        apiClient · api · hooks         (the only place that talks to the API)
-  state/       AuthContext · VaultContext · ThemeContext · CallSessionContext
+  state/       AuthContext · VaultContext · ThemeContext · callTypes
   components/  broker/ · manager/ · common/ · LoginScreen
 server/
   src/
@@ -268,7 +268,7 @@ a unit before it returns to the pool for someone else:
 - Interested units become a **portfolio** hold, renewed by calling or saving notes.
 - Setting any timer value to **0** removes that particular limit.
 
-> In the dialer, brokers see the outcome as **two sections** — first *did the call
+> In the record popup, brokers see the outcome as **two sections** — first *did the call
 > connect* (No answer / Didn't connect / Answered), then, only if answered, *what
 > was the result* (interested to sell/rent, call back, future interest, not
 > interested, living in property, dropped, do-not-call). Those friendly labels are
@@ -344,15 +344,20 @@ managers; it is **not** a bypass of phone masking — see §7.)
 
 - **Home** — a dashboard of their pipeline, how they compare to the team, what's
   due next, a snapshot of the pool.
-- **Today** — owners / buyers to work, with quick filters, and "Start calling".
+- **Database** — owners / buyers to work, with quick filters. Brokers work owners
+  **straight from the table**: click a unit to open the **record popup** and page
+  through units with ← / →. Buyer leads open a single-call dialog. (v2.1.0 removed
+  the old flipping "calling session"; the record popup is the calling surface now.)
 - **Pool** — a *teaser* view (owner hidden until assigned); brokers tick units and
-  **request** them; the manager approves or denies.
+  **request** them; the manager approves or denies. Its columns are a fixed,
+  focused set (Unit, Beds, BUA, Plot, Type, Last transaction, Tenancy, Last call,
+  Outcome, State, Floor).
 - **Portfolio** — the interested owners they're nurturing; click a unit to open its
   record.
-- **The dialer** — the heart of the broker experience: a rich call card showing
-  seller signals, last sale, tenancy and full history; the owner's number is
-  **revealed one record at a time** (and audited); the broker logs the outcome and
-  feedback, then **Save & next**. Selecting an outcome does not auto-advance.
+- **The record popup** — the broker's calling surface: a rich, property-centric
+  work card showing seller signals, last sale, tenancy and full history; the
+  owner's number is **revealed one record at a time** (and audited); the broker
+  logs the outcome and feedback, then closes or moves to the next unit.
 
 ### Managers
 
@@ -362,7 +367,8 @@ managers; it is **not** a bypass of phone masking — see §7.)
   - **Import & Files** — the import/update wizards and the data-sets manager
     (edit, price, re-map, export, retain-source).
   - **Users** — create/manage users, soft-delete (deactivate/reactivate), the
-    **per-broker office-network lock**, and the **per-broker dialer toggle**.
+    **per-broker office-network lock**. (The old per-broker dialer toggle is now
+    vestigial — the flipping dialer was removed in v2.1.0.)
   - **Audit** — the trail.
   - **Settings** — cooldowns, the assignment-timer values, and the office IP.
 - **Assignments** — Pool / Assigned / Requests, with a pending-request badge; the

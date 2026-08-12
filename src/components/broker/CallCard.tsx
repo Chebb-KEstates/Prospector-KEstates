@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CallStop, CallUnit, OwnerNumbers } from '../../state/CallSessionContext';
+import { CallStop, CallUnit, OwnerNumbers } from '../../state/callTypes';
 import { CallOutcome, CallOutcomeLabel, CallOutcomeBuyerLabel } from '../../types/models';
 import type { PhoneEntry } from '../../types/models';
 import { StateChip } from '../common/StateChip';
