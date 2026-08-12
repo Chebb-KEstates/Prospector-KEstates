@@ -265,7 +265,10 @@ test('REGRESSION: import → re-map → update does not duplicate (key persists)
   const afterRemap = (await queryProperties({ datasetId, limit: 100, offset: 0 } as any)).rows;
   const remap101 = afterRemap.find(p => p.unitNumber === '101')!;
   assert.equal(afterRemap.length, 2, 're-map must not duplicate');
-  assert.notEqual(remap101.unitKey, keyBefore, 're-map must persist the corrected key');
+  // With the tolerant identity, mapping the tower as sub-community vs building
+  // yields the SAME key — so re-mapping the split is a no-op on identity (and, the
+  // real point, cannot duplicate). keyBefore already equals the corrected key.
+  assert.equal(remap101.unitKey, keyBefore, 'tolerant identity: the split does not change the key');
 
   // 3. Update the set with the corrected mapping — must MATCH, not duplicate.
   const s3 = await stageUpload({ fileName: 'v1.xlsx', bytes: xlsxBuffer(rows), module: DataModule.owners, userId });
@@ -295,6 +298,42 @@ test('an owner change on update is recorded in the unit history', async () => {
   const ev = hist.find(h => h.action === 'update');
   assert.ok(ev, 'an update history entry is linked to the unit');
   assert.match(ev!.detail, /Owner changed: Owner A → Owner Z/);
+});
+
+// The headline fix: uploading an update for an area with the location columns
+// mapped DIFFERENTLY than the original must match the existing units (tolerant
+// identity), not create duplicates — even on units whose stored key predates the
+// tolerant identity (no migration required).
+test('REGRESSION: updating with a different column mapping does not duplicate', async () => {
+  await wipe();
+  const col = (i: number, header: string, field: ImportField) => new ColumnSpec(i, header, field, 2, 2, []);
+  const rows = [
+    ['Master Community', 'Project', 'Building', 'Unit No', 'Owner Name', 'Mobile'],
+    ['Dubai Water Canal', 'Eden House The Canal', 'Eden House Townhouses', '101', 'Owner A', '971501111111'],
+    ['Dubai Water Canal', 'Eden House The Canal', 'Eden House Townhouses', '102', 'Owner B', '971502222222'],
+  ];
+  // Mapping X: the tower ("…Townhouses") mapped as the SUB-COMMUNITY, building blank.
+  const mapX = [col(0, 'Master Community', ImportField.community), col(1, 'Project', ImportField.ignore), col(2, 'Building', ImportField.cluster), col(3, 'Unit No', ImportField.unitNumber), col(4, 'Owner Name', ImportField.ownerName), col(5, 'Mobile', ImportField.phone)];
+  // Mapping Y: the tower mapped as the BUILDING, Project as the sub-community.
+  const mapY = [col(0, 'Master Community', ImportField.community), col(1, 'Project', ImportField.cluster), col(2, 'Building', ImportField.building), col(3, 'Unit No', ImportField.unitNumber), col(4, 'Owner Name', ImportField.ownerName), col(5, 'Mobile', ImportField.phone)];
+
+  const s1 = await stageUpload({ fileName: 'v1.xlsx', bytes: xlsxBuffer(rows), module: DataModule.owners, userId });
+  const { datasetId } = await commitOwners({ sessionId: s1.sessionId, userId, sheetIndex: 0, headerRow: 0, columns: mapX, type: DataSetType.register, communityFallback: '', datasetName: 'Area Test', source: 't' });
+
+  const p101 = (await queryProperties({ datasetId, limit: 100, offset: 0 } as any)).rows.find(p => p.unitNumber === '101')!;
+  await pool.query(`UPDATE properties SET state='portfolio', notes='keen seller' WHERE id=?`, [p101.id]);
+  // Simulate a LEGACY stored key (pre-tolerant identity) — matching must still work.
+  await pool.query(`UPDATE properties SET unit_key='u|dubai water canal|eden house the canal|eden house townhouses|101' WHERE id=?`, [p101.id]);
+
+  // Update with the DIFFERENT mapping.
+  const s2 = await stageUpload({ fileName: 'v2.xlsx', bytes: xlsxBuffer(rows), module: DataModule.owners, userId });
+  await commitOwners({ sessionId: s2.sessionId, userId, sheetIndex: 0, headerRow: 0, columns: mapY, type: DataSetType.register, communityFallback: '', datasetName: '', source: '', targetDatasetId: datasetId });
+
+  const after = (await queryProperties({ datasetId, limit: 100, offset: 0 } as any)).rows;
+  assert.equal(after.length, 2, 'a differently-mapped update must NOT create duplicates');
+  const a101 = after.find(p => p.unitNumber === '101')!;
+  assert.equal(a101.state, 'portfolio', 'broker state preserved');
+  assert.equal(a101.notes, 'keen seller', 'broker note preserved');
 });
 
 test.after(async () => {

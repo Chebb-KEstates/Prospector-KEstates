@@ -268,6 +268,17 @@ export async function findByUnitKeys(unitKeys: string[]): Promise<Map<string, Pr
   return out;
 }
 
+/** Every unit currently in a data set — used to match an UPDATE against the set's
+ *  existing units by their recomputed identity (tolerant to column re-mapping),
+ *  rather than trusting the stored key, which may predate the current identity. */
+export async function findByDatasetId(datasetId: string): Promise<Property[]> {
+  const [rows] = await pool.query<Row[]>(
+    `SELECT ${COLS} FROM properties WHERE org_id = ? AND dataset_id = ?`,
+    [kOrgId, datasetId],
+  );
+  return rows.map(toProperty);
+}
+
 /** Assigned + portfolio units for a broker — mirrors VaultContext.assignedTo. */
 export async function findAssignedTo(brokerId: string): Promise<Property[]> {
   const [rows] = await pool.query<Row[]>(

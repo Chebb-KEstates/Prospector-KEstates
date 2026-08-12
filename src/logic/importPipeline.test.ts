@@ -32,6 +32,20 @@ describe('unit key (vault-wide dedupe)', () => {
   it('returns null when the row identifies no unit at all', () => {
     expect(ImportPipeline.unitKeyFor({ community: 'Ranches' })).toBeNull();
   });
+  // The tolerant identity: the same physical unit must key the same whether the
+  // tower name is mapped as the BUILDING or as the SUB-COMMUNITY — so re-uploading
+  // an area with a different column mapping matches instead of duplicating.
+  it('is tolerant to the tower being mapped as building OR sub-community', () => {
+    const asBuilding = ImportPipeline.unitKeyFor({ community: 'Dubai Water Canal', cluster: 'Eden House The Canal', building: 'Eden House The Canal Townhouses', unitNumber: '101' });
+    const asCluster = ImportPipeline.unitKeyFor({ community: 'Dubai Water Canal', cluster: 'Eden House The Canal Townhouses', unitNumber: '101' });
+    expect(asBuilding).toBe(asCluster);
+    expect(asBuilding).toBe('u|dubai water canal|eden house the canal townhouses|101');
+  });
+  it('keeps different towers in the same community distinct', () => {
+    const b = ImportPipeline.unitKeyFor({ community: 'Palm Jebel Ali', cluster: 'Frond B', unitNumber: '101' });
+    const c = ImportPipeline.unitKeyFor({ community: 'Palm Jebel Ali', cluster: 'Frond C', unitNumber: '101' });
+    expect(b).not.toBe(c);
+  });
 });
 
 describe('header auto-mapping', () => {

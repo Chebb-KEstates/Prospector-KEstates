@@ -18,6 +18,41 @@ for what each part means for Prospector.
 
 ---
 
+## [2.0.0] — 2026-08-12
+
+**A change to the fundamentals: how a unit is identified** (director-approved — a
+MAJOR release per our versioning rule). This is the definitive fix for units
+duplicating when an area is re-uploaded with the location columns mapped
+differently.
+
+### Changed (Identity)
+- **A unit's identity is now `community + most-specific tower + unit number`**
+  (previously the exact community + sub-community + building + number). The "tower"
+  is the building when given, otherwise the sub-community — so the same physical
+  unit keys the **same** whether the tower name ("Eden House The Canal Townhouses")
+  is mapped into the *building* or the *sub-community* column. Re-uploading an area
+  with a different mapping now **matches the existing units instead of duplicating
+  them**. Different towers (different building/cluster) and different areas
+  (different community) stay distinct.
+  - Trade-off (accepted): two *different* buildings in the *same* community must not
+    share the exact same name, or they'd be treated as one. Real tower names are
+    specific enough.
+- **Updates match by recomputed identity, from the actual columns** — so this works
+  on units already in the app, with **no migration**. An update loads the target
+  set's units and matches them by their tolerant identity, independent of the key
+  stored at import time (which may predate this change).
+
+### Notes
+- No migration and no data rewrite. Existing keys are left as-is; matching
+  recomputes the tolerant identity from the location columns.
+- Duplicates already created by the earlier bug are **not** auto-merged — delete
+  the affected data set and re-import it once on this build to start clean.
+- Guarded by new tests: identity tolerance (building vs sub-community), different
+  towers stay distinct, and an end-to-end "update with a different mapping doesn't
+  duplicate" (including a legacy stored key).
+
+---
+
 ## [1.13.0] — 2026-08-11
 
 ### Added

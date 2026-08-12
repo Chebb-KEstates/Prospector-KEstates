@@ -10,7 +10,7 @@
 
 | | |
 |---|---|
-| **Current version** | v1.13.0 |
+| **Current version** | v2.0.0 |
 | **Last updated** | 2026-08-11 |
 | **Live site** | owners-crm.kestates.ae |
 | **Repository** | github.com/Chebb-KEstates/Prospector-KEstates |
@@ -88,10 +88,14 @@ as a deliberate MAJOR decision (see §9) with the director's sign-off.
   means "no new information", not "delete".
 
 ### Identity & data integrity
-- **A unit's identity is its tower + number** — `u|community|cluster|building|unit`
-  (or `p|community|plot` for plots). The community label alone is *not* the
-  identity, and the number alone is *not* the identity either. (See §8 for the
-  incident that taught us this the hard way.)
+- **A unit's identity is `community + most-specific tower + unit number`** —
+  `u|community|tower|unit`, where the tower is the *building* when given, otherwise
+  the *sub-community*. (Plots: `p|community|plot`.) This is deliberately **tolerant
+  to how a vendor sheet splits the location across columns**, so re-uploading an
+  area with a different mapping matches the existing units instead of duplicating
+  them. Different towers and different communities stay distinct. The community
+  label alone is not the identity, and the number alone is not either. (See §8 for
+  the incidents that shaped this.) Changing this definition is a MAJOR decision.
 - **Migrations are forward-only and idempotent.** A migration that changes stored
   data is **never run without a read-only diagnostic first** and a plan that
   cannot lose data. We do not "force" a failed migration.
@@ -210,19 +214,27 @@ A property's **identity** — what makes two rows "the same unit" — is built b
 `unitKeyFor()` in `src/logic/importPipeline.ts`:
 
 ```
-u | community | cluster | building | unit      (a unit within a building)
-p | community | plot                           (a plot)
+u | community | tower | unit      (tower = building if given, else sub-community)
+p | community | plot              (a plot)
 ```
 
 That readable key is hashed (SHA-256 → `unit_key_hash`), and
-`UNIQUE (org_id, unit_key_hash)` is what stops the same unit being stored twice.
+`UNIQUE (org_id, unit_key_hash)` stops the same unit being stored twice.
 
-**Why the whole location is in the key:** in the real data the *building* field is
-frequently blank and the tower/development name lives in the *community/cluster*
-fields. So "unit 101" exists in many different towers. If identity were the number
-alone, those distinct units would collide and be treated as one — which is exactly
-the incident in §8. The tower stays in the identity so different buildings' units
-stay distinct.
+**Why "community + most-specific tower + unit":** in the real data the *building*
+field is often blank and the tower/development name lives in the *sub-community*
+field — and different vendor sheets for the same area split the location across
+columns differently. Anchoring on the community + the deepest tower name (building
+else sub-community) + the unit number makes the identity **tolerant to that split**
+(so re-uploading an area matches existing units instead of duplicating them) while
+keeping different towers and communities distinct. Number-alone would merge
+distinct towers (§8); the full four-part exact key duplicated whenever the columns
+were mapped differently (§8). This is the resolution of both.
+
+**Updates recompute this identity from the columns.** An update to an existing set
+matches the incoming units against the set's existing units by their *recomputed*
+identity — not the key stored at import — so it works on data imported before this
+identity, with no migration.
 
 ### Owners and co-owners
 

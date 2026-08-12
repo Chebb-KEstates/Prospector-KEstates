@@ -14,7 +14,7 @@ import {
 import {
   retainSource, getDatasetSource, restageFromSource,
 } from '../repositories/datasetSourceRepo';
-import { findByUnitKeys, saveProperties } from '../repositories/propertyRepo';
+import { findByUnitKeys, findByDatasetId, saveProperties } from '../repositories/propertyRepo';
 import { findByLeadKeys, saveLeads } from '../repositories/leadRepo';
 import { insertDataset, findDatasetById, refreshDatasetStats } from '../repositories/datasetRepo';
 import { writeAudit } from '../repositories/auditRepo';
@@ -254,14 +254,7 @@ export async function dryRunOwners(input: {
   // reimplement the key-extraction half of dryRun() here, which is exactly the
   // duplication that lets server and client drift. Paying one extra in-memory
   // pass beats loading every unit_key in the org, and beats forking the pipeline.
-  const probe = ImportPipeline.dryRun({
-    sheet, headerRow: input.headerRow, columns: input.columns,
-    type: input.type, communityFallback: input.communityFallback,
-    datasetId,
-    existingByUnitKey: new Map(),
-  });
-  const touchedKeys = probe.newProperties.map(p => p.unitKey);
-  const existingByUnitKey = await findByUnitKeys(touchedKeys);
+  const existingByUnitKey = await loadExistingForMatch(updateMode, datasetId, sheet, input);
 
   const result = ImportPipeline.dryRun({
     sheet, headerRow: input.headerRow, columns: input.columns,
@@ -295,6 +288,50 @@ export async function dryRunOwners(input: {
 function maskForPreview(phone: string): string {
   if (phone.length < 4) return phone;
   return phone.slice(0, -4).replace(/\d/g, '•') + phone.slice(-4);
+}
+
+/**
+ * Index a set's existing units by their RECOMPUTED identity (community + tower +
+ * unit), not their stored key. An UPDATE matches against this so the same unit is
+ * recognised however the incoming file maps its location columns — and so it works
+ * on units imported before the identity was made tolerant, without a migration.
+ * (If a set still holds legacy duplicates, the last one wins here; matching stops
+ * NEW duplicates forming from here on.)
+ */
+function indexByIdentity(units: Property[]): Map<string, Property> {
+  const m = new Map<string, Property>();
+  for (const u of units) {
+    const k = ImportPipeline.unitKeyFor({
+      community: u.community, cluster: u.cluster, building: u.building,
+      unitNumber: u.unitNumber, plotNumber: u.plotNumber,
+    });
+    if (k) m.set(k, u);
+  }
+  return m;
+}
+
+/** The existing units this import/update matches against, keyed by identity. */
+async function loadExistingForMatch(
+  updateMode: boolean,
+  datasetId: string,
+  sheet: ParsedSheet,
+  input: { headerRow: number; columns: ColumnSpec[]; type: DataSetType; communityFallback: string },
+): Promise<Map<string, Property>> {
+  if (updateMode) {
+    // An UPDATE matches the SET's existing units by their recomputed identity —
+    // tolerant to how the incoming file maps its location columns, and independent
+    // of the stored key (which may predate the tolerant identity). This is what
+    // stops a differently-mapped re-upload from creating duplicates.
+    return indexByIdentity(await findByDatasetId(datasetId));
+  }
+  // Fresh import: dedupe against existing units org-wide by identity. Parse once
+  // with an empty map to learn the keys, then load only those.
+  const probe = ImportPipeline.dryRun({
+    sheet, headerRow: input.headerRow, columns: input.columns,
+    type: input.type, communityFallback: input.communityFallback,
+    datasetId, existingByUnitKey: new Map(),
+  });
+  return findByUnitKeys(probe.newProperties.map(p => p.unitKey));
 }
 
 // ── Re-map (correcting the column mapping of an existing set) ─────────────────
@@ -514,12 +551,7 @@ export async function commitOwners(input: CommitOwnersInput): Promise<{
     return { datasetId, imported: toSave.length };
   }
 
-  const probe = ImportPipeline.dryRun({
-    sheet, headerRow: input.headerRow, columns: input.columns,
-    type: input.type, communityFallback: input.communityFallback,
-    datasetId, existingByUnitKey: new Map(),
-  });
-  const existingByUnitKey = await findByUnitKeys(probe.newProperties.map(p => p.unitKey));
+  const existingByUnitKey = await loadExistingForMatch(updateMode, datasetId, sheet, input);
 
   const result = ImportPipeline.dryRun({
     sheet, headerRow: input.headerRow, columns: input.columns,
@@ -543,8 +575,14 @@ export async function commitOwners(input: CommitOwnersInput): Promise<{
       // Per-unit change history — a LINKED audit entry per unit that actually
       // changed, so the record's History Journal shows what changed (esp. the
       // owner, when a property sold). Only genuinely-changed units get an entry.
+      // Look up the "before" by recomputed identity (a matched unit keeps its own
+      // stored key, which may predate the tolerant identity the map is keyed by).
       for (const after of result.updatedProperties) {
-        const before = existingByUnitKey.get(after.unitKey);
+        const idKey = ImportPipeline.unitKeyFor({
+          community: after.community, cluster: after.cluster, building: after.building,
+          unitNumber: after.unitNumber, plotNumber: after.plotNumber,
+        });
+        const before = idKey ? existingByUnitKey.get(idKey) : undefined;
         if (!before) continue;
         const detail = describeUpdate(before, after, target!.name);
         if (detail) {

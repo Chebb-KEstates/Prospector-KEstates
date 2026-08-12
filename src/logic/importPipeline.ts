@@ -156,12 +156,31 @@ export abstract class ImportPipeline {
     return undefined;
   }
 
+  /**
+   * A unit's IDENTITY — what makes two rows "the same unit": the **community +
+   * the most-specific tower/building + the unit number** (or `community + plot`).
+   *
+   * The tower is `building` when it's given, otherwise the sub-community
+   * (`cluster`). This is deliberately tolerant to HOW a vendor sheet splits the
+   * location across columns: whether "Eden House The Canal Townhouses" is mapped
+   * as the sub-community or as the building, the identity comes out the same — so
+   * re-uploading the same area with a slightly different column mapping matches
+   * the existing units instead of duplicating them. Different towers (different
+   * building/cluster) and different areas (different community) stay distinct.
+   *
+   * Trade-off (director's call, 2026-08-12): two DIFFERENT buildings in the SAME
+   * community must not share the exact same name, or they'd be treated as one.
+   * Real tower names are specific enough that this holds.
+   */
   static unitKeyFor(fields: {
     community: string; cluster?: string; building?: string;
     unitNumber?: string; plotNumber?: string;
   }): string | null {
     const u = norm(fields.unitNumber);
-    if (u.length > 0) return `u|${norm(fields.community)}|${norm(fields.cluster)}|${norm(fields.building)}|${u}`;
+    if (u.length > 0) {
+      const tower = norm(fields.building) || norm(fields.cluster); // building preferred, else sub-community
+      return `u|${norm(fields.community)}|${tower}|${u}`;
+    }
     const p = norm(fields.plotNumber);
     if (p.length > 0) return `p|${norm(fields.community)}|${p}`;
     return null;
