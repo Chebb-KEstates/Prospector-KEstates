@@ -18,6 +18,20 @@ for what each part means for Prospector.
 
 ---
 
+## [1.13.0] — 2026-08-11
+
+### Added
+- **Data-set updates now leave a trace in the record's History Journal.** When an
+  update changes a unit, a per-unit entry is written to that unit's history —
+  headlined by the important case, **an owner change** ("Owner changed: John Smith
+  → Jane Doe"), and also flagging a new sale, a rental change, or updated details.
+  Previously an update silently changed the record with nothing in the journal, so
+  a broker had no way to know (e.g.) that the property had sold and the owner was
+  now someone else. These entries also appear in the **Activity Log** under a new
+  `update` filter, with the owner + unit resolved.
+
+---
+
 ## [1.12.2] — 2026-08-11
 
 ### Fixed

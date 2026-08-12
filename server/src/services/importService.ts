@@ -391,6 +391,40 @@ function remapMerge(existing: Property, cand: Property, now: string): Property {
   return p;
 }
 
+/**
+ * A human, per-unit description of what an update changed on a matched unit —
+ * so the record's History Journal shows WHAT changed (above all, that the OWNER
+ * changed because the property sold), not just that the set was updated. Returns
+ * null when nothing meaningful changed, so no-op matches don't clutter the journal.
+ */
+function describeUpdate(before: Property, after: Property, datasetName: string): string | null {
+  const parts: string[] = [];
+  const oldName = before.owner.name.trim();
+  const newName = after.owner.name.trim();
+  const aed = (v?: number) => (v != null ? `AED ${Math.round(v).toLocaleString('en-US')}` : '');
+
+  if (newName && oldName.toLowerCase() !== newName.toLowerCase()) {
+    parts.push(`Owner changed: ${oldName || '—'} → ${newName}`);
+  } else {
+    if ((before.owner.phone ?? '') !== (after.owner.phone ?? '')) parts.push('Owner contact number updated');
+    if (before.allOwners.length !== after.allOwners.length) {
+      parts.push(`Owners on file: ${before.allOwners.length} → ${after.allOwners.length}`);
+    }
+  }
+  const newerTx = after.lastTransactionDate != null &&
+    (before.lastTransactionDate == null || after.lastTransactionDate > before.lastTransactionDate);
+  if (newerTx) parts.push(`New sale recorded${after.lastTransactionValue != null ? ` — ${aed(after.lastTransactionValue)}` : ''}`);
+  if (before.rentAmount !== after.rentAmount || before.rentStart !== after.rentStart || before.rentEnd !== after.rentEnd) {
+    parts.push('Rental details updated');
+  }
+  if (before.propertyType !== after.propertyType || before.beds !== after.beds ||
+      before.sizeSqft !== after.sizeSqft || before.plotSqft !== after.plotSqft) {
+    parts.push('Property details updated');
+  }
+  if (parts.length === 0) return null;
+  return `${parts.join(' · ')} (from update “${datasetName}”)`;
+}
+
 export interface CommitOwnersInput {
   sessionId: string;
   userId: string;
@@ -505,6 +539,21 @@ export async function commitOwners(input: CommitOwnersInput): Promise<{
       // set's counts are recomputed — no second data set is created.
       await saveProperties(all, cx);
       await refreshDatasetStats(datasetId, result.updatedProperties.length, session.fileName, input.cost, cx);
+
+      // Per-unit change history — a LINKED audit entry per unit that actually
+      // changed, so the record's History Journal shows what changed (esp. the
+      // owner, when a property sold). Only genuinely-changed units get an entry.
+      for (const after of result.updatedProperties) {
+        const before = existingByUnitKey.get(after.unitKey);
+        if (!before) continue;
+        const detail = describeUpdate(before, after, target!.name);
+        if (detail) {
+          await writeAudit({
+            actorId: input.userId, action: 'update', detail, propertyIds: [after.id],
+          }, cx);
+        }
+      }
+
       const spend = input.cost && input.cost > 0 ? ` · +${input.cost} spend` : '';
       await writeAudit({
         actorId: input.userId,

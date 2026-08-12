@@ -693,7 +693,8 @@ function JournalRow({ e, actorName }: { e: PropertyEvent; actorName: (id: string
       : e.action === 'view' ? 'eye'
         : e.action === 'assign' ? 'assign'
           : e.action === 'reclaim' ? 'refresh'
-            : 'clock';
+            : e.action === 'update' ? 'refresh'
+              : 'clock';
   const who = e.kind === 'import' ? undefined : actorName(e.actorId ?? '') ?? undefined;
   return (
     <div style={{ display: 'flex', gap: 10, paddingBottom: 10, borderBottom: '1px solid var(--border-light)' }}>

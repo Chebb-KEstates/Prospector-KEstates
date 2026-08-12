@@ -1,6 +1,6 @@
 {
   "name": "prospector-server",
-  "version": "1.12.2",
+  "version": "1.13.0",
   "private": true,
   "description": "Prospector backend — Fastify + MySQL. Owns persistence, auth, permissions, masking and audit.",
   "main": "dist/server/src/server.js",

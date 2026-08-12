@@ -19,7 +19,7 @@ import { ApiError } from '../../data/apiClient';
 // Raw actions, for the action filter. 'view' covers both plain views and reveals
 // (a reveal shows as its own row label). No 'cap-block' — that feature is gone.
 const ACTIONS = [
-  'call', 'view', 'assign', 'reclaim', 'request', 'approve', 'deny',
+  'call', 'view', 'update', 'assign', 'reclaim', 'request', 'approve', 'deny',
   'import', 'export', 'edit', 'delete', 'settings', 'user', 'dnc-undo',
   'signin', 'password',
 ];
@@ -31,6 +31,7 @@ function chipColor(action: string): { bg: string; fg: string } {
     case 'import': return { bg: 'var(--info)20', fg: 'var(--info)' };
     case 'assign': return { bg: 'var(--success)20', fg: 'var(--success)' };
     case 'call': return { bg: 'var(--primary)20', fg: 'var(--primary)' };
+    case 'update': return { bg: 'var(--info)20', fg: 'var(--info)' };
     case 'reveal': return { bg: 'var(--warning)20', fg: 'var(--warning)' };
     case 'delete': return { bg: 'var(--error)20', fg: 'var(--error)' };
     case 'dnc-undo': return { bg: 'var(--error)20', fg: 'var(--error)' };

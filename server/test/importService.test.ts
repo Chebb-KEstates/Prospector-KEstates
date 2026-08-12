@@ -5,6 +5,7 @@ import { pool, closePool } from '../src/db/pool';
 import { stageUpload, dryRunOwners, commitOwners, restageDatasetForRemap } from '../src/services/importService';
 import { insertUser } from '../src/repositories/userRepo';
 import { listDatasets } from '../src/repositories/datasetRepo';
+import { listAuditForProperty } from '../src/repositories/auditRepo';
 import { queryProperties } from '../src/repositories/propertyRepo';
 import { AppUser, UserRole } from '../../src/types/user';
 import { DataModule, DataSetType, kOrgId } from '../../src/types/models';
@@ -275,6 +276,25 @@ test('REGRESSION: import → re-map → update does not duplicate (key persists)
   assert.equal(afterUpdate.length, 2, 'update after re-map must NOT create duplicates');
   assert.equal(u101.state, 'portfolio', 'broker state preserved');
   assert.equal(u101.notes, 'keen seller', 'broker note preserved');
+});
+
+// A property sold: the update file carries a new owner. The change must land in
+// the unit's History Journal (a LINKED 'update' audit entry) so a broker sees it.
+test('an owner change on update is recorded in the unit history', async () => {
+  await wipe();
+  const head = ['Community', 'Building Name', 'Unit Number', 'Owner Name', 'Mobile'];
+  const s1 = await stageUpload({ fileName: 'v1.xlsx', bytes: xlsxBuffer([head, ['Palm', 'Tower A', '101', 'Owner A', '971501111111']]), module: DataModule.owners, userId });
+  const { datasetId } = await commitOwners({ sessionId: s1.sessionId, userId, sheetIndex: 0, headerRow: 0, columns: s1.columns as ColumnSpec[], type: DataSetType.register, communityFallback: 'Palm', datasetName: 'Sold Test', source: 't' });
+  const unit = (await queryProperties({ datasetId, limit: 100, offset: 0 } as any)).rows[0];
+
+  // Update: same unit, NEW owner (property sold).
+  const s2 = await stageUpload({ fileName: 'v2.xlsx', bytes: xlsxBuffer([head, ['Palm', 'Tower A', '101', 'Owner Z', '971509999999']]), module: DataModule.owners, userId });
+  await commitOwners({ sessionId: s2.sessionId, userId, sheetIndex: 0, headerRow: 0, columns: s2.columns as ColumnSpec[], type: DataSetType.register, communityFallback: 'Palm', datasetName: '', source: '', targetDatasetId: datasetId });
+
+  const hist = await listAuditForProperty(unit.id);
+  const ev = hist.find(h => h.action === 'update');
+  assert.ok(ev, 'an update history entry is linked to the unit');
+  assert.match(ev!.detail, /Owner changed: Owner A → Owner Z/);
 });
 
 test.after(async () => {
