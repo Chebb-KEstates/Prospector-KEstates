@@ -18,6 +18,30 @@ for what each part means for Prospector.
 
 ---
 
+## [2.2.0] — 2026-08-18
+
+The **Report** screen now shows who holds what, both ways.
+
+### Added
+- **Brokers table — a "Data assigned" column.** Each broker row now lists the
+  data sets that broker is currently holding units of, one per line, with the
+  unit count beside each (biggest first). A dash when the broker holds nothing.
+- **Data sets table — an "Assigned brokers" column.** Each data-set row now lists
+  the brokers currently holding units of that set, one per line, with the unit
+  count beside each. So you can read it either direction — pick a broker to see
+  their data, or pick a data set to see who's on it.
+
+### Notes
+- "Currently assigned" means units a broker is actively holding — assigned to
+  them or saved in their portfolio. Both lists come from one query, so they
+  always agree.
+- No schema change and no migration — computed at read time from the units'
+  current holdings. Both new columns are show/hide-able like every other column
+  (the two Report tables reset to their default column layout once on this
+  release so the new columns appear).
+
+---
+
 ## [2.1.0] — 2026-08-12
 
 Broker workflow simplified; two UI fixes.

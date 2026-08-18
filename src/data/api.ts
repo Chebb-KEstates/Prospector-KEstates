@@ -450,12 +450,17 @@ export interface BrokerDashboard {
   byState: Record<PropertyState, number>;
 }
 
+/** A named holding: a data set (in a broker row) or a broker (in a set row), with the unit count. */
+export interface Holding { name: string; units: number; }
+
 export interface TeamBrokerRow {
   id: string; name: string; team: string;
   assigned: number; portfolio: number;
   calls: number; calls7d: number; calls24h: number;
   reached: number; interested: number; noAnswer: number;
   lastAt?: string;
+  /** Data sets this broker currently holds units of (biggest first). */
+  datasets: Holding[];
 }
 
 export interface TeamDatasetRow {
@@ -465,6 +470,8 @@ export interface TeamDatasetRow {
   calls: number; noAnswer: number; interested: number;
   cost?: number;
   importedAt: string; lastUpdatedAt?: string;
+  /** Brokers currently holding units of this set (biggest first). */
+  brokers: Holding[];
 }
 
 export interface TeamDashboard {

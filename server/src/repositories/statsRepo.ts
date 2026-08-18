@@ -104,3 +104,35 @@ export async function datasetBreakdown(): Promise<Map<string, DatasetStat>> {
   }
   return out;
 }
+
+/** One (broker, data set) pair with how many of the set's units the broker holds. */
+export interface AssignmentCell {
+  brokerId: string;
+  datasetId: string;
+  units: number;
+}
+
+/**
+ * Broker × data-set holdings — who currently holds units of which set. One
+ * grouped query drives BOTH cross-references on the Report screen (each broker's
+ * data sets, each set's brokers), so the two lists are always consistent. Only
+ * actively-held units count — assigned or saved to a portfolio — which is what
+ * "currently assigned to them" means.
+ */
+export async function assignmentMatrix(): Promise<AssignmentCell[]> {
+  const [rows] = await pool.query<Row[]>(
+    `SELECT assigned_to AS broker_id, dataset_id, COUNT(*) AS units
+       FROM properties
+      WHERE org_id = ?
+        AND assigned_to IS NOT NULL
+        AND dataset_id IS NOT NULL
+        AND state IN ('assigned', 'portfolio')
+      GROUP BY assigned_to, dataset_id`,
+    [kOrgId],
+  );
+  return rows.map(r => ({
+    brokerId: r.broker_id as string,
+    datasetId: r.dataset_id as string,
+    units: Number(r.units ?? 0),
+  }));
+}

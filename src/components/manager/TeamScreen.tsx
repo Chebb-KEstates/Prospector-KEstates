@@ -5,7 +5,7 @@ import { StatTile } from '../common/Dash';
 import { Icon } from '../common/Icon';
 import { useTableLayout, ColumnsDialog } from '../common/tableLayout';
 import { useTeamDashboard } from '../../data/hooks';
-import type { TeamBrokerRow, TeamDatasetRow } from '../../data/api';
+import type { TeamBrokerRow, TeamDatasetRow, Holding } from '../../data/api';
 
 /**
  * Team & Data.
@@ -32,6 +32,7 @@ export function TeamScreen() {
 
   // ── Broker breakdown columns ────────────────────────────────────────────────
   const brokerCols: Col<TeamBrokerRow>[] = [
+    { key: 'sets', label: 'Data assigned', render: b => <HoldingList items={b.datasets} /> },
     { key: 'team', label: 'Team', render: b => b.team || '—' },
     { key: 'assigned', label: 'Assigned', align: 'right', render: b => fmtInt(b.assigned) },
     { key: 'portfolio', label: 'Portfolio', align: 'right', render: b => fmtInt(b.portfolio) },
@@ -51,6 +52,7 @@ export function TeamScreen() {
 
   // ── Data-set breakdown columns ──────────────────────────────────────────────
   const datasetCols: Col<TeamDatasetRow>[] = [
+    { key: 'brokers', label: 'Assigned brokers', render: d => <HoldingList items={d.brokers} /> },
     { key: 'module', label: 'Module', render: d => DataModuleLabel[d.module] },
     { key: 'properties', label: 'Properties', align: 'right', render: d => fmtInt(d.properties) },
     { key: 'callable', label: 'Callable', align: 'right', render: d => fmtInt(d.callable) },
@@ -75,7 +77,7 @@ export function TeamScreen() {
 
       <SectionTitle>Brokers</SectionTitle>
       <AnalyticsTable
-        rows={brokers} prefsKey="team.brokers"
+        rows={brokers} prefsKey="team.brokers.v2"
         pinned={{ label: 'Broker', render: b => b.name }}
         columns={brokerCols} empty="No active brokers." />
 
@@ -83,7 +85,7 @@ export function TeamScreen() {
 
       <SectionTitle>Data sets</SectionTitle>
       <AnalyticsTable
-        rows={datasetStats} prefsKey="team.datasets"
+        rows={datasetStats} prefsKey="team.datasets.v2"
         pinned={{ label: 'Name', render: d => d.name }}
         columns={datasetCols} empty="No data sets yet." />
 
@@ -106,6 +108,28 @@ export function TeamScreen() {
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <h3 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: 10 }}>{children}</h3>;
+}
+
+/**
+ * A stacked list of holdings for one table cell — each name on its own line with
+ * a unit-count pill, biggest first. Used both ways: a broker's data sets and a
+ * data set's brokers. A dash when nothing is held.
+ */
+function HoldingList({ items }: { items: Holding[] }) {
+  if (!items.length) return <span style={{ color: 'var(--text-tertiary)' }}>—</span>;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 190 }}>
+      {items.map((h, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+          <span style={{ fontSize: '0.8125rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.name}</span>
+          <span className="tabular-nums" style={{
+            fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)',
+            background: 'var(--surface-2)', borderRadius: 10, padding: '1px 7px', flexShrink: 0,
+          }}>{fmtInt(h.units)}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 interface Col<T> {

@@ -15,7 +15,7 @@ import { countPending } from '../repositories/requestRepo';
 import { listUsers } from '../repositories/userRepo';
 import { listAudit } from '../repositories/auditRepo';
 import { listDatasets } from '../repositories/datasetRepo';
-import { datasetBreakdown } from '../repositories/statsRepo';
+import { datasetBreakdown, assignmentMatrix } from '../repositories/statsRepo';
 import { loadSettings } from '../repositories/settingsRepo';
 import { serializeAudit } from '../http/serializers';
 
@@ -164,7 +164,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
 
     const [
       users, stats, held, datasets, totalProperties, callable, callableWorked, lifetime,
-      by7d, by24h, dsStats,
+      by7d, by24h, dsStats, matrix,
     ] = await Promise.all([
       listUsers(),
       brokerCallStats(),
@@ -177,10 +177,36 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       brokerStatsBetween(last7d, soon),
       brokerStatsBetween(last24h, soon),
       datasetBreakdown(),
+      assignmentMatrix(),
     ]);
 
     const statsById = new Map(stats.map(s => [s.brokerId, s]));
     const totalCost = datasets.reduce((sum, d) => sum + (d.cost ?? 0), 0);
+
+    // Broker ⇄ data-set cross-reference, built once from the holdings matrix.
+    // brokerHoldings: which data sets each broker is holding (name + unit count);
+    // datasetBrokers: which brokers hold each set. Both sorted by unit count so
+    // the biggest holding leads. Names resolved from the users/datasets we
+    // already loaded — an entry whose set/broker no longer exists is skipped.
+    const brokerName = new Map(users.map(u => [u.id, u.name]));
+    const setName = new Map(datasets.map(d => [d.id, d.name]));
+    const brokerHoldings = new Map<string, { name: string; units: number }[]>();
+    const datasetBrokers = new Map<string, { name: string; units: number }[]>();
+    for (const c of matrix) {
+      const dName = setName.get(c.datasetId);
+      const bName = brokerName.get(c.brokerId);
+      if (dName) {
+        const list = brokerHoldings.get(c.brokerId) ?? [];
+        list.push({ name: dName, units: c.units });
+        brokerHoldings.set(c.brokerId, list);
+      }
+      if (bName) {
+        const list = datasetBrokers.get(c.datasetId) ?? [];
+        list.push({ name: bName, units: c.units });
+        datasetBrokers.set(c.datasetId, list);
+      }
+    }
+    const byUnits = (a: { units: number }, b: { units: number }) => b.units - a.units;
 
     return {
       brokers: users.filter(u => !u.isManager && u.active).map(b => {
@@ -199,6 +225,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
           interested: s?.interested ?? 0,
           noAnswer: s?.noAnswer ?? 0,
           lastAt: s?.lastAt,
+          datasets: (brokerHoldings.get(b.id) ?? []).slice().sort(byUnits),
         };
       }),
       // Per-data-set breakdown, joined with each set's identity/dates. Counts
@@ -223,6 +250,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
           cost: d.cost,
           importedAt: d.importedAt,
           lastUpdatedAt: d.lastUpdatedAt,
+          brokers: (datasetBrokers.get(d.id) ?? []).slice().sort(byUnits),
         };
       }),
       roi: {

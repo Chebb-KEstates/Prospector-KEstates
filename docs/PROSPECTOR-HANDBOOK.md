@@ -373,7 +373,12 @@ managers; it is **not** a bypass of phone masking — see §7.)
   - **Settings** — cooldowns, the assignment-timer values, and the office IP.
 - **Assignments** — Pool / Assigned / Requests, with a pending-request badge; the
   allocation loop.
-- **Report** — team and data-set analytics (formerly "Team").
+- **Report** — team and data-set analytics (formerly "Team"). Two breakdown
+  tables (one per broker, one per data set) plus the Data-ROI tiles. Each table
+  carries a cross-reference column: the Brokers table shows the **data sets each
+  broker is holding** (one per line, with the unit count), and the Data-sets
+  table shows the **brokers holding each set** — the same holdings read either
+  direction, from one query (v2.2.0).
 - Managers can reveal a full number on the manager tables (audited), and every
   such action is logged.
 
