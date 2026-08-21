@@ -124,6 +124,8 @@ export interface PropertyQuery {
   search?: string; community?: string; cluster?: string;
   state?: PropertyState | ''; beds?: number; nationality?: string;
   outcome?: string; txFrom?: string; txTo?: string; callableOnly?: boolean;
+  /** "Called within" window (UTC bounds), computed client-side from the chosen period. */
+  calledFrom?: string; calledTo?: string;
   /** Follow-up due now or overdue — the broker's "Due follow-up" chip. */
   dueOnly?: boolean;
   /** Last outcome was interested (sell or rent) — the "Interested" chip. */

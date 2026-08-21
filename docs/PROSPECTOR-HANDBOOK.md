@@ -352,7 +352,11 @@ managers; it is **not** a bypass of phone masking — see §7.)
   assigned + portfolio set) and **All** (every unit they still hold, *including*
   cooled-off and do-not-call), so a dispositioned unit never silently vanishes
   (v2.3.0). The interested owners live under the **Interested** filter here — there
-  is no separate Portfolio page (removed v2.3.0).
+  is no separate Portfolio page (removed v2.3.0). Quick chips also cover Never
+  called, No answer, **Call back later**, Due follow-up and Expiring soon; the
+  filter bar adds a **Tenancy** dropdown (vacant / rented / lease ending) and a
+  **Called** period dropdown (today … last month, on the caller's local calendar)
+  (v2.4.0).
 - **Pool** — a *teaser* view (owner hidden until assigned); brokers tick units and
   **request** them; the manager approves or denies. Its columns are a fixed,
   focused set (Unit, Beds, BUA, Plot, Type, Last transaction, Tenancy, Last call,

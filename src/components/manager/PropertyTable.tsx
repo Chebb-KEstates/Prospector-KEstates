@@ -166,6 +166,51 @@ interface Props {
 
 const PAGE_SIZES = [10, 25, 50, 100, 250];
 
+type CalledPeriod = '' | 'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'thisMonth' | 'lastMonth';
+const CALLED_PERIODS: { key: CalledPeriod; label: string }[] = [
+  { key: '', label: 'Called: any time' },
+  { key: 'today', label: 'Called today' },
+  { key: 'yesterday', label: 'Called yesterday' },
+  { key: 'thisWeek', label: 'Called this week' },
+  { key: 'lastWeek', label: 'Called last week' },
+  { key: 'thisMonth', label: 'Called this month' },
+  { key: 'lastMonth', label: 'Called last month' },
+];
+
+/**
+ * The [from, to) UTC bounds for a "called within" period, computed from the
+ * caller's LOCAL calendar (week starts Monday, Dubai's work week) so the edges
+ * follow the broker's day/week/month rather than the server's. `last_called_at`
+ * is stored UTC, so the ISO bounds compare directly.
+ */
+function calledRange(period: CalledPeriod): { from?: string; to?: string } {
+  if (!period) return {};
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dow = (startOfDay.getDay() + 6) % 7; // Mon=0 … Sun=6
+  const shift = (d: Date, days: number) => { const n = new Date(d); n.setDate(n.getDate() + days); return n; };
+  const iso = (d: Date) => d.toISOString();
+  switch (period) {
+    case 'today':     return { from: iso(startOfDay), to: iso(shift(startOfDay, 1)) };
+    case 'yesterday': return { from: iso(shift(startOfDay, -1)), to: iso(startOfDay) };
+    case 'thisWeek': {
+      const from = shift(startOfDay, -dow);
+      return { from: iso(from), to: iso(shift(from, 7)) };
+    }
+    case 'lastWeek': {
+      const thisWeek = shift(startOfDay, -dow);
+      return { from: iso(shift(thisWeek, -7)), to: iso(thisWeek) };
+    }
+    case 'thisMonth':
+      return { from: iso(new Date(now.getFullYear(), now.getMonth(), 1)),
+               to: iso(new Date(now.getFullYear(), now.getMonth() + 1, 1)) };
+    case 'lastMonth':
+      return { from: iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+               to: iso(new Date(now.getFullYear(), now.getMonth(), 1)) };
+  }
+  return {};
+}
+
 export function PropertyTable({
   scope, assignedTo, datasetId, fixedState,
   forcedOutcome, dueOnly, interestedOnly, expiringSoon, includeInactive,
@@ -188,6 +233,7 @@ export function PropertyTable({
   const [txTo, setTxTo] = useState('');
   const [callableOnly, setCallableOnly] = useState(false);
   const [tenancy, setTenancy] = useState<'' | 'vacant' | 'rented' | 'leaseSoon'>('');
+  const [calledPeriod, setCalledPeriod] = useState<CalledPeriod>('');
   const [assigneeFilter, setAssigneeFilter] = useState('');
   const [sortKey, setSortKey] = useState<ColKey>(PINNED);
   const [asc, setAsc] = useState(true);
@@ -199,6 +245,7 @@ export function PropertyTable({
     useMemo(() => ({ scope, assignedTo, datasetId, community }), [scope, assignedTo, datasetId, community]),
   );
 
+  const called = calledRange(calledPeriod);
   const query = useMemo(() => ({
     scope,
     // A fixed `assignedTo` (broker views) wins; otherwise the manager's
@@ -220,13 +267,15 @@ export function PropertyTable({
     txTo: txTo || undefined,
     callableOnly: callableOnly || undefined,
     tenancy: tenancy || undefined,
+    calledFrom: called.from,
+    calledTo: called.to,
     sortKey: sortKey === PINNED ? undefined : sortKey,
     asc,
     page,
     pageSize,
   }), [scope, assignedTo, assigneeFilter, datasetId, search, community, cluster, fixedState, state,
        beds, nationality, outcome, forcedOutcome, dueOnly, interestedOnly, expiringSoon, includeInactive,
-       txFrom, txTo, callableOnly, tenancy, sortKey, asc, page, pageSize]);
+       txFrom, txTo, callableOnly, tenancy, called.from, called.to, sortKey, asc, page, pageSize]);
 
   const { rows, total, loading, initialLoading, error } = usePropertyPage(query);
 
@@ -298,11 +347,11 @@ export function PropertyTable({
   const { order, setOrder, visible, setVisible, persist, reset, visibleCols, loaded } =
     useTableLayout(available, defaultVisible, prefsKey);
 
-  const anyFilter = search.trim() || community || cluster || state || beds || nationality || outcome || txFrom || txTo || callableOnly || tenancy || assigneeFilter;
+  const anyFilter = search.trim() || community || cluster || state || beds || nationality || outcome || txFrom || txTo || callableOnly || tenancy || calledPeriod || assigneeFilter;
   const clearFilters = () => {
     setSearch(''); setCommunity(''); setCluster(''); setState(''); setBeds('');
     setNationality(''); setOutcome(''); setTxFrom(''); setTxTo('');
-    setCallableOnly(false); setTenancy(''); setAssigneeFilter(''); setPage(0);
+    setCallableOnly(false); setTenancy(''); setCalledPeriod(''); setAssigneeFilter(''); setPage(0);
   };
 
   // Any filter change must reset to page 0 — otherwise you can be stranded on
@@ -310,7 +359,7 @@ export function PropertyTable({
   // switching a quick chip also returns to the first page.
   useEffect(() => { setPage(0); },
     [search, community, cluster, state, beds, nationality, outcome, txFrom, txTo,
-     callableOnly, tenancy, assigneeFilter, pageSize, sortKey, asc, forcedOutcome, dueOnly, interestedOnly, scope]);
+     callableOnly, tenancy, calledPeriod, assigneeFilter, pageSize, sortKey, asc, forcedOutcome, dueOnly, interestedOnly, scope]);
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const pg = Math.min(page, pages - 1);
@@ -413,6 +462,9 @@ export function PropertyTable({
           <option value="vacant">Vacant</option>
           <option value="rented">Rented</option>
           <option value="leaseSoon">Lease ending ≤ 90d</option>
+        </select>
+        <select className="input" style={sel} value={calledPeriod} onChange={e => setCalledPeriod(e.target.value as CalledPeriod)}>
+          {CALLED_PERIODS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
         </select>
         <button className={`btn btn-sm ${callableOnly ? 'btn-primary' : ''}`} onClick={() => setCallableOnly(v => !v)}>Callable</button>
         <div style={{ flex: 1 }} />

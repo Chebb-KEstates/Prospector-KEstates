@@ -21,7 +21,7 @@ import { useMyLeads } from '../../data/hooks';
  * with ← / → from there. Buyer leads use a simple table + single-call dialog.
  */
 
-type Quick = 'toCall' | 'all' | 'due' | 'fresh' | 'noAnswer' | 'interested' | 'expiring';
+type Quick = 'toCall' | 'all' | 'due' | 'fresh' | 'noAnswer' | 'callback' | 'interested' | 'expiring';
 const QUICKS: { key: Quick; label: string }[] = [
   // "To call" is the actionable working list (assigned + portfolio). "All" also
   // shows the units the broker still holds but that dropped off — cooled-off and
@@ -32,6 +32,7 @@ const QUICKS: { key: Quick; label: string }[] = [
   { key: 'due', label: 'Due follow-up' },
   { key: 'fresh', label: 'Never called' },
   { key: 'noAnswer', label: 'No answer' },
+  { key: 'callback', label: 'Call back later' },
   { key: 'interested', label: 'Interested' },
 ];
 
@@ -49,6 +50,7 @@ function quickToQuery(quick: Quick): {
     case 'all': return { includeInactive: true };
     case 'fresh': return { forcedOutcome: 'none' };
     case 'noAnswer': return { forcedOutcome: CallOutcome.noAnswer };
+    case 'callback': return { forcedOutcome: CallOutcome.callbackLater };
     case 'due': return { dueOnly: true };
     case 'interested': return { interestedOnly: true };
     case 'expiring': return { expiringSoon: true };

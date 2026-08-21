@@ -18,6 +18,27 @@ for what each part means for Prospector.
 
 ---
 
+## [2.4.0] — 2026-08-21
+
+Two more filters on the Database list.
+
+### Added
+- **"Call back later" quick chip.** One tap to show the units the broker parked
+  for a callback (last outcome = call back later) — distinct from "Due follow-up",
+  which only fires once the follow-up *date* has arrived.
+- **"Called" period filter.** A dropdown beside Tenancy: **Today · Yesterday ·
+  This week · Last week · This month · Last month** — to review what's been worked
+  in a window. The period's exact bounds are computed from the broker's **local**
+  calendar (week starts Monday), so the edges follow their day, not the server's.
+  It matches on a unit's most recent call (`last_called_at`).
+
+### Notes
+- No schema change and no migration — both are read-time filters over data you
+  already have. ("Lease ending" and "Vacant" weren't added as chips — they're
+  already in the **Tenancy** dropdown.)
+
+---
+
 ## [2.3.0] — 2026-08-21
 
 Call-feedback and the broker's Database list, sharpened.

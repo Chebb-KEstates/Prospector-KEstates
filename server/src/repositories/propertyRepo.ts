@@ -325,6 +325,14 @@ export interface PropertyFilter {
    * within ~90 days). Derived from rent_end plus the imported "Rental status".
    */
   tenancy?: 'vacant' | 'rented' | 'leaseSoon';
+  /**
+   * "Called within" window — last_called_at on/after `calledFrom` and before
+   * `calledTo`. UTC bounds, computed client-side from the broker's local period
+   * (today / this week / last month …) so week-start and month edges follow the
+   * caller's calendar.
+   */
+  calledFrom?: string;
+  calledTo?: string;
 }
 
 export interface PropertyQuery extends PropertyFilter {
@@ -471,6 +479,17 @@ function buildWhere(f: PropertyFilter): { sql: string; params: unknown[] } {
       where.push('last_transaction_date < ?');
       params.push(end);
     }
+  }
+
+  // "Called within" — the client sends exact UTC bounds for the chosen period, so
+  // never-called units (last_called_at IS NULL) simply don't match.
+  if (f.calledFrom) {
+    const d = new Date(f.calledFrom);
+    if (!isNaN(d.getTime())) { where.push('last_called_at >= ?'); params.push(d); }
+  }
+  if (f.calledTo) {
+    const d = new Date(f.calledTo);
+    if (!isNaN(d.getTime())) { where.push('last_called_at < ?'); params.push(d); }
   }
 
   if (f.search && f.search.trim().length > 0) {
