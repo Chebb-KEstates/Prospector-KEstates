@@ -18,6 +18,42 @@ for what each part means for Prospector.
 
 ---
 
+## [2.3.0] — 2026-08-21
+
+Call-feedback and the broker's Database list, sharpened.
+
+### Added
+- **"Agent" call-feedback option.** On an answered owner call the broker can tick
+  **Agent** when they reached an agent rather than the owner. It's recorded on the
+  call like any other result but keeps the unit in play (no cooldown), and it
+  needs **no call-back date** — the follow-up picker only shows for "Call back
+  later" / "Possible future interest".
+- **"All" and "To call" views on the Database list.** The broker's list now leads
+  with two state views: **To call** (the default — the actionable set: assigned +
+  portfolio) and **All** (everything they still hold, *including* cooled-off and
+  do-not-call units). Marking a unit "Do not call" / "Not interested" no longer
+  makes it vanish for good — it's still there under **All**. The other chips
+  (Expiring, Due, Never called, No answer, Interested) work the actionable set.
+
+### Changed
+- **The journal and unit history now show every ticked result**, not just the
+  single strongest one. If a broker ticked "Interested — sell" *and* "Call back
+  later" *and* "Agent", all three show as chips (tinted by the call's outcome),
+  with their free-text feedback beneath. Applies everywhere calls are listed —
+  the record's History Journal, the property detail dialog, and the manager
+  timeline — and reads back over calls you already logged.
+- **Removed the broker's Portfolio tab.** Its units are the "Interested" ones,
+  reachable from the Database list's **Interested** filter, so the separate page
+  was redundant. (No data touched — the portfolio *state* is unchanged; only the
+  navigation tab is gone.)
+
+### Notes
+- No schema change and no migration. "All" widens the broker's own view to the
+  states they already hold; owner scope is unchanged, so a broker still only ever
+  sees their own units.
+
+---
+
 ## [2.2.0] — 2026-08-18
 
 The **Report** screen now shows who holds what, both ways.

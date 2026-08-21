@@ -21,8 +21,12 @@ import { useMyLeads } from '../../data/hooks';
  * with ← / → from there. Buyer leads use a simple table + single-call dialog.
  */
 
-type Quick = 'all' | 'due' | 'fresh' | 'noAnswer' | 'interested' | 'expiring';
+type Quick = 'toCall' | 'all' | 'due' | 'fresh' | 'noAnswer' | 'interested' | 'expiring';
 const QUICKS: { key: Quick; label: string }[] = [
+  // "To call" is the actionable working list (assigned + portfolio). "All" also
+  // shows the units the broker still holds but that dropped off — cooled-off and
+  // do-not-call — so nothing silently disappears after it's dispositioned.
+  { key: 'toCall', label: 'To call' },
   { key: 'all', label: 'All' },
   { key: 'expiring', label: '⏰ Expiring soon' },
   { key: 'due', label: 'Due follow-up' },
@@ -34,12 +38,15 @@ const QUICKS: { key: Quick; label: string }[] = [
 /**
  * Maps a quick chip onto server filters. `dueOnly` and `interestedOnly` are
  * dedicated API filters (a date comparison / a two-value set) the plain `outcome`
- * filter can't express.
+ * filter can't express. `includeInactive` widens the broker's own set to every
+ * state they hold (the "All" chip); every other chip stays on the actionable set.
  */
 function quickToQuery(quick: Quick): {
-  forcedOutcome?: string; dueOnly?: boolean; interestedOnly?: boolean; expiringSoon?: boolean;
+  forcedOutcome?: string; dueOnly?: boolean; interestedOnly?: boolean;
+  expiringSoon?: boolean; includeInactive?: boolean;
 } {
   switch (quick) {
+    case 'all': return { includeInactive: true };
     case 'fresh': return { forcedOutcome: 'none' };
     case 'noAnswer': return { forcedOutcome: CallOutcome.noAnswer };
     case 'due': return { dueOnly: true };
@@ -53,7 +60,7 @@ export function TodayTab() {
   const { user } = useAuth();
   const vault = useVault();
   const [buyers, setBuyers] = useState(false);
-  const [quick, setQuick] = useState<Quick>('all');
+  const [quick, setQuick] = useState<Quick>('toCall');
   // Row click opens the record popup (an audited owner view).
   const [detailId, setDetailId] = useState<string | null>(null);
   const [pageIds, setPageIds] = useState<string[]>([]);

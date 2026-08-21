@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useVault } from '../../state/VaultContext';
-import { CallLog, CallOutcomeLabel } from '../../types/models';
+import { CallLog } from '../../types/models';
 import { fmtDateTime } from '../../utils/format';
 import { OutcomeChip } from '../common/StateChip';
+import { splitFeedback, FeedbackChips, outcomeColor } from '../broker/callVisuals';
 import * as api from '../../data/api';
 
 interface PropertyTimelineProps {
@@ -49,29 +50,32 @@ export function PropertyTimeline({ propertyId }: PropertyTimelineProps) {
         <p style={{ color: 'var(--text-tertiary)' }}>No events recorded.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {events.slice(0, 50).map(c => (
-            <div key={c.id} style={{
-              display: 'flex', gap: 12, paddingBottom: 12,
-              borderBottom: '1px solid var(--border-light)',
-              fontSize: '0.8125rem',
-            }}>
-              <div style={{
-                minWidth: 120, color: 'var(--text-secondary)',
-                fontVariant: 'tabular-nums', fontSize: '0.75rem',
+          {events.slice(0, 50).map(c => {
+            const fb = splitFeedback(c.note);
+            return (
+              <div key={c.id} style={{
+                display: 'flex', gap: 12, paddingBottom: 12,
+                borderBottom: '1px solid var(--border-light)',
+                fontSize: '0.8125rem',
               }}>
-                {fmtDateTime(c.at)}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontWeight: 500 }}>{userById(c.brokerId)?.name ?? c.brokerId}</span>
-                  <OutcomeChip outcome={c.outcome} />
+                <div style={{
+                  minWidth: 120, color: 'var(--text-secondary)',
+                  fontVariant: 'tabular-nums', fontSize: '0.75rem',
+                }}>
+                  {fmtDateTime(c.at)}
                 </div>
-                {c.note && (
-                  <div style={{ color: 'var(--text-secondary)', marginTop: 2 }}>{c.note}</div>
-                )}
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 500 }}>{userById(c.brokerId)?.name ?? c.brokerId}</span>
+                    {fb.tags.length
+                      ? <FeedbackChips tags={fb.tags} color={outcomeColor(c.outcome)} />
+                      : <OutcomeChip outcome={c.outcome} />}
+                  </div>
+                  {fb.text && <div style={{ color: 'var(--text-secondary)', marginTop: 2 }}>{fb.text}</div>}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

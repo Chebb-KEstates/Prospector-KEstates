@@ -130,6 +130,9 @@ export interface PropertyQuery {
   interestedOnly?: boolean;
   /** Held units within the assignment-timer "expiring soon" window. */
   expiringSoon?: boolean;
+  /** Broker's own view only: also include the cooled-off / do-not-call units they
+   *  still hold (the "All" chip). Omitted = the actionable "To call" set. */
+  includeInactive?: boolean;
   /** Tenancy signal filter. */
   tenancy?: 'vacant' | 'rented' | 'leaseSoon';
   assignedTo?: string; datasetId?: string;

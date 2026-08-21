@@ -348,12 +348,15 @@ managers; it is **not** a bypass of phone masking — see §7.)
   **straight from the table**: click a unit to open the **record popup** and page
   through units with ← / →. Buyer leads open a single-call dialog. (v2.1.0 removed
   the old flipping "calling session"; the record popup is the calling surface now.)
+  The list leads with two state views: **To call** (the default — the actionable
+  assigned + portfolio set) and **All** (every unit they still hold, *including*
+  cooled-off and do-not-call), so a dispositioned unit never silently vanishes
+  (v2.3.0). The interested owners live under the **Interested** filter here — there
+  is no separate Portfolio page (removed v2.3.0).
 - **Pool** — a *teaser* view (owner hidden until assigned); brokers tick units and
   **request** them; the manager approves or denies. Its columns are a fixed,
   focused set (Unit, Beds, BUA, Plot, Type, Last transaction, Tenancy, Last call,
   Outcome, State, Floor).
-- **Portfolio** — the interested owners they're nurturing; click a unit to open its
-  record.
 - **The record popup** — the broker's calling surface: a rich, property-centric
   work card showing seller signals, last sale, tenancy and full history; the
   owner's number is **revealed one record at a time** (and audited); the broker
@@ -389,6 +392,15 @@ with the property facts, last-sale and rental (rental glows red when a lease end
 within 100 days), the owner box, auto-saving notes, the two-section call-outcome
 control, a last-call pill, and a "randomise next" option. Paging between units
 keeps a real history so "Previous" returns to the unit you actually came from.
+
+The call-outcome control captures the call in two parts: **did it connect**
+(no answer / didn't connect / answered), and **if answered, one or more results**.
+The results include **Agent** (reached an agent, not the owner — keeps the unit in
+play, no call-back needed). Every ticked result maps to a disposition the timer
+engine already understands; when several are ticked the **strongest** drives the
+state, but **all** of them are kept on the record — and the **journal and history
+show every ticked result**, not just the strongest (v2.3.0). Only "Call back
+later" / "Possible future interest" ask for a follow-up date.
 
 ---
 

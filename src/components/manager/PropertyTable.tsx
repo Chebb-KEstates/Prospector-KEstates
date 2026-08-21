@@ -142,6 +142,9 @@ interface Props {
   interestedOnly?: boolean;
   /** Held units within the "expiring soon" window — the broker's timer chip. */
   expiringSoon?: boolean;
+  /** Broker's own view: also show the cooled-off / do-not-call units they hold
+   *  (the "All" chip). Omitted = the actionable "To call" set. */
+  includeInactive?: boolean;
   /** Row click. `orderedIds` is the current page's units in view order, so the
    *  popup can offer "Next property". */
   onSelect?: (id: string, orderedIds: string[]) => void;
@@ -165,7 +168,7 @@ const PAGE_SIZES = [10, 25, 50, 100, 250];
 
 export function PropertyTable({
   scope, assignedTo, datasetId, fixedState,
-  forcedOutcome, dueOnly, interestedOnly, expiringSoon,
+  forcedOutcome, dueOnly, interestedOnly, expiringSoon, includeInactive,
   onSelect, selectedId, teaser, hideOwner, prefsKey,
   checkedIds, onCheckedChanged, showAssignee, allowColumns,
 }: Props) {
@@ -212,6 +215,7 @@ export function PropertyTable({
     dueOnly: dueOnly || undefined,
     interestedOnly: interestedOnly || undefined,
     expiringSoon: expiringSoon || undefined,
+    includeInactive: includeInactive || undefined,
     txFrom: txFrom || undefined,
     txTo: txTo || undefined,
     callableOnly: callableOnly || undefined,
@@ -221,7 +225,7 @@ export function PropertyTable({
     page,
     pageSize,
   }), [scope, assignedTo, assigneeFilter, datasetId, search, community, cluster, fixedState, state,
-       beds, nationality, outcome, forcedOutcome, dueOnly, interestedOnly, expiringSoon,
+       beds, nationality, outcome, forcedOutcome, dueOnly, interestedOnly, expiringSoon, includeInactive,
        txFrom, txTo, callableOnly, tenancy, sortKey, asc, page, pageSize]);
 
   const { rows, total, loading, initialLoading, error } = usePropertyPage(query);

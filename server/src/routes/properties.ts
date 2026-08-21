@@ -54,6 +54,9 @@ const listQuerySchema = {
     dueOnly: { type: 'boolean' },
     interestedOnly: { type: 'boolean' },
     expiringSoon: { type: 'boolean' },
+    // Broker's own view: include the cooled-off (cooling) and do-not-call units
+    // they still hold — the "All" chip. Default omits them (the "To call" set).
+    includeInactive: { type: 'boolean' },
     tenancy: { type: 'string', enum: ['vacant', 'rented', 'leaseSoon'] },
     assignedTo: { type: 'string', maxLength: 64 },
     datasetId: { type: 'string', maxLength: 64 },
@@ -71,11 +74,16 @@ interface ListQuery {
   state?: PropertyState | ''; beds?: number; nationality?: string;
   outcome?: string; txFrom?: string; txTo?: string; callableOnly?: boolean;
   dueOnly?: boolean; interestedOnly?: boolean; expiringSoon?: boolean;
+  includeInactive?: boolean;
   tenancy?: 'vacant' | 'rented' | 'leaseSoon';
   assignedTo?: string; datasetId?: string;
   scope?: 'all' | 'mine' | 'pool';
   sortKey?: string; asc?: boolean; page?: number; pageSize?: number;
 }
+
+/** A broker's own units span these states; "To call" drops the last two. */
+const MINE_TO_CALL = [PropertyState.assigned, PropertyState.portfolio];
+const MINE_ALL = [PropertyState.assigned, PropertyState.portfolio, PropertyState.cooling, PropertyState.dnc];
 
 export default async function propertyRoutes(app: FastifyInstance) {
   /**
@@ -91,9 +99,12 @@ export default async function propertyRoutes(app: FastifyInstance) {
     const scope = q.scope ?? (me.isManager ? 'all' : 'mine');
 
     if (scope === 'mine') {
+      // "All" widens to the units the broker still holds but that dropped out of
+      // the working list — cooled-off and do-not-call. Owner scope (assignedTo)
+      // is unchanged, so this only ever shows the broker their OWN units.
       return {
         assignedTo: me.id,
-        states: [PropertyState.assigned, PropertyState.portfolio],
+        states: q.includeInactive ? MINE_ALL : MINE_TO_CALL,
         ownerHidden: false,
       };
     }
@@ -110,7 +121,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
     if (!me.isManager) {
       return {
         assignedTo: me.id,
-        states: [PropertyState.assigned, PropertyState.portfolio],
+        states: q.includeInactive ? MINE_ALL : MINE_TO_CALL,
         ownerHidden: false,
       };
     }

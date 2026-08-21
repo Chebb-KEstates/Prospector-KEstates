@@ -6,7 +6,7 @@ import type { PhoneEntry } from '../../types/models';
 import { StateChip, CountdownBadge, OutcomeChip } from '../common/StateChip';
 import { Icon } from '../common/Icon';
 import { ApiError } from '../../data/apiClient';
-import { sectionLabel, outcomeColor } from '../broker/callVisuals';
+import { sectionLabel, outcomeColor, splitFeedback, FeedbackChips } from '../broker/callVisuals';
 import { ownerStopForProperty, stopDeps } from '../broker/callStops';
 import { fmtDateTime, timeAgo } from '../../utils/format';
 import type { PropertyEvent } from '../../data/api';
@@ -45,6 +45,9 @@ const RESULT_OPTIONS: ResultOption[] = [
   { key: 'future', label: 'Possible future interest', outcome: CallOutcome.callbackLater },
   { key: 'notInterested', label: 'Not interested', outcome: CallOutcome.notInterested },
   { key: 'living', label: 'Living in property', outcome: CallOutcome.notInterested },
+  // "Agent" — the broker reached an agent, not the owner. A pure tag: it's written
+  // into the feedback but keeps the unit in play (callback behaviour), no cooldown.
+  { key: 'agent', label: 'Agent', outcome: CallOutcome.callbackLater },
   { key: 'dropped', label: 'Dropped call', outcome: CallOutcome.noAnswer },
   { key: 'dnc', label: 'Do not call', outcome: CallOutcome.dnc },
 ];
@@ -207,12 +210,15 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     connection === 'noAnswer' ? CallOutcome.noAnswer
       : connection === 'unreachable' ? CallOutcome.unreachable
         : answered ? strongestOutcome(selectedResults) : null;
-  const primaryIsCallback = primary === CallOutcome.callbackLater;
+  // Only "Call back later" / "Possible future interest" schedule a follow-up date.
+  // "Agent" also keeps the unit in play (callback disposition) but needs no
+  // follow-up, so gate the date picker on the broker's intent, not the outcome.
+  const wantsCallback = answered && selectedResults.some(r => r.key === 'callback' || r.key === 'future');
   const needFeedback = answered;                   // an answered call must be explained
   const canSave = primary != null
     && (!answered || selectedResults.length > 0)   // answered ⇒ at least one result
     && (!needFeedback || feedback.trim().length > 0)
-    && (!primaryIsCallback || !!followUpAt)
+    && (!wantsCallback || !!followUpAt)
     && !saving;
 
   const locked = revealed && !savedSinceReveal;
@@ -323,8 +329,8 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
       const note = tags.length
         ? `[${tags.join(' · ')}]${feedback.trim() ? ' ' + feedback.trim() : ''}`
         : (feedback.trim() || undefined);
-      if (stop.logUnit) await stop.logUnit(focusedId, primary!, note, primaryIsCallback ? fu : undefined, activeOwnerName);
-      else await stop.log(primary!, note, primaryIsCallback ? fu : undefined, activeOwnerName);
+      if (stop.logUnit) await stop.logUnit(focusedId, primary!, note, wantsCallback ? fu : undefined, activeOwnerName);
+      else await stop.log(primary!, note, wantsCallback ? fu : undefined, activeOwnerName);
       setSavedSinceReveal(true);
       setJustSaved(true);
       // Feed the popup-session progress bar.
@@ -587,7 +593,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   </div>
                 )}
 
-                {primaryIsCallback && (
+                {wantsCallback && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
                     <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Call back on</span>
                     <input className="input" type="date" value={followUpAt} onChange={e => setFollowUpAt(e.target.value)} style={{ width: 170 }} />
@@ -696,6 +702,9 @@ function JournalRow({ e, actorName }: { e: PropertyEvent; actorName: (id: string
             : e.action === 'update' ? 'refresh'
               : 'clock';
   const who = e.kind === 'import' ? undefined : actorName(e.actorId ?? '') ?? undefined;
+  // A call's ticked results are kept in the note as "[Label · Label] free text";
+  // show every ticked label as a chip, not just the single strongest outcome.
+  const fb = e.kind === 'call' ? splitFeedback(e.note) : { tags: [] as string[], text: '' };
   return (
     <div style={{ display: 'flex', gap: 10, paddingBottom: 10, borderBottom: '1px solid var(--border-light)' }}>
       <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)' }}>
@@ -703,7 +712,9 @@ function JournalRow({ e, actorName }: { e: PropertyEvent; actorName: (id: string
       </div>
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {e.kind === 'call' && <OutcomeChip outcome={e.outcome} />}
+          {e.kind === 'call' && (fb.tags.length
+            ? <FeedbackChips tags={fb.tags} color={outcomeColor(e.outcome)} />
+            : <OutcomeChip outcome={e.outcome} />)}
           <span style={{ fontWeight: 600, fontSize: '0.82rem' }}>
             {e.kind === 'call' ? (e.ownerName ? `Call · ${e.ownerName}` : 'Call') : e.detail}
           </span>
@@ -718,7 +729,7 @@ function JournalRow({ e, actorName }: { e: PropertyEvent; actorName: (id: string
             }}>{e.unitLabel}</span>
           )}
         </div>
-        {e.kind === 'call' && e.note && <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 2 }}>“{e.note}”</div>}
+        {e.kind === 'call' && fb.text && <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 2 }}>“{fb.text}”</div>}
         <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
           {[who, fmtDateTime(e.at), timeAgo(e.at)].filter(Boolean).join(' · ')}
         </div>

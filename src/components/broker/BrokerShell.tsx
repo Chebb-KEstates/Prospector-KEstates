@@ -9,15 +9,13 @@ import { Icon, IconName } from '../common/Icon';
 import { BrokerHome } from './BrokerHome';
 import { TodayTab } from './TodayTab';
 import { PoolTab } from './PoolTab';
-import { PortfolioTab } from './PortfolioTab';
 
-type Tab = 'home' | 'today' | 'pool' | 'portfolio';
+type Tab = 'home' | 'today' | 'pool';
 
 const NAV: { key: Tab; label: string; icon: IconName }[] = [
   { key: 'home', label: 'Home', icon: 'home' },
   { key: 'today', label: 'Database', icon: 'phone' },
   { key: 'pool', label: 'Pool', icon: 'layers' },
-  { key: 'portfolio', label: 'Portfolio', icon: 'star' },
 ];
 
 export function BrokerShell() {
@@ -88,7 +86,6 @@ export function BrokerShell() {
             {activeTab === 'home' && <BrokerHome onGo={(t) => setActiveTab(t as Tab)} />}
             {activeTab === 'today' && <TodayTab />}
             {activeTab === 'pool' && <PoolTab />}
-            {activeTab === 'portfolio' && <PortfolioTab />}
           </div>
         </main>
       </div>

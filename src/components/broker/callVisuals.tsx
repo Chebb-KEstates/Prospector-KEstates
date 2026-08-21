@@ -46,6 +46,35 @@ export const sectionLabel: React.CSSProperties = {
 };
 
 /**
+ * A saved call note is stored as `[Label · Label · …] free text` — the bracketed
+ * part lists EVERY result the broker ticked, the rest is their free feedback.
+ * Split it back apart so the journal and history can show all the ticked results,
+ * not just the single strongest outcome the disposition acted on. A note without
+ * a bracket (an older call, a no-answer, a plain note) has no tags.
+ */
+export function splitFeedback(note?: string | null): { tags: string[]; text: string } {
+  const raw = (note ?? '').trim();
+  const m = raw.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
+  if (!m) return { tags: [], text: raw };
+  return { tags: m[1].split('·').map(s => s.trim()).filter(Boolean), text: m[2].trim() };
+}
+
+/** The broker's ticked feedback labels as small chips, tinted by the call's disposition colour. */
+export function FeedbackChips({ tags, color }: { tags: string[]; color: string }) {
+  return (
+    <>
+      {tags.map((t, i) => (
+        <span key={i} className="chip" style={{
+          background: `color-mix(in srgb, ${color} 16%, transparent)`,
+          color, border: `1px solid color-mix(in srgb, ${color} 32%, transparent)`,
+          fontSize: '0.68rem', fontWeight: 600, padding: '1px 8px', whiteSpace: 'nowrap',
+        }}>{t}</span>
+      ))}
+    </>
+  );
+}
+
+/**
  * The per-property popup: one unit's full detail, its own call feedback, and an
  * editable notes field saved to the record. Opened by clicking a property in a
  * portfolio (the call card, or the manager's property popup).
@@ -104,18 +133,24 @@ export function UnitDetailDialog({ unit, ownerName, nationality, initialNotes, c
             <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>No calls logged for this property yet.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 180, overflow: 'auto' }}>
-              {unit.history.map((h, i) => (
-                <div key={i} style={{ display: 'flex', gap: 8, fontSize: '0.75rem' }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 4, flexShrink: 0, background: outcomeColor(h.outcome) }} />
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600 }}>{label(h.outcome)}
-                      <span style={{ fontWeight: 400, color: 'var(--text-secondary)' }}> · {fmtDate(h.at)} · {timeAgo(h.at)}</span>
+              {unit.history.map((h, i) => {
+                const fb = splitFeedback(h.note);
+                return (
+                  <div key={i} style={{ display: 'flex', gap: 8, fontSize: '0.75rem' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 4, flexShrink: 0, background: outcomeColor(h.outcome) }} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                        {fb.tags.length
+                          ? <FeedbackChips tags={fb.tags} color={outcomeColor(h.outcome)} />
+                          : <span style={{ fontWeight: 600 }}>{label(h.outcome)}</span>}
+                        <span style={{ fontWeight: 400, color: 'var(--text-secondary)' }}>{fmtDate(h.at)} · {timeAgo(h.at)}</span>
+                      </div>
+                      {fb.text && <div style={{ color: 'var(--text-secondary)' }}>“{fb.text}”</div>}
+                      {h.by && <div style={{ color: 'var(--text-tertiary)' }}>{h.by}</div>}
                     </div>
-                    {h.note && <div style={{ color: 'var(--text-secondary)' }}>“{h.note}”</div>}
-                    {h.by && <div style={{ color: 'var(--text-tertiary)' }}>{h.by}</div>}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

@@ -132,7 +132,6 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
           <>
             <SlabAction icon="table" label="Open database" onClick={() => onGo?.('today')} />
             <SlabAction icon="layers" label="Browse pool" onClick={() => onGo?.('pool')} />
-            <SlabAction icon="star" label="My portfolio" onClick={() => onGo?.('portfolio')} />
           </>
         }
       />
