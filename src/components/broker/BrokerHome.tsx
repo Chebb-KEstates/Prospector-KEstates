@@ -52,10 +52,6 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
     [groups],
   );
   const freshOwners = useMemo(() => groups.filter(g => g.neverCalled).length, [groups]);
-  const portfolio = useMemo(
-    () => mine.filter(p => p.state === PropertyState.portfolio).length,
-    [mine],
-  );
 
   // Held units whose clock is nearly up — the "running out of time" list. Sorted
   // soonest-first so the unit about to slip is at the top. Ticks with `nowMs`.
@@ -82,8 +78,8 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
 
   const mineIn = (s: PropertyState) => mine.filter(p => p.state === s).length;
   const pipeline: Segment[] = [
-    { value: mineIn(PropertyState.assigned), color: 'var(--info)', label: 'To work' },
-    { value: mineIn(PropertyState.portfolio), color: 'var(--primary)', label: 'Portfolio' },
+    // Portfolio folds into "To work" — kept units read as assigned for now.
+    { value: mineIn(PropertyState.assigned) + mineIn(PropertyState.portfolio), color: 'var(--info)', label: 'To work' },
     { value: mineIn(PropertyState.cooling), color: 'var(--warning)', label: 'Cooling' },
     { value: mineIn(PropertyState.dnc), color: 'var(--error)', label: 'DNC' },
   ];
@@ -126,7 +122,6 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
           { value: fmtInt(mine.length), label: 'on your list' },
           { value: `${expiringSoon.length}`, label: 'expiring soon' },
           { value: `${dueNext.length}`, label: 'due follow-ups' },
-          { value: fmtInt(portfolio), label: 'in portfolio' },
         ]}
         actions={
           <>
@@ -157,7 +152,7 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div className="truncate" style={{ fontSize: '0.8125rem', fontWeight: 500 }}>{p.owner.name || 'Unknown owner'}</div>
                     <div className="truncate" style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)' }}>
-                      {p.unitLabel}{p.state === PropertyState.portfolio ? ' · portfolio' : ''}
+                      {p.unitLabel}
                     </div>
                   </div>
                   <CountdownBadge deadline={p.assignmentExpiresAt} soonHours={vault.settings.expiringSoonHours} />
@@ -177,7 +172,6 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
             <StatTile value={fmtInt(mine.length)} label="assigned" color="var(--primary)" />
             <StatTile value={`${groups.length}`} label="owners" />
             <StatTile value={fmtInt(callable.length)} label="callable" />
-            <StatTile value={fmtInt(portfolio)} label="portfolio" color="var(--success)" />
           </div>
           <SegmentBar segments={pipeline} />
         </DashCard>

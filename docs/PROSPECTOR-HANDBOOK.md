@@ -255,6 +255,12 @@ Every property/lead is always in exactly one **state**:
 
 `pool` → `assigned` → `portfolio` / `cooling` / `dnc`
 
+> **UI note (v2.5.0):** `portfolio` is still a real state in the engine, but it is
+> **hidden from the interface** — those units display as **"Assigned"**, the State
+> filter drops the Portfolio option, and the dashboards/Report fold portfolio into
+> Assigned. Interested owners are reached via the Database **Interested** filter.
+> This is a display fold only (no data change) and is fully reversible.
+
 Transitions are driven by **call outcomes** through `applyOutcome()` in
 `src/logic/dispositions.ts`. The outcomes (the enum stored in the database):
 `noAnswer`, `unreachable`, `callbackLater`, `interestedSell`, `interestedRent`,

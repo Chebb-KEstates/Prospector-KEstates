@@ -34,8 +34,8 @@ export function TeamScreen() {
   const brokerCols: Col<TeamBrokerRow>[] = [
     { key: 'sets', label: 'Data assigned', render: b => <HoldingList items={b.datasets} /> },
     { key: 'team', label: 'Team', render: b => b.team || '—' },
-    { key: 'assigned', label: 'Assigned', align: 'right', render: b => fmtInt(b.assigned) },
-    { key: 'portfolio', label: 'Portfolio', align: 'right', render: b => fmtInt(b.portfolio) },
+    // Portfolio is hidden for now — kept units fold into the Assigned figure.
+    { key: 'assigned', label: 'Assigned', align: 'right', render: b => fmtInt(b.assigned + b.portfolio) },
     { key: 'calls', label: 'Calls', align: 'right', render: b => fmtInt(b.calls) },
     { key: 'calls7d', label: 'Calls 7d', align: 'right', render: b => fmtInt(b.calls7d) },
     { key: 'calls24h', label: 'Calls 24h', align: 'right', render: b => fmtInt(b.calls24h) },

@@ -80,8 +80,8 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
 
   const stateSegments: Segment[] = [
     { value: data.properties.byState[PropertyState.pool], color: STEEL, label: 'Pool' },
-    { value: data.properties.byState[PropertyState.assigned], color: 'var(--info)', label: 'Assigned' },
-    { value: data.properties.byState[PropertyState.portfolio], color: 'var(--primary)', label: 'Portfolio' },
+    // Portfolio folds into Assigned — kept units read as assigned for now.
+    { value: data.properties.byState[PropertyState.assigned] + data.properties.byState[PropertyState.portfolio], color: 'var(--info)', label: 'Assigned' },
     { value: data.properties.byState[PropertyState.cooling], color: 'var(--warning)', label: 'Cooling' },
     { value: data.properties.byState[PropertyState.dnc], color: 'var(--error)', label: 'DNC' },
   ];

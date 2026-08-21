@@ -18,6 +18,34 @@ for what each part means for Prospector.
 
 ---
 
+## [2.5.0] — 2026-08-21
+
+"Portfolio" is hidden from the interface — **reversibly**, without touching the
+engine or any stored data.
+
+### Changed
+- **Portfolio is no longer shown as a separate concept.** After the Portfolio
+  page was removed (v2.3.0), the state still surfaced in chips, filters and
+  dashboards. Now:
+  - units in the portfolio state read as **"Assigned"** everywhere (one change in
+    `StateChip`, so it covers every table, popup and timeline);
+  - **"Portfolio" is gone from the State filter** dropdown;
+  - the broker Home and the manager mission-control dashboards **fold portfolio
+    into "Assigned"** (pipeline segments and stat tiles);
+  - the **Report**'s Assigned column now counts assigned + portfolio, and its
+    Portfolio column is removed;
+  - the two Settings timers were renamed from "Portfolio …" to **"Interested-unit
+    …"** (they still tune the same, now-hidden, keep-interested behaviour).
+  - Interested owners are still found via the Database **Interested** filter.
+
+### Notes
+- **The engine is untouched and this is fully reversible.** Interested calls still
+  move a unit into the portfolio state internally (it just displays as
+  "Assigned"); no schema change, no migration, no data rewrite. Say the word to
+  bring the label back, or to retire the state for real.
+
+---
+
 ## [2.4.0] — 2026-08-21
 
 Two more filters on the Database list.

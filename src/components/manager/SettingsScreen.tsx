@@ -92,7 +92,7 @@ export function SettingsScreen() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {field('Not interested cooldown (days)', 'notInterestedCooldownDays', 'number', 'Owner stays in cooling before returning to pool')}
             {field('Already listed cooldown (days)', 'listedCooldownDays', 'number')}
-            {field('Portfolio staleness (days)', 'portfolioStaleDays', 'number', 'Days without call before a portfolio unit is flagged stale')}
+            {field('Interested-unit staleness (days)', 'portfolioStaleDays', 'number', 'Days without a call before a kept interested unit is flagged stale')}
           </div>
         </div>
 
@@ -109,7 +109,7 @@ export function SettingsScreen() {
             {field('Time to make contact (hours)', 'assignmentSlaHours', 'number', 'Countdown when a unit is first assigned', true)}
             {field('No-answer extension (hours)', 'noAnswerExtensionHours', 'number', 'Each no-answer / unreachable call resets the clock to this', true)}
             {field('Maximum hold (days)', 'noAnswerMaxHoldDays', 'number', 'Hard cap from assignment — no-answers cannot extend past this', true)}
-            {field('Portfolio renewal (days)', 'portfolioRenewDays', 'number', 'Interested units keep this long, renewed by calling or saving notes', true)}
+            {field('Interested-unit hold (days)', 'portfolioRenewDays', 'number', 'Interested units keep this long, renewed by calling or saving notes', true)}
             {field('"Running out of time" alert (hours)', 'expiringSoonHours', 'number', 'When a unit turns amber and appears on the home screen', true)}
           </div>
         </div>

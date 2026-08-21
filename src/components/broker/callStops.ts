@@ -229,7 +229,7 @@ export function buildOwnerStop(
         }))
       : undefined,
     subtitle: `${units.length} unit${units.length === 1 ? '' : 's'} · ${g0.community}`,
-    assetsTitle: `Portfolio (${units.length})`,
+    assetsTitle: `Properties (${units.length})`,
     assets,
     nationality: owner.nationality || undefined,
     signals,

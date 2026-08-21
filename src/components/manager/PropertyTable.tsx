@@ -426,7 +426,8 @@ export function PropertyTable({
         )}
         {!fixedState && facets.states.length > 1 && (
           <select className="input" style={sel} value={state} onChange={e => setState(e.target.value as PropertyState | '')}>
-            <option value="">All states</option>{facets.states.map(s => <option key={s} value={s}>{PropertyStateLabel[s]}</option>)}
+            {/* Portfolio is hidden for now — those units read as "Assigned". */}
+            <option value="">All states</option>{facets.states.filter(s => s !== PropertyState.portfolio).map(s => <option key={s} value={s}>{PropertyStateLabel[s]}</option>)}
           </select>
         )}
         {facets.beds.length > 0 && (

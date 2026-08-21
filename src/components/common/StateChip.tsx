@@ -28,12 +28,16 @@ interface StateChipProps {
 }
 
 export function StateChip({ state }: StateChipProps) {
+  // Portfolio is hidden as a user-facing concept for now — kept/interested units
+  // read as "Assigned". The engine still uses the portfolio state underneath, so
+  // this is purely a display fold and fully reversible.
+  const shown = state === PropertyState.portfolio ? PropertyState.assigned : state;
   return (
     <span className="chip" style={{
-      background: `${stateColors[state]}20`,
-      color: stateColors[state],
+      background: `${stateColors[shown]}20`,
+      color: stateColors[shown],
     }}>
-      {PropertyStateLabel[state]}
+      {PropertyStateLabel[shown]}
     </span>
   );
 }
