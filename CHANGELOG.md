@@ -18,6 +18,35 @@ for what each part means for Prospector.
 
 ---
 
+## [2.7.0] — 2026-08-24
+
+**One owner, one broker — per area — is now enforced, not just intended.**
+
+### Security / Data integrity
+- **An owner's units in the same area can no longer be split across two brokers.**
+  Assignment always *grouped* an owner's same-area pool units onto one broker, but
+  nothing stopped a sibling that later lapsed back to the pool from being handed to
+  a **different** broker — leaving two brokers cold-calling the same owner. Now the
+  assignment gate refuses it:
+  - **Manual assign** rejects with a clear message ("<Owner> is already assigned to
+    <Broker> in <area> — reclaim their units first, or assign to <Broker>") if any
+    of the owner's same-area units are already held (assigned / portfolio / cooling)
+    by another broker.
+  - **Request approval** silently **skips** any granted unit whose owner is already
+    held by another broker in that area — the requester still gets everything else.
+  - A **different area** of the same owner may still go to a different broker — that
+    separation is by design (different brokers work different areas).
+- Guarded by a new server integration test (an owner's same-area unit is refused to
+  a second broker; the holding broker can still take it; a different-area unit of the
+  same owner can go to another broker).
+
+### Notes
+- No schema change and no migration — a check inside the existing assignment
+  transaction (locked `FOR UPDATE`, so concurrent assigns serialise). Pairs with the
+  v2.6.0 popup list, which makes an owner's other units visible and requestable.
+
+---
+
 ## [2.6.0] — 2026-08-24
 
 See the whole owner — across areas and brokers — from the record popup.

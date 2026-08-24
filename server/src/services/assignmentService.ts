@@ -86,6 +86,30 @@ export async function assignProperties(
     const ownerKeys = Array.from(new Set(chosen.map(p => ownerKeyOf(p))));
     const chosenIds = new Set(chosen.map(p => p.id));
 
+    // Guard: an owner's units in ONE area belong to ONE broker. If any of these
+    // owners is already HELD (assigned / portfolio / cooling) by a DIFFERENT
+    // broker in the same community, refuse — two brokers must never work the same
+    // owner in the same area. Locked FOR UPDATE so a concurrent assign serialises.
+    const [heldRows] = await cx.query<Row[]>(
+      `SELECT ${ASSIGNABLE_COLS} FROM properties
+       WHERE org_id = ? AND assigned_to IS NOT NULL AND assigned_to <> ?
+         AND state IN ('assigned', 'portfolio', 'cooling')
+         AND owner_key IN (${ownerKeys.map(() => '?').join(', ')})
+       FOR UPDATE`,
+      [kOrgId, brokerId, ...ownerKeys],
+    );
+    const clash = heldRows.map(toProperty)
+      .find(p => ownerCommunity.has(`${ownerKeyOf(p)}|${p.community}`));
+    if (clash) {
+      const holder = await findUserById(clash.assignedTo!);
+      throw conflict(
+        `${clash.owner.name || 'That owner'} is already assigned to ${holder?.name ?? 'another broker'} ` +
+        `in ${clash.community}. An owner's units in one area stay with one broker — reclaim them first, ` +
+        `or assign to ${holder?.name ?? 'that broker'}.`,
+        { community: clash.community, heldBy: clash.assignedTo },
+      );
+    }
+
     const [linkedRows] = await cx.query<Row[]>(
       `SELECT ${ASSIGNABLE_COLS} FROM properties
        WHERE org_id = ? AND state = 'pool'
@@ -282,6 +306,23 @@ export async function approveRequest(
         [...params, req.count],
       );
       grant = rows.map(toProperty);
+    }
+
+    // Guard: never split an owner's same-area units across brokers. Drop any
+    // granted unit whose owner is already held by a DIFFERENT broker in that
+    // community — the requester still receives everything else.
+    if (grant.length > 0) {
+      const gOwnerKeys = Array.from(new Set(grant.map(p => ownerKeyOf(p))));
+      const [heldRows] = await cx.query<Row[]>(
+        `SELECT owner_key, community FROM properties
+         WHERE org_id = ? AND assigned_to IS NOT NULL AND assigned_to <> ?
+           AND state IN ('assigned', 'portfolio', 'cooling')
+           AND owner_key IN (${gOwnerKeys.map(() => '?').join(', ')})
+         FOR UPDATE`,
+        [kOrgId, req.brokerId, ...gOwnerKeys],
+      );
+      const taken = new Set(heldRows.map(r => `${r.owner_key as string}|${r.community as string}`));
+      grant = grant.filter(p => !taken.has(`${ownerKeyOf(p)}|${p.community}`));
     }
 
     let granted = 0;

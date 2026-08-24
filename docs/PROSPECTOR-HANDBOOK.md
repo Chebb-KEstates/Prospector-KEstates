@@ -385,7 +385,12 @@ managers; it is **not** a bypass of phone masking — see §7.)
   - **Audit** — the trail.
   - **Settings** — cooldowns, the assignment-timer values, and the office IP.
 - **Assignments** — Pool / Assigned / Requests, with a pending-request badge; the
-  allocation loop.
+  allocation loop. **One owner, one broker — per area:** assigning an owner's unit
+  pulls in that owner's other *same-area* pool units, and the assignment gate now
+  **refuses** to give an owner's same-area unit to a second broker while another
+  broker still holds one (manual assign errors; request approval skips it). A
+  *different* area of the same owner may go to a different broker — by design
+  (enforced v2.7.0; see the owner-cohesion note in §5).
 - **Report** — team and data-set analytics (formerly "Team"). Two breakdown
   tables (one per broker, one per data set) plus the Data-ROI tiles. Each table
   carries a cross-reference column: the Brokers table shows the **data sets each
