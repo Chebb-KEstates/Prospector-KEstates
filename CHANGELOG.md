@@ -18,6 +18,34 @@ for what each part means for Prospector.
 
 ---
 
+## [2.6.0] — 2026-08-24
+
+See the whole owner — across areas and brokers — from the record popup.
+
+### Added
+- **"This owner's other properties" on the record popup.** When you open an
+  owner you're working, the popup now lists every *other* unit that owner holds
+  — in other areas, with another broker, or loose in the pool — each with its
+  **area label** and status:
+  - **With <broker>** if a colleague holds it (so you know who to coordinate with),
+  - **Not assigned** with a **Request** button if it's in the pool — one click
+    sends it to the manager through the normal approval loop (it does not
+    self-assign).
+  This keeps the deliberate rule that assignment only groups an owner's units in
+  the **same area** (so an out-of-area unit stays available to the broker who
+  works that area), while making the full picture visible and the loose units
+  easy to pull in.
+
+### Notes
+- No schema change and no migration. A new read-only endpoint
+  (`/owner-holdings`) lists the owner's units (area, state, holder — no phone
+  numbers); the Request button reuses the existing hand-picked request flow.
+- This does **not** yet hard-prevent a same-area sibling that lapses back to the
+  pool from being taken by a *different* broker — it makes it visible and
+  re-requestable. A stricter owner guard remains available if wanted.
+
+---
+
 ## [2.5.0] — 2026-08-21
 
 "Portfolio" is hidden from the interface — **reversibly**, without touching the

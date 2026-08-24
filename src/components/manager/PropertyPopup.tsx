@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useVault } from '../../state/VaultContext';
+import { useAuth } from '../../state/AuthContext';
 import { CallStop, CallUnit, OwnerNumbers } from '../../state/callTypes';
 import { CallOutcome, PropertyState } from '../../types/models';
 import type { PhoneEntry } from '../../types/models';
@@ -86,6 +87,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   onClose: () => void;
 }) {
   const vault = useVault();
+  const { user } = useAuth();
   const deps = useMemo(
     () => stopDeps(vault.users, vault.logCall, vault.logLeadCall),
     [vault.users, vault.logCall, vault.logLeadCall],
@@ -147,6 +149,12 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsKey, setEventsKey] = useState(0);
 
+  // The owner's other units (across areas / brokers / pool) — cross-area coordination.
+  const [ownerUnits, setOwnerUnits] = useState<api.OwnerUnit[]>([]);
+  const [requestingId, setRequestingId] = useState<string | null>(null);
+  const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
+  const [requestErr, setRequestErr] = useState<string | null>(null);
+
   // Load the owner's card whenever the clicked unit changes (incl. "Next").
   useEffect(() => {
     let cancelled = false;
@@ -197,7 +205,46 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     return () => { cancelled = true; };
   }, [focusedId, eventsKey]);
 
+  // The owner's full unit set (same for every unit of this owner) — for the
+  // cross-area coordination list. Cheap; refetched when the focus changes.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const u = await api.properties.ownerHoldings(focusedId);
+        if (!cancelled) setOwnerUnits(u);
+      } catch {
+        if (!cancelled) setOwnerUnits([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [focusedId, eventsKey]);
+
   const units = stop?.units ?? [];
+  // Units of this owner NOT already in this popup — other areas, another broker,
+  // or loose in the pool. These are what the coordination list surfaces.
+  const stopUnitIds = new Set(units.map(u => u.id));
+  const otherUnits = ownerUnits.filter(u => !stopUnitIds.has(u.id));
+
+  // Ask the manager to assign a loose (pooled) unit of this owner to me too —
+  // a hand-picked request through the normal approval loop.
+  const requestUnit = async (u: api.OwnerUnit) => {
+    setRequestErr(null); setRequestingId(u.id);
+    try {
+      await api.requests.submit({
+        community: u.community,
+        cluster: u.cluster || undefined,
+        count: 1,
+        unitIds: [u.id],
+        note: 'Owner-linked — requested from the record popup',
+      });
+      setRequestedIds(s => new Set(s).add(u.id));
+    } catch (e) {
+      setRequestErr(e instanceof ApiError ? e.message : 'Could not send that request.');
+    } finally {
+      setRequestingId(null);
+    }
+  };
   const multiUnit = units.length > 1;
   const multiOwner = !!(stop?.owners && stop.owners.length > 1);
   const activePhones = multiOwner ? (revealedOwners[activeOwner]?.phones ?? []) : phones;
@@ -441,6 +488,53 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                       })}
                     </div>
                   </>
+                )}
+
+                {/* This owner's OTHER units — other areas, another broker, or the
+                    pool — so a broker sees the whole owner and can request a loose
+                    one. Shown even for a single-unit stop. */}
+                {otherUnits.length > 0 && (
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={sectionLabel}>This owner’s other properties ({otherUnits.length})</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 6 }}>
+                      Same owner, not assigned to you.
+                    </div>
+                    <div style={{ maxHeight: 160, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, paddingRight: 4 }}>
+                      {otherUnits.map(u => {
+                        const area = [u.community, u.cluster].filter(Boolean).join(' · ');
+                        const holder = u.assigneeId
+                          ? (user && u.assigneeId === user.id ? 'you' : (vault.userById(u.assigneeId)?.name ?? 'another broker'))
+                          : null;
+                        const requested = requestedIds.has(u.id);
+                        return (
+                          <div key={u.id} style={{
+                            display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between',
+                            border: '1px solid var(--border)', borderRadius: 10, padding: '8px 10px', background: 'var(--surface-2)',
+                          }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 600, fontSize: '0.82rem', whiteSpace: 'normal', wordBreak: 'break-word' }}>{u.label}</div>
+                              {area && <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>{area}</div>}
+                            </div>
+                            <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                              {holder ? (
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>With {holder}</span>
+                              ) : requested ? (
+                                <span style={{ fontSize: '0.72rem', color: 'var(--success)', fontWeight: 600, whiteSpace: 'nowrap' }}>Requested ✓</span>
+                              ) : !user?.isManager ? (
+                                <button className="btn btn-sm" disabled={requestingId === u.id}
+                                  onClick={() => void requestUnit(u)} style={{ whiteSpace: 'nowrap' }}>
+                                  {requestingId === u.id ? 'Sending…' : 'Request'}
+                                </button>
+                              ) : (
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>Not assigned</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {requestErr && <div style={{ color: 'var(--error)', fontSize: '0.72rem', marginTop: 4 }}>{requestErr}</div>}
+                  </div>
                 )}
 
                 {/* One compact box: property facts + last sale + rental together. */}

@@ -162,6 +162,17 @@ export interface RevealResult {
   owners?: { name: string; phones: PhoneEntry[] }[];
 }
 
+/** One of an owner's units, for the popup's cross-area coordination list. */
+export interface OwnerUnit {
+  id: string;
+  label: string;
+  community: string;
+  cluster: string;
+  state: PropertyState;
+  /** The broker currently holding it (client resolves the name); absent = pooled. */
+  assigneeId?: string;
+}
+
 /** One entry in a unit's history journal — a call, a record event, or its import. */
 export type PropertyEvent =
   | { kind: 'call'; at: string; outcome: CallOutcome; note?: string; actorId?: string; ownerName?: string; unitLabel?: string; thisUnit?: boolean }
@@ -200,6 +211,11 @@ export const properties = {
   /** The record's full history journal — calls + key events, newest first. */
   async events(id: string): Promise<PropertyEvent[]> {
     return get<PropertyEvent[]>(`/api/properties/${id}/events`);
+  },
+
+  /** Every unit this owner holds (across areas / brokers / pool) — for coordination. */
+  async ownerHoldings(id: string): Promise<OwnerUnit[]> {
+    return get<OwnerUnit[]>(`/api/properties/${id}/owner-holdings`);
   },
 
   /** The sanctioned reveal: single record, audited. */

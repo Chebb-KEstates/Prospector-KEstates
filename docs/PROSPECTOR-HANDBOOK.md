@@ -403,6 +403,15 @@ within 100 days), the owner box, auto-saving notes, the two-section call-outcome
 control, a last-call pill, and a "randomise next" option. Paging between units
 keeps a real history so "Previous" returns to the unit you actually came from.
 
+It also shows **"This owner's other properties"** — every *other* unit the same
+owner holds, across areas / other brokers / the pool, each with its area and
+status: *With <broker>* when a colleague holds it, or *Not assigned* with a
+**Request** button (a hand-picked request through the normal approval loop) when
+it's loose in the pool. This is the deliberate counterpart to assignment only
+grouping an owner's **same-area** units: the out-of-area units stay with the
+broker who works that area, but the whole owner is visible and the loose units
+are one click from being requested (v2.6.0). See the owner-cohesion note in §5.
+
 The call-outcome control captures the call in two parts: **did it connect**
 (no answer / didn't connect / answered), and **if answered, one or more results**.
 The results include **Agent** (reached an agent, not the owner — keeps the unit in

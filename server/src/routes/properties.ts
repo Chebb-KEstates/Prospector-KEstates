@@ -347,6 +347,46 @@ export default async function propertyRoutes(app: FastifyInstance) {
   });
 
   /**
+   * Every unit this owner holds — for cross-area coordination on the popup.
+   *
+   * An owner can own units in several areas; assignment deliberately keeps only
+   * the SAME-area units together, so the rest sit with other brokers or in the
+   * pool. This lists them all (area, state, and who holds them — id only, the
+   * client resolves the name) so a broker sees the whole owner and can request a
+   * loose unit. No owner numbers here — this is coordination, not a reveal.
+   */
+  app.get('/api/properties/:id/owner-holdings', {
+    preHandler: [app.authenticate],
+    schema: {
+      params: {
+        type: 'object', required: ['id'],
+        properties: { id: { type: 'string', maxLength: 64 } },
+      },
+    },
+  }, async (req) => {
+    const { id } = req.params as { id: string };
+    const me = req.currentUser!;
+    const p = await findPropertyById(id);
+    if (!p) throw notFound('That unit no longer exists.');
+    if (!me.isManager && p.assignedTo !== me.id) {
+      throw forbidden('That unit is not assigned to you.');
+    }
+
+    // EVERY unit this owner holds — across areas, other brokers, and the pool.
+    // (Distinct from /owner-units, which returns only the caller's own units for
+    // the grouped call card.)
+    const units = await findByOwnerKey(ownerKeyOf(p));
+    return units.map(u => ({
+      id: u.id,
+      label: u.unitLabel,
+      community: u.community,
+      cluster: u.cluster,
+      state: u.state,
+      assigneeId: u.assignedTo,
+    }));
+  });
+
+  /**
    * The sanctioned reveal. Single record, audited in the same transaction —
    * see services/revealService.
    */
