@@ -18,6 +18,26 @@ for what each part means for Prospector.
 
 ---
 
+## [3.2.0] — 2026-08-24
+
+Data tables: a sticky, compact filter header.
+
+### Changed
+- **The filter bar now stays pinned** at the top while the rows scroll underneath
+  — on every data table, for every user (owners and leads).
+- **The owner table's filter bar is far more compact.** Search and State stay
+  inline; everything else — Community, Sub-community, Bedrooms, Nationality, Last
+  outcome, Assigned-to, Tenancy, Last call, **Purchased (from–to)**, and Callable
+  — folds into a single **"Filters" popover** with a count of how many are active,
+  so the bar is thin and nothing is forgotten. The Purchased date range is now a
+  tidy from–to pair inside that popover instead of two wide inputs on the bar.
+
+### Notes
+- Making the **column headers** stick under the filter bar too needs a change to
+  how the table scrolls (a bounded-height scroll region) — a possible follow-up.
+
+---
+
 ## [3.1.2] — 2026-08-24
 
 Follow-ups from the audit.

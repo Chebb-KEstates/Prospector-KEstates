@@ -169,6 +169,16 @@ interface Props {
 
 const PAGE_SIZES = [10, 25, 50, 100, 250];
 
+/** A labelled control inside the Filters popover. */
+function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</span>
+      {children}
+    </label>
+  );
+}
+
 type CalledPeriod = '' | 'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'thisMonth' | 'lastMonth';
 const CALLED_PERIODS: { key: CalledPeriod; label: string }[] = [
   { key: '', label: 'Called: any time' },
@@ -243,6 +253,7 @@ export function PropertyTable({
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(50);
   const [showCols, setShowCols] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
 
   const facets = usePropertyFacetsOrEmpty(
     useMemo(() => ({ scope, assignedTo, datasetId, community }), [scope, assignedTo, datasetId, community]),
@@ -406,6 +417,13 @@ export function PropertyTable({
   };
 
   const sel = { display: 'inline-block', width: 'auto', minWidth: 130, padding: '6px 10px' } as React.CSSProperties;
+  const selFull = { width: '100%', padding: '6px 10px' } as React.CSSProperties;
+  // How many of the "secondary" filters (everything behind the Filters button)
+  // are active — shown as a count so a hidden filter is never forgotten.
+  const secondaryCount =
+    (community ? 1 : 0) + (cluster ? 1 : 0) + (beds ? 1 : 0) + (nationality ? 1 : 0) +
+    (outcome ? 1 : 0) + (assigneeFilter ? 1 : 0) + (tenancy ? 1 : 0) + (calledPeriod ? 1 : 0) +
+    ((txFrom || txTo) ? 1 : 0) + (callableOnly ? 1 : 0);
 
   return (
     <div>
@@ -419,64 +437,113 @@ export function PropertyTable({
         />
       )}
 
-      {/* Filter bar */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+      {/* Sticky filter header — Search + State stay inline; everything else folds
+          into one "Filters" popover so the bar stays thin and pinned while the
+          rows scroll underneath. */}
+      <div style={{
+        position: 'sticky', top: 0, zIndex: 30, background: 'var(--surface)',
+        borderBottom: '1px solid var(--border)', marginBottom: 12, padding: '10px 0',
+        display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center',
+      }}>
         <div style={{ position: 'relative' }}>
           <Icon name="search" size={15} style={{ position: 'absolute', left: 9, top: 9, color: 'var(--text-tertiary)' }} />
-          <input className="input" style={{ width: 240, paddingLeft: 30 }} placeholder={teaser ? 'Search community, unit…' : 'Search unit, plot, owner…'} value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="input" style={{ width: 220, paddingLeft: 30 }} placeholder={teaser ? 'Search community, unit…' : 'Search unit, plot, owner…'} value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <select className="input" style={sel} value={community} onChange={e => { setCommunity(e.target.value); setCluster(''); }}>
-          <option value="">All communities</option>{facets.communities.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        {facets.clusters.length > 0 && (
-          <select className="input" style={sel} value={cluster} onChange={e => setCluster(e.target.value)}>
-            <option value="">All sub-communities</option>{facets.clusters.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        )}
         {!fixedState && facets.states.length > 1 && (
           <select className="input" style={sel} value={state} onChange={e => setState(e.target.value as PropertyState | '')}>
             {/* Portfolio is hidden for now — those units read as "Assigned". */}
             <option value="">All states</option>{facets.states.filter(s => s !== PropertyState.portfolio).map(s => <option key={s} value={s}>{PropertyStateLabel[s]}</option>)}
           </select>
         )}
-        {facets.beds.length > 0 && (
-          <select className="input" style={{ ...sel, minWidth: 90 }} value={beds} onChange={e => setBeds(e.target.value)}>
-            <option value="">Any beds</option>{facets.beds.map(b => <option key={b} value={b}>{b} BR</option>)}
-          </select>
-        )}
-        {!teaser && facets.nationalities.length > 0 && (
-          <select className="input" style={sel} value={nationality} onChange={e => setNationality(e.target.value)}>
-            <option value="">All nationalities</option>{facets.nationalities.map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
-        )}
-        {!forcedOutcome && facets.outcomes.length > 0 && (
-          <select className="input" style={sel} value={outcome} onChange={e => setOutcome(e.target.value)}>
-            <option value="">All outcomes</option><option value="none">Not called yet</option>
-            {facets.outcomes.map(o => <option key={o} value={o}>{CallOutcomeLabel[o]}</option>)}
-          </select>
-        )}
-        {showAssignee && brokers.length > 0 && (
-          <select className="input" style={sel} value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}>
-            <option value="">All brokers</option>
-            {brokers.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-        )}
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-          Purchased
-          <input className="input" type="date" style={{ width: 140, padding: '5px 8px' }} value={txFrom} onChange={e => setTxFrom(e.target.value)} />
-          –
-          <input className="input" type="date" style={{ width: 140, padding: '5px 8px' }} value={txTo} onChange={e => setTxTo(e.target.value)} />
-        </label>
-        <select className="input" style={sel} value={tenancy} onChange={e => setTenancy(e.target.value as typeof tenancy)}>
-          <option value="">Any tenancy</option>
-          <option value="vacant">Vacant</option>
-          <option value="rented">Rented</option>
-          <option value="leaseSoon">Lease ending ≤ 90d</option>
-        </select>
-        <select className="input" style={sel} value={calledPeriod} onChange={e => setCalledPeriod(e.target.value as CalledPeriod)}>
-          {CALLED_PERIODS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
-        </select>
-        <button className={`btn btn-sm ${callableOnly ? 'btn-primary' : ''}`} onClick={() => setCallableOnly(v => !v)}>Callable</button>
+        <div style={{ position: 'relative' }}>
+          <button className={`btn btn-sm ${secondaryCount > 0 ? 'btn-primary' : ''}`} onClick={() => setShowFilters(s => !s)}>
+            <Icon name="sliders" size={14} /> Filters{secondaryCount > 0 ? ` · ${secondaryCount}` : ''}
+          </button>
+          {showFilters && (
+            <>
+              <div onClick={() => setShowFilters(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 41, width: 300,
+                background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10,
+                padding: 14, boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
+                display: 'flex', flexDirection: 'column', gap: 10,
+              }}>
+                {facets.communities.length > 0 && (
+                  <FilterField label="Community">
+                    <select className="input" style={selFull} value={community} onChange={e => { setCommunity(e.target.value); setCluster(''); }}>
+                      <option value="">All communities</option>{facets.communities.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </FilterField>
+                )}
+                {facets.clusters.length > 0 && (
+                  <FilterField label="Sub-community">
+                    <select className="input" style={selFull} value={cluster} onChange={e => setCluster(e.target.value)}>
+                      <option value="">All sub-communities</option>{facets.clusters.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </FilterField>
+                )}
+                {facets.beds.length > 0 && (
+                  <FilterField label="Bedrooms">
+                    <select className="input" style={selFull} value={beds} onChange={e => setBeds(e.target.value)}>
+                      <option value="">Any beds</option>{facets.beds.map(b => <option key={b} value={b}>{b} BR</option>)}
+                    </select>
+                  </FilterField>
+                )}
+                {!teaser && facets.nationalities.length > 0 && (
+                  <FilterField label="Nationality">
+                    <select className="input" style={selFull} value={nationality} onChange={e => setNationality(e.target.value)}>
+                      <option value="">All nationalities</option>{facets.nationalities.map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </FilterField>
+                )}
+                {!forcedOutcome && facets.outcomes.length > 0 && (
+                  <FilterField label="Last outcome">
+                    <select className="input" style={selFull} value={outcome} onChange={e => setOutcome(e.target.value)}>
+                      <option value="">All outcomes</option><option value="none">Not called yet</option>
+                      {facets.outcomes.map(o => <option key={o} value={o}>{CallOutcomeLabel[o]}</option>)}
+                    </select>
+                  </FilterField>
+                )}
+                {showAssignee && brokers.length > 0 && (
+                  <FilterField label="Assigned to">
+                    <select className="input" style={selFull} value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}>
+                      <option value="">All brokers</option>{brokers.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    </select>
+                  </FilterField>
+                )}
+                <FilterField label="Tenancy">
+                  <select className="input" style={selFull} value={tenancy} onChange={e => setTenancy(e.target.value as typeof tenancy)}>
+                    <option value="">Any tenancy</option>
+                    <option value="vacant">Vacant</option>
+                    <option value="rented">Rented</option>
+                    <option value="leaseSoon">Lease ending ≤ 90d</option>
+                  </select>
+                </FilterField>
+                <FilterField label="Last call">
+                  <select className="input" style={selFull} value={calledPeriod} onChange={e => setCalledPeriod(e.target.value as CalledPeriod)}>
+                    {CALLED_PERIODS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+                  </select>
+                </FilterField>
+                <FilterField label="Purchased between">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input className="input" type="date" style={{ flex: 1, minWidth: 0, padding: '5px 8px' }} value={txFrom} onChange={e => setTxFrom(e.target.value)} />
+                    <span style={{ color: 'var(--text-tertiary)' }}>–</span>
+                    <input className="input" type="date" style={{ flex: 1, minWidth: 0, padding: '5px 8px' }} value={txTo} onChange={e => setTxTo(e.target.value)} />
+                  </div>
+                </FilterField>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', cursor: 'pointer', marginTop: 2 }}>
+                  <input type="checkbox" checked={callableOnly} onChange={() => setCallableOnly(v => !v)} />
+                  Callable only (has a number)
+                </label>
+                {anyFilter && (
+                  <button className="btn btn-sm btn-ghost" onClick={() => { clearFilters(); setShowFilters(false); }} style={{ alignSelf: 'flex-start', marginTop: 2 }}>
+                    <Icon name="x" size={13} /> Clear all filters
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
         <div style={{ flex: 1 }} />
         {/* A quiet spinner: the old in-memory filter was instant, so a loud
             loading state on every keystroke would read as a regression. */}

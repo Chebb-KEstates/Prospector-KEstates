@@ -157,10 +157,15 @@ export function LeadTable({
           onReset={reset} onClose={() => setShowCols(false)} />
       )}
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+      {/* Sticky filter header — stays pinned while the rows scroll. */}
+      <div style={{
+        position: 'sticky', top: 0, zIndex: 30, background: 'var(--surface)',
+        borderBottom: '1px solid var(--border)', marginBottom: 12, padding: '10px 0',
+        display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center',
+      }}>
         <div style={{ position: 'relative' }}>
           <Icon name="search" size={15} style={{ position: 'absolute', left: 9, top: 9, color: 'var(--text-tertiary)' }} />
-          <input className="input" style={{ width: 240, paddingLeft: 30 }} placeholder="Search name, email, project…" value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="input" style={{ width: 220, paddingLeft: 30 }} placeholder="Search name, email, project…" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         {!fixedState && facets.states.length > 1 && (
           <select className="input" style={sel} value={state} onChange={e => setState(e.target.value as PropertyState | '')}>
