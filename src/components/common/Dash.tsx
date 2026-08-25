@@ -176,36 +176,26 @@ export function DashColumns({ children }: { children: React.ReactNode }) {
 export type FunnelStage = { label: string; value: number; color: string };
 
 /**
- * A horizontal conversion funnel: each stage's bar tapers by its share of the
- * first stage, with the drop-off % shown between stages. Best for a handful of
- * monotonically-decreasing, comparable stages (e.g. called → reached → interested).
+ * A horizontal conversion funnel: each stage's number and label, with the
+ * drop-off % shown between stages. No bars — just the figures stepping across.
  */
 export function Funnel({ stages }: { stages: FunnelStage[] }) {
-  const max = Math.max(1, ...stages.map(s => s.value));
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
       {stages.map((s, i) => {
-        const frac = s.value / max;
         const prev = i > 0 ? stages[i - 1].value : null;
         const conv = prev != null && prev > 0 ? Math.round((s.value / prev) * 100) : null;
         return (
           <React.Fragment key={i}>
             {i > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 30, minWidth: 30 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 34 }}>
+                <Icon name="chevronRight" size={16} style={{ color: 'var(--text-tertiary)' }} />
                 {conv != null && <span className="tabular-nums" style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-tertiary)' }}>{conv}%</span>}
-                <Icon name="chevronRight" size={14} style={{ color: 'var(--text-tertiary)' }} />
               </div>
             )}
-            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <div className="tabular-nums" style={{ fontSize: '1.5rem', fontWeight: 800, color: s.color, lineHeight: 1 }}>{fmtInt(s.value)}</div>
-              <div style={{ width: '100%', marginTop: 8, height: 56, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-                <div style={{
-                  width: `${Math.max(24, frac * 100)}%`, height: `${Math.max(16, frac * 100)}%`, minWidth: 12, minHeight: 12,
-                  background: `linear-gradient(180deg, ${s.color}, color-mix(in srgb, ${s.color} 40%, transparent))`,
-                  borderRadius: '6px 6px 3px 3px',
-                }} />
-              </div>
-              <div className="truncate" style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 6, maxWidth: '100%', textAlign: 'center' }}>{s.label}</div>
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+              <div className="tabular-nums" style={{ fontSize: '1.6rem', fontWeight: 800, color: s.color, lineHeight: 1.1 }}>{fmtInt(s.value)}</div>
+              <div className="truncate" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4, maxWidth: '100%' }}>{s.label}</div>
             </div>
           </React.Fragment>
         );

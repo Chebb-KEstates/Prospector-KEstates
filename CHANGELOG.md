@@ -18,6 +18,15 @@ for what each part means for Prospector.
 
 ---
 
+## [3.3.1] — 2026-08-24
+
+### Changed
+- **Removed the bars under the funnel numbers.** The prospecting funnel now shows
+  just the figures and labels stepping across, with the drop-off % between stages
+  — cleaner, and no more clamped mini-bars.
+
+---
+
 ## [3.3.0] — 2026-08-24
 
 The manager Dashboard, redesigned around a prospecting funnel.
