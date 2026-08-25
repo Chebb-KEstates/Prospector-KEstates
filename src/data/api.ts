@@ -435,6 +435,10 @@ export interface ManagerDashboard {
     calls: number; reached: number; interested: number;
     outcomes: Record<string, number>;
   };
+  /** The calling funnel per period — for the dashboard's period selector. */
+  funnel: Record<'today' | 'week' | 'month', {
+    calls: number; reached: number; noAnswer: number; interested: number;
+  }>;
   rolling: {
     days: number; calls: number; reached: number; interested: number;
     momentum: { day: string; n: number }[];

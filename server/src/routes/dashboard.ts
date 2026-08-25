@@ -64,6 +64,9 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     };
     const since = new Date(Date.now() - days * 24 * 3600_000);
     const today = dayBounds(tzOffsetMinutes);
+    const soon = new Date(Date.now() + 60_000);
+    const last7d = new Date(Date.now() - 7 * 24 * 3600_000);
+    const last30d = new Date(Date.now() - 30 * 24 * 3600_000);
     const settings = await loadSettings();
 
     const [
@@ -72,6 +75,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       todayStats, todayByBroker, rolling, momentum,
       allBrokerStats, assignedCounts, worked,
       stale, expiringSoon, users, audit,
+      weekStats, monthStats,
     ] = await Promise.all([
       countByState(),
       countLeadsByState(),
@@ -94,7 +98,15 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       countExpiringSoon(settings.expiringSoonHours),
       listUsers(),
       listAudit({ limit: 8, offset: 0 }),
+      statsBetween(last7d, soon),
+      statsBetween(last30d, soon),
     ]);
+
+    // The calling funnel per period — calls → reached → interested, plus the
+    // no-answer count (from each window's outcome breakdown).
+    const funnelOf = (w: { calls: number; reached: number; interested: number; outcomes: Record<string, number> }) => ({
+      calls: w.calls, reached: w.reached, interested: w.interested, noAnswer: w.outcomes['noAnswer'] ?? 0,
+    });
 
     const brokers = users.filter(u => !u.isManager && u.active);
     const lifetimeById = new Map(allBrokerStats.map(s => [s.brokerId, s]));
@@ -128,6 +140,11 @@ export default async function dashboardRoutes(app: FastifyInstance) {
         worked: worked.get(d.id) ?? 0,
       })),
       today: todayStats,
+      funnel: {
+        today: funnelOf(todayStats),
+        week: funnelOf(weekStats),
+        month: funnelOf(monthStats),
+      },
       rolling: {
         days,
         calls: rolling.calls,

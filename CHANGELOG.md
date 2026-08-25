@@ -18,6 +18,31 @@ for what each part means for Prospector.
 
 ---
 
+## [3.3.0] — 2026-08-24
+
+The manager Dashboard, redesigned around a prospecting funnel.
+
+### Added
+- **A prospecting funnel** leads the screen: **Total units → Assigned → Called →
+  Reached → Interested**, with the drop-off % between stages. A **period selector**
+  (Today / This week / This month) drives the calling stages, and a supporting row
+  shows No answer (for the period), Active brokers, Pool, Callable, Owners, Buyer
+  leads, Communities and Data sets.
+- Server: `/api/dashboard/manager` now returns a `funnel` block with per-period
+  (today / 7d / 30d) calls, reached, no-answer and interested counts.
+
+### Changed
+- **The whole dashboard is tighter and more balanced.** The scattered stat tiles
+  and the separate "database" card are folded into the funnel; the rest — Pipeline,
+  Momentum (14-day chart + answer/interest rates), Needs attention, Data coverage,
+  Latest activity — sit in one filling grid, with the broker board beneath, so the
+  open gaps are gone and it reads as one designed screen.
+
+### Notes
+- No schema change and no migration (the funnel is aggregated at read time).
+
+---
+
 ## [3.2.1] — 2026-08-24
 
 ### Changed
