@@ -100,7 +100,7 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
     });
   }
   if (staleCount > 0) {
-    alerts.push({ icon: 'clock', color: 'var(--warning)', message: `${staleCount} interested owner${staleCount === 1 ? '' : 's'} going stale in portfolios`, goTo: 'team' });
+    alerts.push({ icon: 'clock', color: 'var(--warning)', message: `${staleCount} interested owner${staleCount === 1 ? '' : 's'} going stale — not called recently`, goTo: 'team' });
   }
   if (expiringSoon > 0) {
     alerts.push({

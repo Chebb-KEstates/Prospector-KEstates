@@ -60,7 +60,6 @@ function ActivitySummary({ target }: { target: AppUser }) {
       ) : (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 22px' }}>
           {cell(fmtInt(data.assigned + data.portfolio), 'units held')}
-          {cell(fmtInt(data.portfolio), 'in portfolio')}
           {cell(fmtInt(data.calls), 'calls')}
           {cell(fmtInt(data.interested), 'interested')}
           {cell(data.lastAt ? timeAgo(data.lastAt) : '—', 'last activity')}

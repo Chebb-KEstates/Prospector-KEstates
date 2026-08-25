@@ -2,8 +2,8 @@ import React, {
   createContext, useContext, useState, useCallback, useEffect, useMemo, useRef,
 } from 'react';
 import {
-  DataSet, Property, Lead, CallLog, BatchRequest, VaultSettings,
-  RequestStatus, PropertyState, CallOutcome,
+  DataSet, Property, Lead, BatchRequest, VaultSettings,
+  RequestStatus, CallOutcome,
 } from '../types/models';
 import { AppUser, UserRole, Permission } from '../types/user';
 import * as api from '../data/api';

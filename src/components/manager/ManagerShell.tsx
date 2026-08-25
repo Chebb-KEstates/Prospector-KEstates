@@ -1,5 +1,5 @@
 import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../state/AuthContext';
 import { useVault } from '../../state/VaultContext';
 import { Permission } from '../../types/user';
@@ -8,13 +8,7 @@ import { MarbleBackground } from '../common/MarbleBackground';
 import { useTheme } from '../../state/ThemeContext';
 import { HomeScreen } from './HomeScreen';
 import { DatabaseScreen } from './DatabaseScreen';
-import { ImportWizard } from './ImportWizard';
-import { LeadImportWizard } from './LeadImportWizard';
-import { RequestsScreen } from './RequestsScreen';
 import { TeamScreen } from './TeamScreen';
-import { UsersScreen } from './UsersScreen';
-import { AuditScreen } from './AuditScreen';
-import { SettingsScreen } from './SettingsScreen';
 import { ControlScreen } from './ControlScreen';
 
 type Tab = 'home' | 'database' | 'team' | 'control';

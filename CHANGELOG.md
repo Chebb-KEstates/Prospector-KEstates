@@ -18,6 +18,27 @@ for what each part means for Prospector.
 
 ---
 
+## [3.1.1] — 2026-08-24
+
+Audit pass — a broken production build fixed, dead code removed.
+
+### Fixed
+- **The production build (`CI=true npm run build`) was failing.** Dead imports left
+  in `ManagerShell` (8, incl. the now-merged Vault/Assignments screens) and
+  `VaultContext` (2) tripped "warnings treated as errors" and stopped the build
+  from compiling. Removed them; the build now compiles cleanly.
+
+### Removed
+- Two dead component files that nothing imported: `broker/HomeTab.tsx` and
+  `broker/OwnerScreen.tsx`.
+
+### Changed
+- Two leftover "portfolio" labels the v2.5.0 hide missed: the manager Users list
+  no longer shows an "in portfolio" tile, and the "interested owners going stale"
+  alert no longer says "in portfolios".
+
+---
+
 ## [3.1.0] — 2026-08-24
 
 The manager's **Data Vault** and **Assignments** are now one page: **Database**.
