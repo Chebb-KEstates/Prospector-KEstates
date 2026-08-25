@@ -110,22 +110,22 @@ export function TodayTab() {
       </div>
 
       {!buyers ? (
-        <>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-            {QUICKS.map(q => (
-              <button key={q.key} className={`btn btn-sm ${quick === q.key ? 'btn-primary' : ''}`} onClick={() => setQuick(q.key)}>
-                {q.label}
-              </button>
-            ))}
-          </div>
-          <PropertyTable
-            prefsKey="broker_today"
-            hideOwner
-            scope="mine"
-            onSelect={openDetail}
-            {...quickToQuery(quick)}
-          />
-        </>
+        <PropertyTable
+          prefsKey="broker_today"
+          hideOwner
+          scope="mine"
+          onSelect={openDetail}
+          {...quickToQuery(quick)}
+          headerExtra={
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {QUICKS.map(q => (
+                <button key={q.key} className={`btn btn-sm ${quick === q.key ? 'btn-primary' : ''}`} onClick={() => setQuick(q.key)}>
+                  {q.label}
+                </button>
+              ))}
+            </div>
+          }
+        />
       ) : (
         <BuyerTable />
       )}

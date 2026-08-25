@@ -18,6 +18,17 @@ for what each part means for Prospector.
 
 ---
 
+## [3.2.1] — 2026-08-24
+
+### Changed
+- **The broker's quick-filter chips now sit in the sticky header**, next to the
+  Filters button — To call, All, Expiring soon, Due follow-up, Never called, No
+  answer, Call back later, Interested. They were a separate row above the table;
+  now they stay pinned with the rest of the filters while the list scrolls.
+  (Added a generic `headerExtra` slot to the table's sticky header for this.)
+
+---
+
 ## [3.2.0] — 2026-08-24
 
 Data tables: a sticky, compact filter header.

@@ -157,6 +157,9 @@ interface Props {
   /** Fired when the user changes a filter (not sort/paging) — lets the owner
    *  clear a stale multi-select that no longer matches what's on screen. */
   onFiltersChange?: () => void;
+  /** Extra controls rendered INSIDE the sticky filter header, next to Filters —
+   *  e.g. the broker's quick chips, so they stay pinned while scrolling too. */
+  headerExtra?: React.ReactNode;
   /** Manager view: show the "Assigned to" column and a filter-by-broker control. */
   showAssignee?: boolean;
   /**
@@ -228,7 +231,7 @@ export function PropertyTable({
   scope, assignedTo, datasetId, fixedState,
   forcedOutcome, dueOnly, interestedOnly, expiringSoon, includeInactive,
   onSelect, selectedId, teaser, hideOwner, prefsKey,
-  checkedIds, onCheckedChanged, onFiltersChange, showAssignee, allowColumns,
+  checkedIds, onCheckedChanged, onFiltersChange, headerExtra, showAssignee, allowColumns,
 }: Props) {
   const ownerHidden = !!teaser || !!hideOwner;
   const selectable = !!checkedIds && !!onCheckedChanged;
@@ -544,6 +547,7 @@ export function PropertyTable({
             </>
           )}
         </div>
+        {headerExtra}
         <div style={{ flex: 1 }} />
         {/* A quiet spinner: the old in-memory filter was instant, so a loud
             loading state on every keystroke would read as a regression. */}
