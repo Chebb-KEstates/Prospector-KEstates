@@ -68,17 +68,26 @@ export function SlabAction({ icon, label, onClick, badge = 0, primary = false }:
   );
 }
 
-export function DashCard({ title, icon, trailing, flush = false, children }: {
-  title: string; icon?: IconName; trailing?: React.ReactNode; flush?: boolean; children: React.ReactNode;
+export function DashCard({ title, icon, trailing, flush = false, height, children }: {
+  title: string; icon?: IconName; trailing?: React.ReactNode; flush?: boolean;
+  /** Fix the card to this height; its body scrolls when the content overflows. */
+  height?: number;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+    <div className="card" style={{
+      padding: 0, overflow: 'hidden',
+      ...(height ? { height, display: 'flex', flexDirection: 'column' } : {}),
+    }}>
       <div className="dash-card-head">
         {icon && <Icon name={icon} size={17} style={{ color: 'var(--primary)' }} />}
         <span className="title">{title}</span>
         {trailing}
       </div>
-      <div style={{ padding: flush ? '8px 0 0' : '14px 16px 16px' }}>{children}</div>
+      <div style={{
+        padding: flush ? '8px 0 0' : '14px 16px 16px',
+        ...(height ? { flex: 1, minHeight: 0, overflowY: 'auto' } : {}),
+      }}>{children}</div>
     </div>
   );
 }

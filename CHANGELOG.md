@@ -18,6 +18,15 @@ for what each part means for Prospector.
 
 ---
 
+## [3.3.2] — 2026-08-24
+
+### Changed
+- **The middle dashboard cards are now all the same height**, and their content
+  **scrolls inside** when there's more to see (e.g. a long alerts or activity
+  list) — so the grid stays tidy instead of one card stretching the row.
+
+---
+
 ## [3.3.1] — 2026-08-24
 
 ### Changed

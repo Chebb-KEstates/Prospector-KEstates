@@ -21,6 +21,8 @@ import { Icon, IconName } from '../common/Icon';
  */
 
 const STEEL = 'var(--text-tertiary)';
+/** Uniform height for the middle metric cards — content scrolls if it's longer. */
+const CARD_H = 270;
 
 type Alert = { icon: IconName; color: string; message: string; goTo: string };
 type Period = 'today' | 'week' | 'month';
@@ -164,13 +166,13 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
         </div>
       </DashCard>
 
-      {/* Filling grid of metric cards. */}
+      {/* Filling grid of metric cards — all one height; content scrolls if longer. */}
       <DashColumns>
-        <DashCard title="Pipeline" icon="layers" trailing={openBtn('database')}>
+        <DashCard title="Pipeline" icon="layers" trailing={openBtn('database')} height={CARD_H}>
           <SegmentBar segments={stateSegments} />
         </DashCard>
 
-        <DashCard title={`Momentum · last ${rolled.days}d`} icon="sparkles" trailing={openBtn('team')}>
+        <DashCard title={`Momentum · last ${rolled.days}d`} icon="sparkles" trailing={openBtn('team')} height={CARD_H}>
           <MiniBarChart values={series} labels={days.map(d => 'SMTWTFS'[d.getDay()])} height={92} />
           <div style={{ height: 6 }} />
           <ProgressLine label="Answer rate" fraction={rolled.calls ? rolled.reached / rolled.calls : 0}
@@ -179,7 +181,7 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
             trailing={rolled.reached ? `${Math.round(rolled.interested / rolled.reached * 100)}%` : '—'} color="var(--success)" />
         </DashCard>
 
-        <DashCard title="Needs attention" icon="alert" flush>
+        <DashCard title="Needs attention" icon="alert" flush height={CARD_H}>
           {alerts.length === 0 ? (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '4px 16px 12px' }}>
               <Icon name="check" style={{ color: 'var(--success)' }} />
@@ -197,7 +199,7 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
           ))}
         </DashCard>
 
-        <DashCard title="Data coverage" icon="coin" trailing={openBtn('team')}>
+        <DashCard title="Data coverage" icon="coin" trailing={openBtn('team')} height={CARD_H}>
           {data.datasets.length === 0
             ? <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>No data sets uploaded yet.</span>
             : data.datasets.slice(0, 5).map(d => {
@@ -206,7 +208,7 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
             })}
         </DashCard>
 
-        <DashCard title="Latest activity" icon="clock" trailing={openBtn('control')} flush>
+        <DashCard title="Latest activity" icon="clock" trailing={openBtn('control')} flush height={CARD_H}>
           {recent.length === 0
             ? <div style={{ padding: '4px 16px 12px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Nothing logged yet.</div>
             : recent.map((a, i) => (
