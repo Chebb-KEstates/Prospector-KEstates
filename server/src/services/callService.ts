@@ -1,6 +1,7 @@
 import { transaction, Row } from '../db/pool';
 import { CallLog, CallOutcome, Property, Lead, PropertyState, kOrgId } from '../../../src/types/models';
 import { applyOutcome, sweepCooldowns } from '../../../src/logic/dispositions';
+import { ownerKeyOf } from '../../../src/logic/ownerGrouping';
 import { toProperty, saveProperties } from '../repositories/propertyRepo';
 import { toLead, saveLeads } from '../repositories/leadRepo';
 import { insertCall } from '../repositories/callRepo';
@@ -84,8 +85,67 @@ export async function logCall(input: LogCallInput): Promise<CallLog> {
       applyOutcome(p, input.outcome, now, input.followUpAt, settings);
     }
 
+    // Owner-in-area cohesion. The worked units belong to one owner+area group;
+    // apply the group rules to that owner's OTHER same-area units:
+    //   • Do not call → the OWNER asked not to be contacted, so mark every
+    //     same-area unit DNC (pooled or held — no one should call them again).
+    //   • Any other outcome that keeps the unit → extend the group's clock so a
+    //     sibling isn't shown as expiring while the broker is working the owner.
+    const ownerKeys = Array.from(new Set(properties.map(ownerKeyOf)));
+    const ownerCommunity = new Set(properties.map(p => `${ownerKeyOf(p)}|${p.community}`));
+    const workedIds = new Set(properties.map(p => p.id));
+    const siblingsToSave: Property[] = [];
+    if (ownerKeys.length > 0) {
+      if (input.outcome === CallOutcome.dnc) {
+        const [sibRows] = await cx.query<Row[]>(
+          `SELECT ${PROP_COLS} FROM properties
+           WHERE org_id = ? AND state <> 'dnc'
+             AND owner_key IN (${ownerKeys.map(() => '?').join(', ')})
+           FOR UPDATE`,
+          [kOrgId, ...ownerKeys],
+        );
+        for (const s of sibRows.map(toProperty)) {
+          if (workedIds.has(s.id) || !ownerCommunity.has(`${ownerKeyOf(s)}|${s.community}`)) continue;
+          s.state = PropertyState.dnc;
+          s.dncAt = now;
+          s.cooldownUntil = undefined;
+          s.portfolioSince = undefined;
+          s.assignmentExpiresAt = undefined;
+          s.nextFollowUpAt = undefined;
+          s.updatedAt = now;
+          siblingsToSave.push(s);
+        }
+      } else {
+        // Extend held same-area siblings to the freshest deadline among the worked
+        // units, so working one unit keeps the whole group on the clock.
+        const holder = properties.find(p => p.assignedTo)?.assignedTo;
+        const maxDeadline = properties
+          .map(p => p.assignmentExpiresAt)
+          .filter((d): d is string => !!d)
+          .sort()
+          .pop();
+        if (holder && maxDeadline) {
+          const [sibRows] = await cx.query<Row[]>(
+            `SELECT ${PROP_COLS} FROM properties
+             WHERE org_id = ? AND assigned_to = ? AND state IN ('assigned', 'portfolio')
+               AND owner_key IN (${ownerKeys.map(() => '?').join(', ')})
+             FOR UPDATE`,
+            [kOrgId, holder, ...ownerKeys],
+          );
+          for (const s of sibRows.map(toProperty)) {
+            if (workedIds.has(s.id) || !ownerCommunity.has(`${ownerKeyOf(s)}|${s.community}`)) continue;
+            if (!s.assignmentExpiresAt || new Date(s.assignmentExpiresAt) < new Date(maxDeadline)) {
+              s.assignmentExpiresAt = maxDeadline;
+              s.updatedAt = now;
+              siblingsToSave.push(s);
+            }
+          }
+        }
+      }
+    }
+
     await insertCall(call, cx);
-    await saveProperties(properties, cx);
+    await saveProperties([...properties, ...siblingsToSave], cx);
     await writeAudit({
       actorId: input.brokerId,
       action: 'call',
@@ -197,17 +257,21 @@ export async function undoDncLead(leadId: string, actorId: string): Promise<Lead
 /**
  * Cooldown / assignment-expiry sweep.
  *
- * The client ran this on every vault load. Server-side it runs on a timer and
- * on demand: `sweepCooldowns` is the shared function, so a unit leaves cooling
- * at exactly the moment it would have before — the difference is that it now
- * happens for everyone at once instead of whenever someone opened the app.
+ * Runs on a timer and on demand. LEADS recycle per-lead (`sweepCooldowns`, the
+ * shared function — one lead is one person). PROPERTIES recycle at the
+ * OWNER-IN-AREA GROUP level: a neglected unit never returns to the pool alone.
+ * An owner's same-area group returns together, and only once the broker has
+ * stopped working the WHOLE owner (no unit still on the clock). While any unit
+ * is active, lapsed siblings are kept — their clock re-synced to the group's
+ * freshest deadline, and cooled siblings left dormant with the broker.
  */
 export async function sweepLapsed(): Promise<{ properties: number; leads: number }> {
   const settings = await loadSettings();
   const now = new Date().toISOString();
 
   return transaction(async (cx) => {
-    const [propRows] = await cx.query<Row[]>(
+    // Candidates: any held/cooled unit whose own timer has passed.
+    const [candRows] = await cx.query<Row[]>(
       `SELECT ${PROP_COLS} FROM properties
        WHERE org_id = ?
          AND ((state = 'cooling' AND cooldown_until IS NOT NULL AND cooldown_until < UTC_TIMESTAMP(3))
@@ -217,9 +281,64 @@ export async function sweepLapsed(): Promise<{ properties: number; leads: number
        FOR UPDATE`,
       [kOrgId],
     );
-    const properties = propRows.map(toProperty);
-    const changedProps = sweepCooldowns(properties, now, settings);
-    if (changedProps.length > 0) await saveProperties(changedProps, cx);
+    const candidates = candRows.map(toProperty);
+    const changedProps: Property[] = [];
+    if (candidates.length > 0) {
+      const ownerKeys = Array.from(new Set(candidates.map(ownerKeyOf)));
+      const brokers = Array.from(new Set(candidates.map(p => p.assignedTo).filter((b): b is string => !!b)));
+      const candidateGroups = new Set(candidates.map(p => `${ownerKeyOf(p)}|${p.community}|${p.assignedTo}`));
+
+      // Load each candidate's FULL owner-in-area group (held units only).
+      const [groupRows] = await cx.query<Row[]>(
+        `SELECT ${PROP_COLS} FROM properties
+         WHERE org_id = ? AND state IN ('assigned', 'portfolio', 'cooling')
+           AND assigned_to IN (${brokers.map(() => '?').join(', ')})
+           AND owner_key IN (${ownerKeys.map(() => '?').join(', ')})
+         FOR UPDATE`,
+        [kOrgId, ...brokers, ...ownerKeys],
+      );
+      const groups = new Map<string, Property[]>();
+      for (const p of groupRows.map(toProperty)) {
+        const key = `${ownerKeyOf(p)}|${p.community}|${p.assignedTo}`;
+        if (!candidateGroups.has(key)) continue;
+        const list = groups.get(key) ?? [];
+        list.push(p);
+        groups.set(key, list);
+      }
+
+      const nowDate = new Date(now);
+      const future = (d?: string) => d != null && new Date(d) > nowDate;
+      for (const units of groups.values()) {
+        const active = units.some(p =>
+          (p.state === PropertyState.assigned || p.state === PropertyState.portfolio) && future(p.assignmentExpiresAt));
+        if (active) {
+          const maxDeadline = units
+            .filter(p => p.state === PropertyState.assigned || p.state === PropertyState.portfolio)
+            .map(p => p.assignmentExpiresAt)
+            .filter((d): d is string => !!d)
+            .sort()
+            .pop();
+          for (const p of units) {
+            if ((p.state === PropertyState.assigned || p.state === PropertyState.portfolio)
+                && !future(p.assignmentExpiresAt) && maxDeadline) {
+              p.assignmentExpiresAt = maxDeadline; p.updatedAt = now; changedProps.push(p);
+            } else if (p.state === PropertyState.cooling && p.cooldownUntil != null && !future(p.cooldownUntil)) {
+              p.cooldownUntil = undefined; p.updatedAt = now; changedProps.push(p);
+            }
+          }
+        } else {
+          // Owner abandoned — recycle the WHOLE group to the pool, together.
+          for (const p of units) {
+            p.state = PropertyState.pool;
+            p.assignedTo = undefined; p.assignedAt = undefined; p.assignmentNote = undefined;
+            p.cooldownUntil = undefined; p.nextFollowUpAt = undefined;
+            p.portfolioSince = undefined; p.assignmentExpiresAt = undefined; p.callAttempts = 0;
+            p.updatedAt = now; changedProps.push(p);
+          }
+        }
+      }
+      if (changedProps.length > 0) await saveProperties(changedProps, cx);
+    }
 
     const [leadRows] = await cx.query<Row[]>(
       `SELECT ${LEAD_COLS} FROM leads

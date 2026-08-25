@@ -18,6 +18,43 @@ for what each part means for Prospector.
 
 ---
 
+## [3.0.0] — 2026-08-24
+
+**A fundamental rule, enforced through the whole lifecycle: an owner's units in
+one area are ONE indivisible group** (director-approved — a MAJOR release). Two
+brokers can never work the same owner in the same area, and the group never
+fragments. A *different* area of the same owner may still sit with a different
+broker — that separation is by design.
+
+### Changed (assignment & timer fundamentals)
+- **Reassigning one unit reassigns the whole group.** A manager giving any of an
+  owner's same-area units to a broker now moves **every** same-area unit of that
+  owner to them — from the pool *and* from any other broker. (Replaces v2.7.0's
+  refuse-and-reclaim: the manager's move now just carries the whole group.)
+- **Reclaiming one unit reclaims the whole group** back to the pool together.
+- **The auto-return timer is now owner-level.** Working *any* unit of the owner
+  keeps the **whole same-area group** with the broker; the group only returns to
+  the pool once the broker has left the **entire owner** untouched past the
+  deadline — and then the whole group returns **together**. A neglected sibling
+  no longer peels off on its own.
+- **"Do not call" applies to the whole owner (in that area).** Marking one unit
+  DNC marks every same-area unit of that owner DNC — held or pooled — so no one
+  calls that owner again about any of their properties there.
+
+### Security / Data integrity
+- Brokers still cannot poach: a **request** can't be approved for an owner already
+  held by another broker (those units are skipped from the grant).
+
+### Notes
+- **No schema change and no migration.** All of this is enforced inside the
+  existing assignment / call / sweep transactions (locked `FOR UPDATE`). The
+  sweep now recycles properties at the group level; leads are unchanged
+  (one lead = one person). Guarded by a new server suite (`ownerCohesion.test.ts`)
+  run against an isolated scratch DB: reassign-moves-group, reclaim-moves-group,
+  owner-wide DNC, and the sweep keeping vs. recycling a group.
+
+---
+
 ## [2.7.0] — 2026-08-24
 
 **One owner, one broker — per area — is now enforced, not just intended.**

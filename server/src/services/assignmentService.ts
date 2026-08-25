@@ -51,10 +51,12 @@ export interface AssignResult {
 /**
  * Assign properties to a broker.
  *
- * Preserves the reference behaviour exactly, including the part that surprises
- * people: the batch silently EXPANDS to every pool unit sharing owner+community
- * with a selected unit. One owner is never split across two brokers, so
- * assigning 1 unit can assign 4. The audit line says "(incl. N owner-linked)".
+ * An owner's units in ONE area are indivisible. Assigning any of them EXPANDS to
+ * the whole same-area group — from the pool AND from any other broker — and moves
+ * the lot to this broker. So assigning one unit can assign four, and **reassigning
+ * one unit reassigns the whole group** (the manager's deliberate move; two brokers
+ * are never left working the same owner in the same area). Do-not-call units are
+ * left untouched. The audit line says "(incl. N owner-linked)".
  */
 export async function assignProperties(
   propertyIds: string[],
@@ -80,51 +82,30 @@ export async function assignProperties(
     const chosen = chosenRows.map(toProperty);
     if (chosen.length === 0) throw notFound('Those units no longer exist.');
 
-    // 2. Expand to owner-linked pool units, under the same lock. `ownerKeyOf`
-    //    is the shared function, and owner_key is the column written from it.
+    // 2. Expand to the WHOLE owner-in-area group under the same lock — every
+    //    same-area unit of these owners, whether pooled or held by another broker
+    //    (do-not-call excluded). `ownerKeyOf` is the shared function; `owner_key`
+    //    is the column written from it.
     const ownerCommunity = new Set(chosen.map(p => `${ownerKeyOf(p)}|${p.community}`));
     const ownerKeys = Array.from(new Set(chosen.map(p => ownerKeyOf(p))));
     const chosenIds = new Set(chosen.map(p => p.id));
 
-    // Guard: an owner's units in ONE area belong to ONE broker. If any of these
-    // owners is already HELD (assigned / portfolio / cooling) by a DIFFERENT
-    // broker in the same community, refuse — two brokers must never work the same
-    // owner in the same area. Locked FOR UPDATE so a concurrent assign serialises.
-    const [heldRows] = await cx.query<Row[]>(
+    const [groupRows] = await cx.query<Row[]>(
       `SELECT ${ASSIGNABLE_COLS} FROM properties
-       WHERE org_id = ? AND assigned_to IS NOT NULL AND assigned_to <> ?
-         AND state IN ('assigned', 'portfolio', 'cooling')
-         AND owner_key IN (${ownerKeys.map(() => '?').join(', ')})
-       FOR UPDATE`,
-      [kOrgId, brokerId, ...ownerKeys],
-    );
-    const clash = heldRows.map(toProperty)
-      .find(p => ownerCommunity.has(`${ownerKeyOf(p)}|${p.community}`));
-    if (clash) {
-      const holder = await findUserById(clash.assignedTo!);
-      throw conflict(
-        `${clash.owner.name || 'That owner'} is already assigned to ${holder?.name ?? 'another broker'} ` +
-        `in ${clash.community}. An owner's units in one area stay with one broker — reclaim them first, ` +
-        `or assign to ${holder?.name ?? 'that broker'}.`,
-        { community: clash.community, heldBy: clash.assignedTo },
-      );
-    }
-
-    const [linkedRows] = await cx.query<Row[]>(
-      `SELECT ${ASSIGNABLE_COLS} FROM properties
-       WHERE org_id = ? AND state = 'pool'
+       WHERE org_id = ? AND state <> 'dnc'
          AND owner_key IN (${ownerKeys.map(() => '?').join(', ')})
        FOR UPDATE`,
       [kOrgId, ...ownerKeys],
     );
-    const linked = linkedRows
+    const linked = groupRows
       .map(toProperty)
       .filter(p => !chosenIds.has(p.id) && ownerCommunity.has(`${ownerKeyOf(p)}|${p.community}`));
 
     const expanded = [...chosen, ...linked];
 
-    // 3. Mutate + persist. Same field-by-field writes as VaultContext.assign.
+    // 3. Mutate + persist — a fresh assignment of the whole group to this broker.
     const now = new Date().toISOString();
+    const movedFromAnother = expanded.some(p => p.assignedTo && p.assignedTo !== brokerId);
     for (const p of expanded) {
       p.state = PropertyState.assigned;
       p.assignedTo = brokerId;
@@ -132,6 +113,8 @@ export async function assignProperties(
       p.assignmentNote = note;
       p.callAttempts = 0;
       p.nextFollowUpAt = undefined;
+      p.cooldownUntil = undefined;
+      p.portfolioSince = undefined;
       p.assignmentExpiresAt = assignmentDeadlineOnAssign(now, settings);
       p.updatedAt = now;
     }
@@ -141,7 +124,9 @@ export async function assignProperties(
     await writeAudit({
       actorId,
       action: 'assign',
-      detail: `Assigned to ${broker.name}` + (extra > 0 ? ` (incl. ${extra} owner-linked)` : ''),
+      detail: `Assigned to ${broker.name}` +
+        (extra > 0 ? ` (incl. ${extra} owner-linked)` : '') +
+        (movedFromAnother ? ' — owner group reassigned' : ''),
       propertyIds: expanded.map(p => p.id),
     }, cx);
 
@@ -149,6 +134,11 @@ export async function assignProperties(
   });
 }
 
+/**
+ * Reclaim to the pool. Like assignment, this acts on the WHOLE owner-in-area
+ * group: reclaiming one unit reclaims every same-area unit of that owner held by
+ * the broker, so the group stays together (do-not-call units are left terminal).
+ */
 export async function reclaimProperties(propertyIds: string[], actorId: string): Promise<number> {
   if (propertyIds.length === 0) return 0;
 
@@ -158,28 +148,48 @@ export async function reclaimProperties(propertyIds: string[], actorId: string):
        WHERE id IN (${propertyIds.map(() => '?').join(', ')}) FOR UPDATE`,
       propertyIds,
     );
-    const batch = rows.map(toProperty);
-    if (batch.length === 0) return 0;
+    const chosen = rows.map(toProperty);
+    if (chosen.length === 0) return 0;
+
+    // Expand to the whole same-area owner group (held units only).
+    const ownerCommunity = new Set(chosen.map(p => `${ownerKeyOf(p)}|${p.community}`));
+    const ownerKeys = Array.from(new Set(chosen.map(p => ownerKeyOf(p))));
+    const chosenIds = new Set(chosen.map(p => p.id));
+    const [groupRows] = await cx.query<Row[]>(
+      `SELECT ${ASSIGNABLE_COLS} FROM properties
+       WHERE org_id = ? AND state IN ('assigned', 'portfolio', 'cooling')
+         AND owner_key IN (${ownerKeys.map(() => '?').join(', ')})
+       FOR UPDATE`,
+      [kOrgId, ...ownerKeys],
+    );
+    const linked = groupRows.map(toProperty)
+      .filter(p => !chosenIds.has(p.id) && ownerCommunity.has(`${ownerKeyOf(p)}|${p.community}`));
 
     const now = new Date().toISOString();
-    for (const p of batch) {
+    const changed: typeof chosen = [];
+    for (const p of [...chosen, ...linked]) {
+      if (p.state === PropertyState.dnc || p.state === PropertyState.pool) continue;
       p.state = PropertyState.pool;
       p.assignedTo = undefined;
       p.assignedAt = undefined;
       p.assignmentNote = undefined;
       p.nextFollowUpAt = undefined;
       p.portfolioSince = undefined;
+      p.cooldownUntil = undefined;
       p.assignmentExpiresAt = undefined;
+      p.callAttempts = 0;
       p.updatedAt = now;
+      changed.push(p);
     }
-    await saveProperties(batch, cx);
+    if (changed.length === 0) return 0;
+    await saveProperties(changed, cx);
 
     await writeAudit({
-      actorId, action: 'reclaim', detail: 'Reclaimed to the pool',
-      propertyIds: batch.map(p => p.id),
+      actorId, action: 'reclaim', detail: 'Reclaimed owner group to the pool',
+      propertyIds: changed.map(p => p.id),
     }, cx);
 
-    return batch.length;
+    return changed.length;
   });
 }
 
