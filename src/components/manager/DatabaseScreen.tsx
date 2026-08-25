@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { useAuth } from '../../state/AuthContext';
 import { DataModule, DataModuleLabel } from '../../types/models';
@@ -39,6 +39,9 @@ export function DatabaseScreen() {
   const [assignBroker, setAssignBroker] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  const [confirmAssign, setConfirmAssign] = useState(false);
+  // Stable so it can sit in PropertyTable's effect deps without re-firing.
+  const clearSelection = useCallback(() => setSelected(new Set()), []);
 
   // Opening a record is an audited view — same round trip the Vault made.
   const openProperty = async (id: string, orderedIds?: string[]) => {
@@ -52,7 +55,7 @@ export function DatabaseScreen() {
     }
   };
 
-  const handleAssign = async () => {
+  const doAssign = async () => {
     if (!assignBroker || selected.size === 0 || busy) return;
     setBusy(true); setMessage(null);
     try {
@@ -125,7 +128,7 @@ export function DatabaseScreen() {
                 <option value="">Select broker…</option>
                 {brokers.filter(b => b.active).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
-              <button className="btn btn-primary btn-sm" disabled={selected.size === 0 || !assignBroker || busy} onClick={handleAssign}>
+              <button className="btn btn-primary btn-sm" disabled={selected.size === 0 || !assignBroker || busy} onClick={() => setConfirmAssign(true)}>
                 {busy ? 'Assigning…' : 'Assign'}
               </button>
               <button className="btn btn-sm" disabled={selected.size === 0 || busy} onClick={handleReclaim}>
@@ -145,6 +148,7 @@ export function DatabaseScreen() {
             showAssignee
             checkedIds={canAssign ? selected : undefined}
             onCheckedChanged={canAssign ? setSelected : undefined}
+            onFiltersChange={canAssign ? clearSelection : undefined}
             onSelect={(id, orderedIds) => void openProperty(id, orderedIds)}
           />
         </>
@@ -153,6 +157,27 @@ export function DatabaseScreen() {
       {detailProperty && (
         <PropertyPopup propertyId={detailProperty} ids={pageIds}
           onNavigate={(id) => void openProperty(id)} onClose={() => setDetailProperty(null)} />
+      )}
+
+      {confirmAssign && (
+        <div className="modal-overlay" onClick={() => setConfirmAssign(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <h3 style={{ fontWeight: 600, marginBottom: 8 }}>Assign to {brokers.find(b => b.id === assignBroker)?.name ?? 'broker'}?</h3>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.5 }}>
+              {selected.size} selected unit{selected.size === 1 ? '' : 's'} will be assigned.
+              Each owner's units in that area move <b>together</b> — if any selected unit
+              is held by another broker, that owner's whole area group is <b>reassigned</b>
+              to {brokers.find(b => b.id === assignBroker)?.name ?? 'this broker'}.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-sm btn-ghost" onClick={() => setConfirmAssign(false)}>Cancel</button>
+              <button className="btn btn-sm btn-primary" disabled={busy}
+                onClick={() => { setConfirmAssign(false); void doAssign(); }}>
+                {busy ? 'Assigning…' : 'Assign'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

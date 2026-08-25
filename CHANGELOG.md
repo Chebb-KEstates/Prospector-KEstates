@@ -18,6 +18,28 @@ for what each part means for Prospector.
 
 ---
 
+## [3.1.2] — 2026-08-24
+
+Follow-ups from the audit.
+
+### Added
+- **Assign now asks to confirm.** Assigning selected units from the Database page
+  shows a short confirmation naming the broker and warning that each owner's area
+  group moves together — so a manager never silently pulls another broker's owner.
+
+### Removed
+- **The vestigial "Use the calling dialer" permission.** The dialer was removed in
+  v2.1.0 and nothing reads this permission; it's gone from the model and no longer
+  granted to new brokers. Existing brokers' stale copy is ignored on load (no
+  migration needed).
+
+### Fixed
+- **The Database multi-select now clears when you change a filter**, so an
+  Assign / Reclaim can't act on rows you selected under a different filter and can
+  no longer see.
+
+---
+
 ## [3.1.1] — 2026-08-24
 
 Audit pass — a broken production build fixed, dead code removed.

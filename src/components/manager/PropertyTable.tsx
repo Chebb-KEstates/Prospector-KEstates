@@ -154,6 +154,9 @@ interface Props {
   prefsKey?: string;
   checkedIds?: Set<string>;
   onCheckedChanged?: (ids: Set<string>) => void;
+  /** Fired when the user changes a filter (not sort/paging) — lets the owner
+   *  clear a stale multi-select that no longer matches what's on screen. */
+  onFiltersChange?: () => void;
   /** Manager view: show the "Assigned to" column and a filter-by-broker control. */
   showAssignee?: boolean;
   /**
@@ -215,7 +218,7 @@ export function PropertyTable({
   scope, assignedTo, datasetId, fixedState,
   forcedOutcome, dueOnly, interestedOnly, expiringSoon, includeInactive,
   onSelect, selectedId, teaser, hideOwner, prefsKey,
-  checkedIds, onCheckedChanged, showAssignee, allowColumns,
+  checkedIds, onCheckedChanged, onFiltersChange, showAssignee, allowColumns,
 }: Props) {
   const ownerHidden = !!teaser || !!hideOwner;
   const selectable = !!checkedIds && !!onCheckedChanged;
@@ -360,6 +363,12 @@ export function PropertyTable({
   useEffect(() => { setPage(0); },
     [search, community, cluster, state, beds, nationality, outcome, txFrom, txTo,
      callableOnly, tenancy, calledPeriod, assigneeFilter, pageSize, sortKey, asc, forcedOutcome, dueOnly, interestedOnly, scope]);
+
+  // Notify the owner on FILTER changes (not sort / page size) so a stale
+  // multi-select can be cleared when the visible set changes.
+  useEffect(() => { onFiltersChange?.(); },
+    [search, community, cluster, state, beds, nationality, outcome, txFrom, txTo,
+     callableOnly, tenancy, calledPeriod, assigneeFilter, onFiltersChange]);
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const pg = Math.min(page, pages - 1);
