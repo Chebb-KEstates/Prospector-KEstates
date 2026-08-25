@@ -7,10 +7,9 @@ import { AccountSheet } from '../common/AccountSheet';
 import { MarbleBackground } from '../common/MarbleBackground';
 import { useTheme } from '../../state/ThemeContext';
 import { HomeScreen } from './HomeScreen';
-import { VaultScreen } from './VaultScreen';
+import { DatabaseScreen } from './DatabaseScreen';
 import { ImportWizard } from './ImportWizard';
 import { LeadImportWizard } from './LeadImportWizard';
-import { AssignmentsScreen } from './AssignmentsScreen';
 import { RequestsScreen } from './RequestsScreen';
 import { TeamScreen } from './TeamScreen';
 import { UsersScreen } from './UsersScreen';
@@ -18,7 +17,7 @@ import { AuditScreen } from './AuditScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { ControlScreen } from './ControlScreen';
 
-type Tab = 'home' | 'vault' | 'assignments' | 'team' | 'control';
+type Tab = 'home' | 'database' | 'team' | 'control';
 
 export function ManagerShell() {
   const [activeTab, setActiveTab] = React.useState<Tab>('home');
@@ -28,15 +27,17 @@ export function ManagerShell() {
 
   if (!user) return <Navigate to="/login" />;
 
-  const tabs: { key: Tab; label: string; permission?: Permission; badge?: number }[] = [
+  const tabs: { key: Tab; label: string; permission?: Permission; anyOf?: Permission[]; badge?: number }[] = [
     { key: 'home', label: 'Dashboard' },
-    { key: 'vault', label: 'Data Vault', permission: Permission.manageData },
-    { key: 'assignments', label: 'Assignments', permission: Permission.assignData, badge: pendingRequests.length },
+    // Data Vault + Assignments, merged. Visible to anyone who could see either.
+    { key: 'database', label: 'Database', anyOf: [Permission.manageData, Permission.assignData], badge: pendingRequests.length },
     { key: 'team', label: 'Report', permission: Permission.viewReports },
     { key: 'control', label: 'Control' },
   ];
 
-  const visibleTabs = tabs.filter(t => !t.permission || user.can(t.permission));
+  const visibleTabs = tabs.filter(t =>
+    (!t.permission || user.can(t.permission)) &&
+    (!t.anyOf || t.anyOf.some(p => user.can(p))));
 
   return (
     <div style={{
@@ -110,8 +111,7 @@ export function ManagerShell() {
           maxHeight: '100vh',
         }}>
           {activeTab === 'home' && <HomeScreen onGo={(t) => setActiveTab(t as Tab)} />}
-          {activeTab === 'vault' && <VaultScreen />}
-          {activeTab === 'assignments' && <AssignmentsScreen />}
+          {activeTab === 'database' && <DatabaseScreen />}
           {activeTab === 'team' && <TeamScreen />}
           {activeTab === 'control' && <ControlScreen />}
         </main>

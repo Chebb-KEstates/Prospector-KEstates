@@ -90,7 +90,7 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
   const { pendingRequests: pending, idleBrokers, staleCount, expiringSoon } = data.alerts;
   const alerts: Alert[] = [];
   if (pending > 0) {
-    alerts.push({ icon: 'user', color: 'var(--info)', message: `${pending} request${pending === 1 ? '' : 's'} awaiting approval`, goTo: 'assignments' });
+    alerts.push({ icon: 'user', color: 'var(--info)', message: `${pending} request${pending === 1 ? '' : 's'} awaiting approval`, goTo: 'database' });
   }
   if (idleBrokers.length > 0) {
     alerts.push({
@@ -106,7 +106,7 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
     alerts.push({
       icon: 'clock', color: 'var(--error)',
       message: `${expiringSoon} held unit${expiringSoon === 1 ? '' : 's'} running out of time — returning to the pool soon`,
-      goTo: 'assignments',
+      goTo: 'database',
     });
   }
 
@@ -148,10 +148,10 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
         actions={
           <>
             {me.can(Permission.manageData) && <SlabAction icon="upload" label="Import data" onClick={() => go('control')} />}
-            {me.can(Permission.assignData) && <SlabAction icon="assign" label="Assign data" onClick={() => go('assignments')} />}
-            {me.can(Permission.assignData) && <SlabAction icon="user" label="Requests" badge={pending} primary={pending > 0} onClick={() => go('assignments')} />}
+            {me.can(Permission.assignData) && <SlabAction icon="assign" label="Assign data" onClick={() => go('database')} />}
+            {me.can(Permission.assignData) && <SlabAction icon="user" label="Requests" badge={pending} primary={pending > 0} onClick={() => go('database')} />}
             {me.can(Permission.manageUsers) && <SlabAction icon="users" label="Register user" onClick={() => go('control')} />}
-            <SlabAction icon="vault" label="Open vault" onClick={() => go('vault')} />
+            <SlabAction icon="vault" label="Open database" onClick={() => go('database')} />
           </>
         }
       />
@@ -160,7 +160,7 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
 
       <DashColumns>
         {/* What's ON the system */}
-        <DashCard title="The vault" icon="vault" trailing={openBtn('vault')}>
+        <DashCard title="The database" icon="vault" trailing={openBtn('database')}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 24px', marginBottom: 14 }}>
             <StatTile value={fmtInt(data.properties.total)} label="units" color="var(--primary)" />
             <StatTile value={fmtInt(data.properties.callable)} label="callable" />

@@ -18,6 +18,27 @@ for what each part means for Prospector.
 
 ---
 
+## [3.1.0] — 2026-08-24
+
+The manager's **Data Vault** and **Assignments** are now one page: **Database**.
+
+### Changed
+- **One "Database" page** replaces the two separate tabs. It opens on the owner
+  table with the **full filter bar** — so filtering by **State** shows just the
+  pool, or just the assigned units, doing the job the old Pool / Assigned tabs
+  did — plus the **Assigned-to** column, **multi-select**, and one action bar with
+  **Assign to broker** and **Reclaim to pool**. A top toggle switches between
+  **Property owners**, **Buyer leads**, and **Requests** (with its pending badge).
+  Everything both pages did now lives in one place; nothing was dropped.
+- The Dashboard's shortcuts and alerts point at the merged page.
+
+### Notes
+- No schema change and no migration. Assign / reclaim / requests still require the
+  "Assign & reclaim" permission (the action bar and Requests toggle are hidden
+  without it); the page shows for anyone who could see either old tab.
+
+---
+
 ## [3.0.0] — 2026-08-24
 
 **A fundamental rule, enforced through the whole lifecycle: an owner's units in

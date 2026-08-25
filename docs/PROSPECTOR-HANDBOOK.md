@@ -387,16 +387,21 @@ managers; it is **not** a bypass of phone masking — see §7.)
     vestigial — the flipping dialer was removed in v2.1.0.)
   - **Audit** — the trail.
   - **Settings** — cooldowns, the assignment-timer values, and the office IP.
-- **Assignments** — Pool / Assigned / Requests, with a pending-request badge; the
-  allocation loop. **An owner's units in one area are ONE indivisible group**
-  (v3.0.0): they **assign, reassign, reclaim and recycle together**, "do not call"
-  applies to the whole owner in that area, and the auto-return timer is owner-level
-  (working any unit keeps the whole group; the group returns to the pool together
-  only when the broker abandons the entire owner). A manager assigning any of the
-  owner's same-area units **moves the whole group** to that broker (from the pool
-  or another broker); a broker's **request** can't be approved for an owner already
-  held by someone else. A *different* area of the same owner may sit with a
-  different broker — by design. See the owner-cohesion note in §5.
+- **Database** — the manager's single data surface (v3.1.0; merges the old *Data
+  Vault* and *Assignments*). One owner table with the full filter bar — filter by
+  **State** to see just the pool or just the assigned units — plus the Assigned-to
+  column, multi-select, and an action bar to **Assign to broker** / **Reclaim to
+  pool**. A top toggle switches **Property owners / Buyer leads / Requests**
+  (pending-request badge on Requests). **An owner's units in one area are ONE
+  indivisible group** (v3.0.0): they **assign, reassign, reclaim and recycle
+  together**, "do not call" applies to the whole owner in that area, and the
+  auto-return timer is owner-level (working any unit keeps the whole group; the
+  group returns to the pool together only when the broker abandons the entire
+  owner). A manager assigning any of the owner's same-area units **moves the whole
+  group** to that broker (from the pool or another broker); a broker's **request**
+  can't be approved for an owner already held by someone else. A *different* area
+  of the same owner may sit with a different broker — by design. See the
+  owner-cohesion note in §5.
 - **Report** — team and data-set analytics (formerly "Team"). Two breakdown
   tables (one per broker, one per data set) plus the Data-ROI tiles. Each table
   carries a cross-reference column: the Brokers table shows the **data sets each
