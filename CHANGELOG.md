@@ -18,6 +18,15 @@ for what each part means for Prospector.
 
 ---
 
+## [3.4.2] — 2026-08-25
+
+### Changed
+- **Removed the broker app's top bar** that just repeated the current page name.
+  The broker now goes straight to the page like the manager app does — the sticky
+  page header already carries the title.
+
+---
+
 ## [3.4.1] — 2026-08-25
 
 ### Changed

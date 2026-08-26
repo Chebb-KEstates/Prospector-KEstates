@@ -71,22 +71,11 @@ export function BrokerShell() {
           <div style={{ padding: '8px 12px' }}><AccountSheet /></div>
         </nav>
 
-        {/* Content */}
-        <main style={{ flex: 1, display: 'flex', flexDirection: 'column', maxHeight: '100vh', overflow: 'hidden' }}>
-          {/* Top bar */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 12, padding: '12px 24px',
-            borderBottom: '1px solid var(--border)', minHeight: 56,
-          }}>
-            <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{NAV.find(n => n.key === activeTab)?.label ?? activeTab}</span>
-          </div>
-
-          {/* Body */}
-          <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
-            {activeTab === 'home' && <BrokerHome onGo={(t) => setActiveTab(t as Tab)} />}
-            {activeTab === 'today' && <TodayTab />}
-            {activeTab === 'pool' && <PoolTab />}
-          </div>
+        {/* Content — straight to the page, like the manager shell (no top bar). */}
+        <main style={{ flex: 1, overflow: 'auto', maxHeight: '100vh', padding: 24 }}>
+          {activeTab === 'home' && <BrokerHome onGo={(t) => setActiveTab(t as Tab)} />}
+          {activeTab === 'today' && <TodayTab />}
+          {activeTab === 'pool' && <PoolTab />}
         </main>
       </div>
     </div>
