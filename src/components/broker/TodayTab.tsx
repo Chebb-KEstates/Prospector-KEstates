@@ -12,6 +12,7 @@ import { CallStop } from '../../state/callTypes';
 import { PropertyPopup } from '../manager/PropertyPopup';
 import { ApiError } from '../../data/apiClient';
 import { useMyLeads } from '../../data/hooks';
+import { useStickyHeader, stickyHeaderStyle } from '../common/useStickyHeader';
 
 /**
  * Database — the broker's working list.
@@ -67,6 +68,7 @@ export function TodayTab() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [pageIds, setPageIds] = useState<string[]>([]);
   const [capError, setCapError] = useState<string | null>(null);
+  const { ref: headerRef, height: headerH } = useStickyHeader();
 
   if (!user) return null;
 
@@ -90,30 +92,30 @@ export function TodayTab() {
           onNavigate={(id) => void openDetail(id, pageIds)}
           onClose={() => setDetailId(null)} />
       )}
+      {/* Sticky page header: title + Owners | Buyer leads switch. */}
+      <div ref={headerRef} style={stickyHeaderStyle}>
+        <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0 }}>Database</h2>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <button className={`btn btn-sm ${!buyers ? 'btn-primary' : ''}`} onClick={() => setBuyers(false)}>Property owners</button>
+          <button className={`btn btn-sm ${buyers ? 'btn-primary' : ''}`} onClick={() => setBuyers(true)}>Buyer leads</button>
+        </div>
+      </div>
+
       {capError && (
-        <div className="card" style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center', borderColor: 'var(--error)' }}>
-          <Icon name="ban" size={16} style={{ color: 'var(--error)' }} />
-          <span style={{ fontSize: '0.875rem', color: 'var(--error)' }}>{capError}</span>
+        <div style={{ margin: '10px 0 0', display: 'flex', gap: 8, alignItems: 'center', fontSize: '0.8125rem', color: 'var(--error)' }}>
+          <Icon name="ban" size={15} />
+          <span>{capError}</span>
         </div>
       )}
 
-      {/* Owners | Buyers switch */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-        <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-          <button className="btn" style={{ borderRadius: 0, border: 'none', background: !buyers ? 'var(--primary)' : 'transparent', color: !buyers ? '#fff' : 'var(--text-secondary)' }} onClick={() => setBuyers(false)}>
-            Property owners
-          </button>
-          <button className="btn" style={{ borderRadius: 0, border: 'none', background: buyers ? 'var(--primary)' : 'transparent', color: buyers ? '#fff' : 'var(--text-secondary)' }} onClick={() => setBuyers(true)}>
-            Buyer leads
-          </button>
-        </div>
-      </div>
+      <div style={{ height: 12 }} />
 
       {!buyers ? (
         <PropertyTable
           prefsKey="broker_today"
           hideOwner
           scope="mine"
+          stickyTop={headerH}
           onSelect={openDetail}
           {...quickToQuery(quick)}
           headerExtra={

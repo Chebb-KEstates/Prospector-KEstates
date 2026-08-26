@@ -38,13 +38,15 @@ interface Props {
   prefsKey?: string;
   checkedIds?: Set<string>;
   onCheckedChanged?: (ids: Set<string>) => void;
+  /** Offset the sticky filter bar below a sticky page header. */
+  stickyTop?: number;
 }
 
 const PAGE_SIZE = 50;
 
 export function LeadTable({
   scope, assignedTo, datasetId, fixedState,
-  onSelect, selectedId, prefsKey = 'leads', checkedIds, onCheckedChanged,
+  onSelect, selectedId, prefsKey = 'leads', checkedIds, onCheckedChanged, stickyTop = 0,
 }: Props) {
   const { userById } = useVault();
   const selectable = !!checkedIds && !!onCheckedChanged;
@@ -159,7 +161,7 @@ export function LeadTable({
 
       {/* Sticky filter header — stays pinned while the rows scroll. */}
       <div style={{
-        position: 'sticky', top: 0, zIndex: 30, background: 'var(--surface)',
+        position: 'sticky', top: stickyTop, zIndex: 30, background: 'var(--surface)',
         borderBottom: '1px solid var(--border)', marginBottom: 12, padding: '10px 0',
         display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center',
       }}>

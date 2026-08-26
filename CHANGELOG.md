@@ -18,6 +18,25 @@ for what each part means for Prospector.
 
 ---
 
+## [3.4.0] — 2026-08-25
+
+Slimmer, sticky, uniform headers on the data-table pages.
+
+### Changed
+- **The page header is now sticky too**, above the table's (already sticky) filter
+  bar — so the title, view toggle and page actions stay pinned while the list
+  scrolls. Both bands stack cleanly (the filter bar offsets below the measured
+  header height).
+- **Page actions moved up into that header**, and the design is slimmer and the
+  same for managers and brokers:
+  - **Database** — the *Property owners / Buyer leads / Requests* toggle and the
+    manager's *broker picker · Assign · Reclaim* now live in the header (no more
+    separate action card). The broker's owners/leads switch matches.
+  - **Pool** — the "Tick the units you want…" prompt, the note field and the
+    **Request** button are now the sticky header.
+
+---
+
 ## [3.3.2] — 2026-08-24
 
 ### Changed

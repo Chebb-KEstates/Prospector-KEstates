@@ -1,0 +1,29 @@
+import { useEffect, useRef, useState } from 'react';
+
+/**
+ * A sticky page header that reports its own height, so a SECOND sticky bar below
+ * it (a data table's filter row) can be offset by that height and both stay
+ * pinned without overlapping. The height re-measures when the header wraps.
+ */
+export function useStickyHeader<T extends HTMLElement = HTMLDivElement>() {
+  const ref = useRef<T>(null);
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setHeight(el.offsetHeight);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return { ref, height };
+}
+
+/** The shared sticky page-header band style (opaque, pinned at the top). */
+export const stickyHeaderStyle: React.CSSProperties = {
+  position: 'sticky', top: 0, zIndex: 32, background: 'var(--surface)',
+  borderBottom: '1px solid var(--border)', padding: '10px 0',
+  display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+};

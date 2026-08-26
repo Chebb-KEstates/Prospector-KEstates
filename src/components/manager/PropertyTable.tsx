@@ -160,6 +160,9 @@ interface Props {
   /** Extra controls rendered INSIDE the sticky filter header, next to Filters —
    *  e.g. the broker's quick chips, so they stay pinned while scrolling too. */
   headerExtra?: React.ReactNode;
+  /** Pixels to offset the sticky filter bar down by — the height of a sticky page
+   *  header above it, so both stay pinned without overlapping. */
+  stickyTop?: number;
   /** Manager view: show the "Assigned to" column and a filter-by-broker control. */
   showAssignee?: boolean;
   /**
@@ -231,7 +234,7 @@ export function PropertyTable({
   scope, assignedTo, datasetId, fixedState,
   forcedOutcome, dueOnly, interestedOnly, expiringSoon, includeInactive,
   onSelect, selectedId, teaser, hideOwner, prefsKey,
-  checkedIds, onCheckedChanged, onFiltersChange, headerExtra, showAssignee, allowColumns,
+  checkedIds, onCheckedChanged, onFiltersChange, headerExtra, stickyTop = 0, showAssignee, allowColumns,
 }: Props) {
   const ownerHidden = !!teaser || !!hideOwner;
   const selectable = !!checkedIds && !!onCheckedChanged;
@@ -444,7 +447,7 @@ export function PropertyTable({
           into one "Filters" popover so the bar stays thin and pinned while the
           rows scroll underneath. */}
       <div style={{
-        position: 'sticky', top: 0, zIndex: 30, background: 'var(--surface)',
+        position: 'sticky', top: stickyTop, zIndex: 30, background: 'var(--surface)',
         borderBottom: '1px solid var(--border)', marginBottom: 12, padding: '10px 0',
         display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center',
       }}>

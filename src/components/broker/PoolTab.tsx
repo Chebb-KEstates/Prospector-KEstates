@@ -5,6 +5,7 @@ import { PropertyState, RequestStatus, Property } from '../../types/models';
 import { PropertyTable } from '../manager/PropertyTable';
 import { Icon } from '../common/Icon';
 import { ApiError } from '../../data/apiClient';
+import { useStickyHeader, stickyHeaderStyle } from '../common/useStickyHeader';
 import * as api from '../../data/api';
 
 /**
@@ -35,6 +36,7 @@ export function PoolTab() {
   const [error, setError] = useState<string | null>(null);
   /** The ticked units, resolved so we can name their communities. */
   const [picked, setPicked] = useState<Property[]>([]);
+  const { ref: headerRef, height: headerH } = useStickyHeader();
 
   const pending = useMemo(
     () => vault.requests.filter(r => r.brokerId === user?.id && r.status === RequestStatus.pending),
@@ -104,19 +106,19 @@ export function PoolTab() {
 
   return (
     <div>
-      {/* Request toolbar */}
-      <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-        <Icon name="layers" size={17} style={{ color: 'var(--primary)' }} />
-        <span style={{ fontSize: '0.875rem' }}>
+      {/* Sticky page header: the request toolbar — pinned above the pool table. */}
+      <div ref={headerRef} style={{ ...stickyHeaderStyle, gap: 10 }}>
+        <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0 }}>Pool</h2>
+        <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
           {checked.size === 0
             ? 'Tick the units you want, then request them from your manager.'
-            : <><b>{checked.size}</b> unit{checked.size === 1 ? '' : 's'} selected
-              {communities.length > 0 && <span style={{ color: 'var(--text-secondary)' }}> · {communities.join(', ')}</span>}</>}
+            : <><b style={{ color: 'var(--text)' }}>{checked.size}</b> unit{checked.size === 1 ? '' : 's'} selected
+              {communities.length > 0 && <span> · {communities.join(', ')}</span>}</>}
         </span>
-        <div style={{ flex: 1 }} />
+        <div style={{ flex: 1, minWidth: 12 }} />
         {checked.size > 0 && (
           <>
-            <input className="input" style={{ width: 220 }} placeholder="Note to your manager (optional)"
+            <input className="input" style={{ width: 200, padding: '5px 8px' }} placeholder="Note to your manager (optional)"
               value={note} onChange={e => setNote(e.target.value)} />
             <button className="btn btn-sm btn-ghost" onClick={() => { setChecked(new Set()); setPicked([]); }}>Clear</button>
           </>
@@ -126,6 +128,8 @@ export function PoolTab() {
           <Icon name="assign" size={15} /> {busy ? 'Sending…' : `Request ${checked.size || ''} unit${checked.size === 1 ? '' : 's'}`.trim()}
         </button>
       </div>
+
+      <div style={{ height: 12 }} />
 
       {error && (
         <div className="card" style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center', borderColor: 'var(--error)' }}>
@@ -160,6 +164,7 @@ export function PoolTab() {
         prefsKey="broker_pool" teaser
         scope="pool"
         fixedState={PropertyState.pool}
+        stickyTop={headerH}
         checkedIds={checked}
         onCheckedChanged={onCheckedChanged}
         // The columns a broker may show on the pool: Unit (always) + these.
