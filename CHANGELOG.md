@@ -18,6 +18,18 @@ for what each part means for Prospector.
 
 ---
 
+## [3.4.3] — 2026-08-25
+
+### Changed
+- **Restyled the call-session progress banner** (shown when paging through units in
+  the record popup) to match the app: a **rounded floating panel** with a border,
+  soft shadow and proper padding, the counts as clean divider-separated stat tiles
+  (Made · Answered · No answer · Answer rate) with uppercase micro-labels and the
+  champagne progress bar. It now stacks above the popup instead of a hard top bar,
+  so it never overlaps the box.
+
+---
+
 ## [3.4.2] — 2026-08-25
 
 ### Changed

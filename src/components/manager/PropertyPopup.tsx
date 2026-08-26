@@ -409,33 +409,36 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
 
   return (
     <div className="modal-overlay" onClick={() => void tryClose()}
-      style={total > 1 ? { alignItems: 'flex-start', paddingTop: 62 } : undefined}>
-      {/* Progress bar pinned to the TOP OF THE PAGE, above the popup box. */}
+      style={total > 1 ? { flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', paddingTop: 12, gap: 12 } : undefined}>
+      {/* Session progress — a rounded floating panel above the popup, matching the
+          app's toolbar style. Stacked (not fixed) so it never overlaps the box. */}
       {stop && total > 1 && (
         <div onClick={e => e.stopPropagation()} style={{
-          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1001,
+          width: 'min(94vw, 1240px)', boxSizing: 'border-box', flexShrink: 0,
           display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
-          padding: '8px 20px', background: 'var(--surface)', borderBottom: '1px solid var(--border)',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.06)',
+          padding: '10px 18px', background: 'var(--surface)',
+          border: '1px solid var(--border)', borderRadius: 14,
+          boxShadow: '0 12px 30px -12px rgba(0,0,0,0.30)',
         }}>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-              Property {visited.size} of {total} · {Math.max(0, total - visited.size)} to go
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+              <b style={{ color: 'var(--text)', fontSize: '0.8rem' }}>Property {visited.size} of {total}</b>
+              <span>{Math.max(0, total - visited.size)} to go</span>
             </div>
-            <div style={{ marginTop: 5, height: 5, borderRadius: 999, background: 'var(--surface-2)', overflow: 'hidden' }}>
+            <div style={{ marginTop: 6, height: 6, borderRadius: 999, background: 'var(--surface-2)', overflow: 'hidden' }}>
               <div style={{ width: `${Math.min(100, (visited.size / total) * 100)}%`, height: '100%', background: 'var(--gold)', transition: 'width .3s' }} />
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
-            <ProgressStat n={session.made} label="made" />
-            <ProgressStat n={session.answered} label="answered" color="var(--info)" />
-            <ProgressStat n={session.noAnswer} label="no answer" color="var(--warning)" />
-            <ProgressStat n={answerRate} suffix="%" label="answer rate" />
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <ProgressStat n={session.made} label="Made" />
+            <ProgressStat n={session.answered} label="Answered" color="var(--info)" divider />
+            <ProgressStat n={session.noAnswer} label="No answer" color="var(--warning)" divider />
+            <ProgressStat n={answerRate} suffix="%" label="Answer rate" color="var(--gold-dark)" divider />
           </div>
         </div>
       )}
       <div className="modal-content" onClick={e => e.stopPropagation()}
-        style={{ width: '94vw', maxWidth: 1240, height: total > 1 ? 'calc(100vh - 88px)' : '90vh', display: 'flex', flexDirection: 'column', gap: 14, padding: 20 }}>
+        style={{ width: '94vw', maxWidth: 1240, ...(total > 1 ? { flex: 1, minHeight: 0 } : { height: '90vh' }), display: 'flex', flexDirection: 'column', gap: 14, padding: 20 }}>
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>Loading…</div>
         ) : !stop ? (
@@ -756,12 +759,14 @@ function Column({ children }: { children: React.ReactNode }) {
   return <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>{children}</div>;
 }
 
-/** One number + label in the progress bar. */
-function ProgressStat({ n, label, color, suffix }: { n: number; label: string; color?: string; suffix?: string }) {
+/** One number + micro-label in the session progress panel, with an optional divider. */
+function ProgressStat({ n, label, color, suffix, divider }: {
+  n: number; label: string; color?: string; suffix?: string; divider?: boolean;
+}) {
   return (
-    <div style={{ textAlign: 'center', minWidth: 44 }}>
-      <div className="tabular-nums" style={{ fontSize: '1.05rem', fontWeight: 700, color: color ?? 'var(--text)', lineHeight: 1.1 }}>{n}{suffix ?? ''}</div>
-      <div style={{ fontSize: '0.62rem', color: 'var(--text-secondary)' }}>{label}</div>
+    <div style={{ textAlign: 'center', minWidth: 50, padding: '0 12px', borderLeft: divider ? '1px solid var(--border-light)' : undefined }}>
+      <div className="tabular-nums" style={{ fontSize: '1.15rem', fontWeight: 800, color: color ?? 'var(--text)', lineHeight: 1 }}>{n}{suffix ?? ''}</div>
+      <div style={{ fontSize: '0.58rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)', marginTop: 3 }}>{label}</div>
     </div>
   );
 }
