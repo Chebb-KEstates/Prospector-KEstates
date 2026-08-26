@@ -6,7 +6,7 @@ import { PropertyState, AuditEntry } from '../../types/models';
 import { Permission } from '../../types/user';
 import { fmtInt, fmtDate, greetingName, timeAgo } from '../../utils/format';
 import {
-  HeroSlab, SlabAction, DashColumns, DashCard, StatTile, SegmentBar,
+  HeroSlab, SlabAction, DashColumns, DashCard, StatRow, SegmentBar,
   MiniBarChart, ProgressLine, Segment, Funnel, FunnelStage,
 } from '../common/Dash';
 import { Icon, IconName } from '../common/Icon';
@@ -154,16 +154,16 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
           </select>
         }>
         <Funnel stages={funnelStages} />
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 30px', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-light)' }}>
-          <StatTile value={fmtInt(f.noAnswer)} label={`no answer (${short})`} color="var(--warning)" />
-          <StatTile value={`${data.board.length}`} label="active brokers" icon="team" />
-          <StatTile value={fmtInt(data.properties.byState[PropertyState.pool])} label="in pool" />
-          <StatTile value={fmtInt(data.properties.callable)} label="callable" />
-          <StatTile value={fmtInt(data.properties.owners)} label="owners" />
-          <StatTile value={fmtInt(data.leads.total)} label="buyer leads" color={data.leads.total ? 'var(--info)' : undefined} />
-          <StatTile value={`${data.communities.length}`} label="communities" />
-          <StatTile value={`${data.datasets.length}`} label="data sets" />
-        </div>
+        <StatRow tiles={[
+          { value: fmtInt(f.noAnswer), label: `no answer (${short})`, color: 'var(--warning)' },
+          { value: `${data.board.length}`, label: 'active brokers', icon: 'team' },
+          { value: fmtInt(data.properties.byState[PropertyState.pool]), label: 'in pool' },
+          { value: fmtInt(data.properties.callable), label: 'callable' },
+          { value: fmtInt(data.properties.owners), label: 'owners' },
+          { value: fmtInt(data.leads.total), label: 'buyer leads', color: data.leads.total ? 'var(--info)' : undefined },
+          { value: `${data.communities.length}`, label: 'communities' },
+          { value: `${data.datasets.length}`, label: 'data sets' },
+        ]} />
       </DashCard>
 
       {/* Filling grid of metric cards — all one height; content scrolls if longer. */}

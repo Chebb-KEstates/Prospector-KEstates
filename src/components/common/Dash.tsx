@@ -92,16 +92,40 @@ export function DashCard({ title, icon, trailing, flush = false, height, childre
   );
 }
 
-export function StatTile({ value, label, color, icon }: {
+export type StatTileProps = {
   value: string; label: string; color?: string; icon?: IconName;
-}) {
+  /** 'center' stacks the tile centred (used in the funnel's evenly-spaced row). */
+  align?: 'start' | 'center';
+};
+
+export function StatTile({ value, label, color, icon, align = 'start' }: StatTileProps) {
+  const centered = align === 'center';
   return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+    <div style={centered ? { display: 'flex', flexDirection: 'column', alignItems: 'center' } : undefined}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: centered ? 'center' : undefined }}>
         {icon && <Icon name={icon} size={15} style={{ color: color ?? 'var(--text-secondary)' }} />}
         <span className="tabular-nums" style={{ fontSize: '1.25rem', fontWeight: 700, color: color ?? 'var(--text)' }}>{value}</span>
       </div>
-      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{label}</div>
+      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: centered ? 'center' : undefined }}>{label}</div>
+    </div>
+  );
+}
+
+/**
+ * The evenly-spaced metric row under a funnel: equal-width, centred tiles that
+ * fill the card's width, echoing the funnel's own even columns above it.
+ */
+export function StatRow({ tiles }: { tiles: StatTileProps[] }) {
+  return (
+    <div style={{
+      display: 'flex', flexWrap: 'wrap', gap: '16px 12px',
+      marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-light)',
+    }}>
+      {tiles.map((t, i) => (
+        <div key={i} style={{ flex: '1 1 90px', display: 'flex', justifyContent: 'center' }}>
+          <StatTile {...t} align="center" />
+        </div>
+      ))}
     </div>
   );
 }

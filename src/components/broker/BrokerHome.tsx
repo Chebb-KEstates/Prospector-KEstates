@@ -8,7 +8,7 @@ import { CallDialog } from './CallDialog';
 import { CallStop } from '../../state/callTypes';
 import { fmtInt, fmtDate, greetingName } from '../../utils/format';
 import {
-  HeroSlab, SlabAction, DashColumns, DashCard, StatTile, SegmentBar, ProgressLine,
+  HeroSlab, SlabAction, DashColumns, DashCard, StatTile, StatRow, SegmentBar, ProgressLine,
   Segment, Funnel, FunnelStage,
 } from '../common/Dash';
 import { Icon } from '../common/Icon';
@@ -156,16 +156,16 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
           </select>
         }>
         <Funnel stages={funnelStages} />
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 30px', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-light)' }}>
-          <StatTile value={fmtInt(f.noAnswer)} label={`no answer (${short})`} color={f.noAnswer ? 'var(--warning)' : undefined} />
-          <StatTile value={fmtInt(callable.length)} label="callable" />
-          <StatTile value={`${groups.length}`} label="owners" icon="user" />
-          <StatTile value={`${dueNext.length}`} label="due follow-ups" color={dueNext.length ? 'var(--info)' : undefined} />
-          <StatTile value={`${expiringSoon.length}`} label="expiring soon" color={expiringSoon.length ? 'var(--error)' : undefined} />
-          <StatTile value={fmtInt(dash?.poolAvailable ?? 0)} label="in pool" />
-          <StatTile value={`${dash?.myPendingRequests ?? 0}`} label="pending requests" />
-          <StatTile value={fmtInt(interestedTotal)} label="interested (all-time)" color={interestedTotal ? 'var(--success)' : undefined} />
-        </div>
+        <StatRow tiles={[
+          { value: fmtInt(f.noAnswer), label: `no answer (${short})`, color: f.noAnswer ? 'var(--warning)' : undefined },
+          { value: fmtInt(callable.length), label: 'callable' },
+          { value: `${groups.length}`, label: 'owners', icon: 'user' },
+          { value: `${dueNext.length}`, label: 'due follow-ups', color: dueNext.length ? 'var(--info)' : undefined },
+          { value: `${expiringSoon.length}`, label: 'expiring soon', color: expiringSoon.length ? 'var(--error)' : undefined },
+          { value: fmtInt(dash?.poolAvailable ?? 0), label: 'in pool' },
+          { value: `${dash?.myPendingRequests ?? 0}`, label: 'pending requests' },
+          { value: fmtInt(interestedTotal), label: 'interested (all-time)', color: interestedTotal ? 'var(--success)' : undefined },
+        ]} />
       </DashCard>
 
       {/* Uniform grid of metric cards — all one height; content scrolls if longer. */}

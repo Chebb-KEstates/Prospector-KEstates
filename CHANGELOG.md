@@ -18,6 +18,16 @@ for what each part means for Prospector.
 
 ---
 
+## [3.6.1] — 2026-08-26
+
+### Changed
+- The prospecting funnel's **second metrics line** (on both the manager and
+  broker home) is now **evenly spaced and centred** — equal-width, centred tiles
+  that fill the card's width, echoing the funnel's own even columns above them,
+  instead of being bunched to the left with empty space on the right.
+
+---
+
 ## [3.6.0] — 2026-08-26
 
 Redesigned the broker home to match manager mission control — funnel-led, one
