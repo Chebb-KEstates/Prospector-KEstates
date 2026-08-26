@@ -108,8 +108,6 @@ export function TodayTab() {
         </div>
       )}
 
-      <div style={{ height: 12 }} />
-
       {!buyers ? (
         <PropertyTable
           prefsKey="broker_today"

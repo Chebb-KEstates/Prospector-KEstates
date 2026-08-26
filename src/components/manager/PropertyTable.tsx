@@ -448,7 +448,11 @@ export function PropertyTable({
           rows scroll underneath. */}
       <div style={{
         position: 'sticky', top: stickyTop, zIndex: 30, background: 'var(--surface)',
-        borderBottom: '1px solid var(--border)', marginBottom: 12, padding: '10px 0',
+        borderLeft: '1px solid var(--border)', borderRight: '1px solid var(--border)',
+        borderBottom: '1px solid var(--border)', borderTop: stickyTop ? 'none' : '1px solid var(--border)',
+        borderRadius: stickyTop ? '0 0 12px 12px' : 12,
+        boxShadow: '0 10px 18px -14px rgba(0,0,0,0.22)',
+        marginBottom: 14, padding: '10px 18px',
         display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center',
       }}>
         <div style={{ position: 'relative' }}>

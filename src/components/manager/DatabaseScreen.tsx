@@ -136,8 +136,6 @@ export function DatabaseScreen() {
         </div>
       )}
 
-      <div style={{ height: 12 }} />
-
       {view === 'requests' ? (
         <RequestsScreen />
       ) : view === 'leads' ? (

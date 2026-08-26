@@ -129,8 +129,6 @@ export function PoolTab() {
         </button>
       </div>
 
-      <div style={{ height: 12 }} />
-
       {error && (
         <div className="card" style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center', borderColor: 'var(--error)' }}>
           <Icon name="alert" size={16} style={{ color: 'var(--error)' }} />

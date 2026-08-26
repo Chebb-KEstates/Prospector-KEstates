@@ -21,9 +21,15 @@ export function useStickyHeader<T extends HTMLElement = HTMLDivElement>() {
   return { ref, height };
 }
 
-/** The shared sticky page-header band style (opaque, pinned at the top). */
+/**
+ * The shared sticky page-header band — the TOP of a cohesive toolbar panel:
+ * opaque, rounded top corners, a full border, and comfortable padding so nothing
+ * sits flush against the edge. The table's filter bar (below, offset by this
+ * header's height) forms the bottom of the same panel.
+ */
 export const stickyHeaderStyle: React.CSSProperties = {
   position: 'sticky', top: 0, zIndex: 32, background: 'var(--surface)',
-  borderBottom: '1px solid var(--border)', padding: '10px 0',
+  border: '1px solid var(--border)', borderRadius: '12px 12px 0 0',
+  padding: '12px 18px',
   display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
 };

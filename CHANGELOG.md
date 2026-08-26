@@ -18,6 +18,17 @@ for what each part means for Prospector.
 
 ---
 
+## [3.4.1] — 2026-08-25
+
+### Changed
+- **Polished the data-table headers.** The sticky page header + filter bar now read
+  as one clean toolbar panel: **rounded corners**, a full border, **generous side
+  padding** (nothing sits flush against the edge any more) and a soft shadow that
+  lifts it above the scrolling rows. The manager and broker pages now use the exact
+  same header styling.
+
+---
+
 ## [3.4.0] — 2026-08-25
 
 Slimmer, sticky, uniform headers on the data-table pages.
