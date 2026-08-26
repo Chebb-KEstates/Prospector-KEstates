@@ -25,12 +25,13 @@ export default async function callRoutes(app: FastifyInstance) {
           note: { type: 'string', maxLength: 2000 },
           followUpAt: { type: 'string', maxLength: 40 },
           ownerName: { type: 'string', maxLength: 255 },
+          keepInPool: { type: 'boolean' },
         },
       },
     },
   }, async (req) => {
     const body = req.body as {
-      propertyIds: string[]; outcome: CallOutcome; note?: string; followUpAt?: string; ownerName?: string;
+      propertyIds: string[]; outcome: CallOutcome; note?: string; followUpAt?: string; ownerName?: string; keepInPool?: boolean;
     };
     const me = req.currentUser!;
     const call = await logCall({
@@ -41,6 +42,7 @@ export default async function callRoutes(app: FastifyInstance) {
       note: body.note,
       followUpAt: body.followUpAt,
       ownerName: body.ownerName,
+      keepInPool: body.keepInPool,
     });
     return serializeCall(call);
   });

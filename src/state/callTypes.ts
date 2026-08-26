@@ -97,10 +97,11 @@ export interface CallStop {
   state: PropertyState;
   note?: string;
   history: CallHistoryEntry[];
-  /** Log one outcome for the whole stop (single-unit owner, or a buyer lead). */
-  log: (outcome: CallOutcome, note: string | undefined, followUpAt: string | undefined, ownerName?: string) => Promise<void>;
+  /** Log one outcome for the whole stop (single-unit owner, or a buyer lead).
+   *  `keepInPool` (manager only) records the outcome without the disposition. */
+  log: (outcome: CallOutcome, note: string | undefined, followUpAt: string | undefined, ownerName?: string, keepInPool?: boolean) => Promise<void>;
   /** Log an outcome for ONE of the owner's properties (multi-unit owner stops). */
-  logUnit?: (unitId: string, outcome: CallOutcome, note: string | undefined, followUpAt: string | undefined, ownerName?: string) => Promise<void>;
+  logUnit?: (unitId: string, outcome: CallOutcome, note: string | undefined, followUpAt: string | undefined, ownerName?: string, keepInPool?: boolean) => Promise<void>;
   /** Save the free-text notes on one property (owner stops only). */
   saveNote?: (unitId: string, notes: string) => Promise<void>;
 }

@@ -145,4 +145,27 @@ test('the sweep keeps the group while any unit is worked, and recycles it togeth
   assert.equal(g.at('102', 'Marina').state, PropertyState.pool, 'abandoned group recycled (B) — together');
 });
 
+test("a manager's interested call with keepInPool records the outcome but leaves the unit in the pool", async () => {
+  const ds = await seed(OWNER_MAP);
+  const A = (await load(ds)).at('101', 'Marina'); // pooled
+  await logCall({ propertyIds: [A.id], brokerId: manager, isManager: true, outcome: CallOutcome.interestedRent, note: 'keen, keep in pool', keepInPool: true });
+  const a = (await load(ds)).at('101', 'Marina');
+  assert.equal(a.state, PropertyState.pool, 'unit stays in the pool');
+  assert.equal(a.assignedTo, undefined, 'still unassigned');
+  assert.equal(a.lastOutcome, CallOutcome.interestedRent, 'the interest is recorded on the record');
+});
+
+test('manager handoff: assign the group to a broker, then an interested call → that broker\'s portfolio', async () => {
+  const ds = await seed(OWNER_MAP);
+  const g = await load(ds);
+  const A = g.at('101', 'Marina'); // pooled; owner O also has 102 in Marina
+  // The dialog assigns the owner-area group to X, then logs the interested call.
+  await assignProperties([A.id], brokerX, manager);
+  await logCall({ propertyIds: [A.id], brokerId: manager, isManager: true, outcome: CallOutcome.interestedRent, note: 'interested to rent' });
+  const after = await load(ds);
+  assert.equal(after.at('101', 'Marina').state, PropertyState.portfolio, 'worked unit → portfolio');
+  assert.equal(after.at('101', 'Marina').assignedTo, brokerX, 'held by the chosen broker');
+  assert.equal(after.at('102', 'Marina').assignedTo, brokerX, 'the owner\'s same-area sibling moved to that broker too');
+});
+
 test.after(async () => { await closePool(); });

@@ -18,6 +18,31 @@ for what each part means for Prospector.
 
 ---
 
+## [3.5.0] — 2026-08-25
+
+Fixed a manager workflow flaw around "interested" calls.
+
+### Fixed / Added
+- **A manager logging an "interested" call now asks who works the owner** instead
+  of silently settling it into a portfolio (or, on a pool unit, creating an
+  orphaned portfolio with no broker). The dialog:
+  - offers a **broker picker** defaulting to the unit's **current holder**;
+  - **Assign & save** → assigns that owner's **whole same-area group** to the
+    chosen broker (so it's never split), then logs the interested call — the unit
+    lands in that broker's portfolio;
+  - **Keep in pool** → logs the interest on the record but leaves the unit **in
+    the pool, unassigned** (new manager-only `keepInPool` on the call API, which
+    records the outcome without applying the disposition).
+- **Brokers are unaffected** — their own "interested" call saves straight through
+  to their portfolio as before.
+
+### Notes
+- No schema change and no migration. Guarded by new server tests (keep-in-pool
+  leaves the unit pooled; assign-then-interested lands it in the chosen broker's
+  portfolio with the group).
+
+---
+
 ## [3.4.3] — 2026-08-25
 
 ### Changed

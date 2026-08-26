@@ -28,7 +28,7 @@ function history(calls: CallLog[], nameOf: NameOf): CallHistoryEntry[] {
 
 export interface StopDeps {
   nameOf: NameOf;
-  logCall: (properties: Property[], outcome: any, note?: string, followUpAt?: string, ownerName?: string) => Promise<void>;
+  logCall: (properties: Property[], outcome: any, note?: string, followUpAt?: string, ownerName?: string, keepInPool?: boolean) => Promise<void>;
   logLeadCall: (lead: Lead, outcome: any, note?: string, followUpAt?: string) => Promise<void>;
 }
 
@@ -237,12 +237,12 @@ export function buildOwnerStop(
     state: g0?.state ?? PropertyState.assigned,
     note: units.map(p => p.assignmentNote).find(Boolean),
     history: history(calls, deps.nameOf),
-    log: (outcome, note, followUpAt, ownerName) => deps.logCall(units, outcome, note, followUpAt, ownerName),
+    log: (outcome, note, followUpAt, ownerName, keepInPool) => deps.logCall(units, outcome, note, followUpAt, ownerName, keepInPool),
     // Multi-unit owners only: log a result for one property at a time.
     logUnit: units.length > 1
-      ? (unitId, outcome, note, followUpAt, ownerName) => {
+      ? (unitId, outcome, note, followUpAt, ownerName, keepInPool) => {
           const p = units.find(u => u.id === unitId);
-          return deps.logCall(p ? [p] : [], outcome, note, followUpAt, ownerName);
+          return deps.logCall(p ? [p] : [], outcome, note, followUpAt, ownerName, keepInPool);
         }
       : undefined,
     saveNote: (unitId, notes) => api.properties.saveNotes(unitId, notes).then(() => undefined),

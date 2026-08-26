@@ -45,6 +45,12 @@ export interface LogCallInput {
   followUpAt?: string;
   /** Which co-owner this call was about, for a multi-owner unit. */
   ownerName?: string;
+  /**
+   * Manager-only: record the outcome WITHOUT the disposition — the unit keeps its
+   * current state and assignment (e.g. an interested owner logged but left in the
+   * pool). Used by the manager handoff dialog's "keep in pool" choice.
+   */
+  keepInPool?: boolean;
 }
 
 export async function logCall(input: LogCallInput): Promise<CallLog> {
@@ -82,8 +88,17 @@ export async function logCall(input: LogCallInput): Promise<CallLog> {
     );
 
     for (const p of properties) {
-      applyOutcome(p, input.outcome, now, input.followUpAt, settings);
+      if (input.keepInPool && input.isManager) {
+        // Record the outcome only — no state/assignment change.
+        p.lastOutcome = input.outcome;
+        p.lastCalledAt = now;
+        p.updatedAt = now;
+      } else {
+        applyOutcome(p, input.outcome, now, input.followUpAt, settings);
+      }
     }
+
+    const skipCohesion = !!(input.keepInPool && input.isManager);
 
     // Owner-in-area cohesion. The worked units belong to one owner+area group;
     // apply the group rules to that owner's OTHER same-area units:
@@ -95,7 +110,7 @@ export async function logCall(input: LogCallInput): Promise<CallLog> {
     const ownerCommunity = new Set(properties.map(p => `${ownerKeyOf(p)}|${p.community}`));
     const workedIds = new Set(properties.map(p => p.id));
     const siblingsToSave: Property[] = [];
-    if (ownerKeys.length > 0) {
+    if (!skipCohesion && ownerKeys.length > 0) {
       if (input.outcome === CallOutcome.dnc) {
         const [sibRows] = await cx.query<Row[]>(
           `SELECT ${PROP_COLS} FROM properties

@@ -299,7 +299,7 @@ export const leads = {
 
 export const calls = {
   async log(input: {
-    propertyIds: string[]; outcome: CallOutcome; note?: string; followUpAt?: string; ownerName?: string;
+    propertyIds: string[]; outcome: CallOutcome; note?: string; followUpAt?: string; ownerName?: string; keepInPool?: boolean;
   }): Promise<CallLog> {
     return CallLog.fromJson(await post('/api/calls', input));
   },

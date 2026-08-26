@@ -119,6 +119,9 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
+  // Manager handoff dialog for an "interested" call (choose broker / keep in pool).
+  const [showHandoff, setShowHandoff] = useState(false);
+  const [handoffBroker, setHandoffBroker] = useState('');
 
   // Persistent notes (per unit) — auto-saved on close / next / after a call log.
   const [notes, setNotes] = useState('');
@@ -364,7 +367,25 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     }
   };
 
-  const save = async () => {
+  const primaryIsInterested = primary === CallOutcome.interestedSell || primary === CallOutcome.interestedRent;
+  const isManager = !!user?.isManager;
+
+  // A manager marking a unit "interested" would silently settle it into a
+  // portfolio; instead prompt for who works it (defaulting to the current
+  // holder) or to keep it in the pool. Brokers save straight through.
+  const attemptSave = async () => {
+    if (!canSave) return;
+    if (isManager && primaryIsInterested) {
+      let current = '';
+      try { current = (await api.properties.byId(focusedId)).assignedTo ?? ''; } catch { /* default blank */ }
+      setHandoffBroker(current);
+      setShowHandoff(true);
+      return;
+    }
+    await doSave();
+  };
+
+  const doSave = async (handoff?: { assignTo?: string; keepInPool?: boolean }) => {
     if (!stop || !canSave) return;
     setSaving(true); setSaveError(null);
     const fu = followUpAt ? new Date(followUpAt).toISOString() : undefined;
@@ -376,8 +397,12 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
       const note = tags.length
         ? `[${tags.join(' · ')}]${feedback.trim() ? ' ' + feedback.trim() : ''}`
         : (feedback.trim() || undefined);
-      if (stop.logUnit) await stop.logUnit(focusedId, primary!, note, wantsCallback ? fu : undefined, activeOwnerName);
-      else await stop.log(primary!, note, wantsCallback ? fu : undefined, activeOwnerName);
+      // Manager handoff: assign the owner's whole area group first (so the unit
+      // and its siblings move to the chosen broker together), then log the call.
+      if (handoff?.assignTo) await vault.assign([focusedId], handoff.assignTo);
+      const keep = !!handoff?.keepInPool;
+      if (stop.logUnit) await stop.logUnit(focusedId, primary!, note, wantsCallback ? fu : undefined, activeOwnerName, keep);
+      else await stop.log(primary!, note, wantsCallback ? fu : undefined, activeOwnerName, keep);
       setSavedSinceReveal(true);
       setJustSaved(true);
       // Feed the popup-session progress bar.
@@ -702,7 +727,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   onChange={e => { setFeedback(e.target.value); setJustSaved(false); }} />
 
                 {connection != null && (
-                  <button className="btn btn-primary" onClick={save} disabled={!canSave}
+                  <button className="btn btn-primary" onClick={() => void attemptSave()} disabled={!canSave}
                     style={{ marginTop: 8, width: '100%', justifyContent: 'center', padding: '10px', background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013', opacity: canSave ? 1 : 0.5 }}>
                     <Icon name="check" size={16} /> {saving ? 'Saving…' : 'Save to record'}
                   </button>
@@ -751,6 +776,29 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
           </>
         )}
       </div>
+
+      {showHandoff && (
+        <div className="modal-overlay" style={{ zIndex: 1100 }} onClick={e => { e.stopPropagation(); setShowHandoff(false); }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <h3 style={{ fontWeight: 600, marginBottom: 8 }}>Interested owner — who works it?</h3>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.5 }}>
+              You marked this owner interested. Assign the owner's units <b>in this area</b> to a broker — they move
+              together as one group — or keep it in the pool for now.
+            </p>
+            <select className="input" value={handoffBroker} onChange={e => setHandoffBroker(e.target.value)} style={{ width: '100%', marginBottom: 16 }}>
+              <option value="">— Select broker —</option>
+              {vault.brokers.filter(b => b.active).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button className="btn btn-sm btn-ghost" onClick={() => setShowHandoff(false)}>Cancel</button>
+              <button className="btn btn-sm" disabled={saving} onClick={() => { setShowHandoff(false); void doSave({ keepInPool: true }); }}>Keep in pool</button>
+              <button className="btn btn-sm btn-primary" disabled={!handoffBroker || saving} onClick={() => { setShowHandoff(false); void doSave({ assignTo: handoffBroker }); }}>
+                Assign &amp; save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
