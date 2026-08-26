@@ -18,6 +18,32 @@ for what each part means for Prospector.
 
 ---
 
+## [3.6.0] — 2026-08-26
+
+Redesigned the broker home to match manager mission control — funnel-led, one
+organised screen.
+
+### Added
+- **Every broker now has their own prospecting funnel** at the top of their home:
+  My list → Called → Reached → Interested, with the drop-off % between stages and
+  a **Today / This week / This month** selector for the calling stages. A stat row
+  underneath carries the day's supporting numbers (no answer, callable, owners,
+  due follow-ups, expiring soon, pool, pending requests, all-time interested).
+- Server: the broker dashboard endpoint (`/api/dashboard/broker`) now returns a
+  per-broker `funnel` block for today / week / month — the broker-scoped
+  counterpart of the manager funnel, so a broker still never sees team numbers.
+
+### Changed
+- The broker's metric cards (Running out of time, Your pipeline, You vs the team,
+  Due next, Pool snapshot, Coach's corner) are now **uniform height and scroll**
+  when their lists are long — the same tidy grid as the manager screen, instead of
+  the old ragged, truncated cards. The hero band drops its number strip (those
+  figures moved into the funnel row) and keeps just the greeting and shortcuts.
+
+No data or schema change — deploy is pull + rebuild + restart.
+
+---
+
 ## [3.5.0] — 2026-08-25
 
 Fixed a manager workflow flaw around "interested" calls.

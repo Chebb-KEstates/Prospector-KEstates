@@ -284,6 +284,36 @@ export async function brokerStatsBetween(from: Date, to: Date): Promise<Map<stri
   }]));
 }
 
+export interface BrokerFunnelWindow {
+  calls: number;
+  reached: number;
+  interested: number;
+  noAnswer: number;
+}
+
+/**
+ * One broker's calling funnel over a window — the broker home's period selector
+ * (today / this week / this month). The per-broker counterpart of `statsBetween`,
+ * scoped to a single broker so a broker never sees the team's numbers.
+ */
+export async function brokerFunnelWindow(brokerId: string, from: Date, to: Date): Promise<BrokerFunnelWindow> {
+  const [rows] = await pool.query<Row[]>(
+    `SELECT COUNT(*) AS calls,
+            SUM(${CONNECTED_SQL}) AS reached,
+            SUM(${INTERESTED_SQL}) AS interested,
+            SUM(outcome = 'noAnswer') AS no_answer
+     FROM calls WHERE org_id = ? AND broker_id = ? AND at >= ? AND at < ?`,
+    [kOrgId, brokerId, from, to],
+  );
+  const r = rows[0];
+  return {
+    calls: Number(r?.calls ?? 0),
+    reached: Number(r?.reached ?? 0),
+    interested: Number(r?.interested ?? 0),
+    noAnswer: Number(r?.no_answer ?? 0),
+  };
+}
+
 /** Answer/interest rates over a window — the momentum card's two progress lines. */
 export async function rollingStats(since: Date): Promise<WindowStats> {
   return statsBetween(since, new Date(Date.now() + 60_000));

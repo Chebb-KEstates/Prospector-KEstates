@@ -459,6 +459,14 @@ export interface ManagerDashboard {
   recentAudit: Record<string, unknown>[];
 }
 
+/** One broker's calling funnel over a window — calls → reached → interested. */
+export interface BrokerFunnelWindow {
+  calls: number;
+  reached: number;
+  interested: number;
+  noAnswer: number;
+}
+
 export interface BrokerDashboard {
   myCalls: number;
   myInterested: number;
@@ -473,6 +481,12 @@ export interface BrokerDashboard {
   poolAvailable: number;
   myPendingRequests: number;
   byState: Record<PropertyState, number>;
+  /** My calling funnel by period — feeds the home screen's period selector. */
+  funnel: {
+    today: BrokerFunnelWindow;
+    week: BrokerFunnelWindow;
+    month: BrokerFunnelWindow;
+  };
 }
 
 /** A named holding: a data set (in a broker row) or a broker (in a set row), with the unit count. */

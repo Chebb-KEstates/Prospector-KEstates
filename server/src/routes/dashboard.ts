@@ -9,7 +9,7 @@ import {
 import { countLeadsByState, countLeadsTotal } from '../repositories/leadRepo';
 import {
   brokerCallStats, brokerStatsBetween, statsBetween, rollingStats,
-  callsPerDay, countCallsTotal, lifetimeStats,
+  callsPerDay, countCallsTotal, lifetimeStats, brokerFunnelWindow,
 } from '../repositories/callRepo';
 import { countPending } from '../repositories/requestRepo';
 import { listUsers } from '../repositories/userRepo';
@@ -294,20 +294,26 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     const { tzOffsetMinutes = 0 } = req.query as { tzOffsetMinutes?: number };
     const me = req.currentUser!;
     const today = dayBounds(tzOffsetMinutes);
+    const soon = new Date(Date.now() + 60_000);
+    const last7d = new Date(Date.now() - 7 * 24 * 3600_000);
+    const last30d = new Date(Date.now() - 30 * 24 * 3600_000);
     const settings = await loadSettings();
 
-    const [propertyStates, allStats, todayByBroker, assignedCounts, pending, myExpiringSoon] =
-      await Promise.all([
-        countByState(),
-        brokerCallStats(),
-        brokerStatsBetween(today.from, today.to),
-        assignedCountByBroker(),
-        countPending(),
-        countExpiringSoon(settings.expiringSoonHours, me.id),
-      ]);
+    const [
+      propertyStates, allStats, assignedCounts, pending, myExpiringSoon,
+      todayFunnel, weekFunnel, monthFunnel,
+    ] = await Promise.all([
+      countByState(),
+      brokerCallStats(),
+      assignedCountByBroker(),
+      countPending(),
+      countExpiringSoon(settings.expiringSoonHours, me.id),
+      brokerFunnelWindow(me.id, today.from, today.to),
+      brokerFunnelWindow(me.id, last7d, soon),
+      brokerFunnelWindow(me.id, last30d, soon),
+    ]);
 
     const mine = allStats.find(s => s.brokerId === me.id);
-    const mineToday = todayByBroker.get(me.id);
     const others = allStats.filter(s => s.brokerId !== me.id);
     const teamAverage = others.length > 0
       ? Math.round(others.reduce((n, s) => n + s.calls, 0) / others.length)
@@ -317,15 +323,20 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       myCalls: mine?.calls ?? 0,
       myInterested: mine?.interested ?? 0,
       myLastAt: mine?.lastAt,
-      myCallsToday: mineToday?.calls ?? 0,
-      myReachedToday: mineToday?.reached ?? 0,
-      myInterestedToday: mineToday?.interested ?? 0,
+      myCallsToday: todayFunnel.calls,
+      myReachedToday: todayFunnel.reached,
+      myInterestedToday: todayFunnel.interested,
       myOnList: assignedCounts.get(me.id) ?? 0,
       myExpiringSoon,
       teamAverageCalls: teamAverage,
       poolAvailable: propertyStates[PropertyState.pool],
       myPendingRequests: pending,
       byState: propertyStates,
+      funnel: {
+        today: todayFunnel,
+        week: weekFunnel,
+        month: monthFunnel,
+      },
     };
   });
 }

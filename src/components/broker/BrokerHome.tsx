@@ -8,7 +8,8 @@ import { CallDialog } from './CallDialog';
 import { CallStop } from '../../state/callTypes';
 import { fmtInt, fmtDate, greetingName } from '../../utils/format';
 import {
-  HeroSlab, SlabAction, DashColumns, DashCard, StatTile, SegmentBar, ProgressLine, Segment,
+  HeroSlab, SlabAction, DashColumns, DashCard, StatTile, SegmentBar, ProgressLine,
+  Segment, Funnel, FunnelStage,
 } from '../common/Dash';
 import { Icon } from '../common/Icon';
 import { CountdownBadge } from '../common/StateChip';
@@ -16,15 +17,28 @@ import { useNow } from '../../utils/useNow';
 import { useMyProperties, useBrokerDashboard } from '../../data/hooks';
 
 /**
- * A broker's home.
+ * A broker's home — funnel-led, the same shape as manager mission control.
  *
- * Two data sources, split by what they need to know:
+ * The top is the broker's own prospecting funnel (My list → Called → Reached →
+ * Interested) with a period selector for the calling stages; a StatTile row
+ * carries the rest of the day's numbers. Below it a uniform grid of metric cards.
+ *
+ * Two data sources, split by what a broker is allowed to know:
  *  - their own assigned units (bounded — loads whole, groups locally)
  *  - team comparisons and the pool snapshot (aggregates, from the server: a
  *    broker cannot see the team's calls, so they can't compute the average).
  */
 
 const STEEL = 'var(--text-tertiary)';
+/** Uniform height for the metric cards — content scrolls if it's longer. */
+const CARD_H = 270;
+
+type Period = 'today' | 'week' | 'month';
+const PERIODS: { k: Period; label: string; short: string }[] = [
+  { k: 'today', label: 'Today', short: 'today' },
+  { k: 'week', label: 'This week', short: '7d' },
+  { k: 'month', label: 'This month', short: '30d' },
+];
 
 function partOfDay(now: Date) {
   const h = now.getHours();
@@ -37,6 +51,7 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
   const { rows: mine } = useMyProperties();
   const { data: dash } = useBrokerDashboard();
   const [callStop, setCallStop] = useState<CallStop | null>(null);
+  const [period, setPeriod] = useState<Period>('today');
   const nowMs = useNow(60_000);
 
   const groups = useMemo(() => groupByOwner(mine), [mine]);
@@ -68,13 +83,21 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
 
   if (!user) return null;
 
+  const short = PERIODS.find(p => p.k === period)!.short;
+  const f = dash?.funnel?.[period] ?? { calls: 0, reached: 0, interested: 0, noAnswer: 0 };
+
   const callsToday = dash?.myCallsToday ?? 0;
+  const reachedToday = dash?.myReachedToday ?? 0;
   const interestedTotal = dash?.myInterested ?? 0;
   const myCallsTotal = dash?.myCalls ?? 0;
-  // The server gives lifetime calls and interested; the answer rate needs
-  // "reached", which is only meaningful over the same window — today's is what
-  // the broker can act on.
-  const reachedToday = dash?.myReachedToday ?? 0;
+
+  // The broker's own funnel: their list → the period's calling stages.
+  const funnelStages: FunnelStage[] = [
+    { label: 'My list', value: mine.length, color: 'var(--primary)' },
+    { label: `Called (${short})`, value: f.calls, color: STEEL },
+    { label: 'Reached', value: f.reached, color: 'var(--info)' },
+    { label: 'Interested', value: f.interested, color: 'var(--success)' },
+  ];
 
   const mineIn = (s: PropertyState) => mine.filter(p => p.state === s).length;
   const pipeline: Segment[] = [
@@ -112,17 +135,11 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
   };
 
   return (
-    <div style={{ maxWidth: 1500, margin: '0 auto' }}>
+    <div style={{ maxWidth: 1500, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
       {callStop && <CallDialog stop={callStop} onClose={() => setCallStop(null)} />}
       <HeroSlab
         title={`Good ${partOfDay(now)}, ${greetingName(user.name)}`}
         subtitle={fmtDate(now.toISOString())}
-        stats={[
-          { value: `${callsToday}`, label: 'calls today' },
-          { value: fmtInt(mine.length), label: 'on your list' },
-          { value: `${expiringSoon.length}`, label: 'expiring soon' },
-          { value: `${dueNext.length}`, label: 'due follow-ups' },
-        ]}
         actions={
           <>
             <SlabAction icon="table" label="Open database" onClick={() => onGo?.('today')} />
@@ -131,10 +148,29 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
         }
       />
 
-      <div style={{ height: 16 }} />
+      {/* The broker's own prospecting funnel — the screen's centrepiece. */}
+      <DashCard title="My prospecting funnel" icon="sparkles"
+        trailing={
+          <select className="input" style={{ width: 'auto', padding: '4px 8px' }} value={period} onChange={e => setPeriod(e.target.value as Period)}>
+            {PERIODS.map(p => <option key={p.k} value={p.k}>{p.label}</option>)}
+          </select>
+        }>
+        <Funnel stages={funnelStages} />
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 30px', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-light)' }}>
+          <StatTile value={fmtInt(f.noAnswer)} label={`no answer (${short})`} color={f.noAnswer ? 'var(--warning)' : undefined} />
+          <StatTile value={fmtInt(callable.length)} label="callable" />
+          <StatTile value={`${groups.length}`} label="owners" icon="user" />
+          <StatTile value={`${dueNext.length}`} label="due follow-ups" color={dueNext.length ? 'var(--info)' : undefined} />
+          <StatTile value={`${expiringSoon.length}`} label="expiring soon" color={expiringSoon.length ? 'var(--error)' : undefined} />
+          <StatTile value={fmtInt(dash?.poolAvailable ?? 0)} label="in pool" />
+          <StatTile value={`${dash?.myPendingRequests ?? 0}`} label="pending requests" />
+          <StatTile value={fmtInt(interestedTotal)} label="interested (all-time)" color={interestedTotal ? 'var(--success)' : undefined} />
+        </div>
+      </DashCard>
 
+      {/* Uniform grid of metric cards — all one height; content scrolls if longer. */}
       <DashColumns>
-        <DashCard title="Running out of time" icon="clock" flush
+        <DashCard title="Running out of time" icon="clock" flush height={CARD_H}
           trailing={<button className="btn btn-ghost btn-sm" onClick={() => onGo?.('today')}>Work list</button>}>
           {expiringSoon.length === 0 ? (
             <div style={{ padding: '4px 16px 12px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
@@ -142,7 +178,7 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
             </div>
           ) : (
             <>
-              {expiringSoon.slice(0, 6).map(({ p }, i) => (
+              {expiringSoon.map(({ p }, i) => (
                 <div key={p.id} onClick={() => openCall(p)} title={p.callable ? 'Call this owner now' : undefined}
                   style={{
                     display: 'flex', gap: 10, alignItems: 'center', padding: '9px 16px',
@@ -158,16 +194,12 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
                   <CountdownBadge deadline={p.assignmentExpiresAt} soonHours={vault.settings.expiringSoonHours} />
                 </div>
               ))}
-              {expiringSoon.length > 6 && (
-                <div style={{ padding: '8px 16px', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-                  +{expiringSoon.length - 6} more — call them before they return to the pool.
-                </div>
-              )}
             </>
           )}
         </DashCard>
 
-        <DashCard title="Your pipeline" icon="layers" trailing={<button className="btn btn-ghost btn-sm" onClick={() => onGo?.('today')}>Open</button>}>
+        <DashCard title="Your pipeline" icon="layers" height={CARD_H}
+          trailing={<button className="btn btn-ghost btn-sm" onClick={() => onGo?.('today')}>Open</button>}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 24px', marginBottom: 14 }}>
             <StatTile value={fmtInt(mine.length)} label="assigned" color="var(--primary)" />
             <StatTile value={`${groups.length}`} label="owners" />
@@ -176,17 +208,18 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
           <SegmentBar segments={pipeline} />
         </DashCard>
 
-        <DashCard title="You vs the team" icon="team">
+        <DashCard title="You vs the team" icon="team" height={CARD_H}>
           <ProgressLine label="Your interested" fraction={interestedTotal / teamMax} trailing={`${interestedTotal}`} color="var(--success)" />
           <ProgressLine label="Team average (calls)" fraction={teamAvg / Math.max(1, myCallsTotal, teamAvg)} trailing={`${teamAvg}`} color={STEEL} />
           <ProgressLine label="Your answer rate (today)" fraction={callsToday ? reachedToday / callsToday : 0}
             trailing={callsToday ? `${Math.round(reachedToday / callsToday * 100)}%` : '—'} color="var(--info)" />
         </DashCard>
 
-        <DashCard title="Due next" icon="clock" flush>
+        <DashCard title="Due next" icon="clock" flush height={CARD_H}
+          trailing={<button className="btn btn-ghost btn-sm" onClick={() => onGo?.('today')}>Open</button>}>
           {dueNext.length === 0 ? (
             <div style={{ padding: '4px 16px 12px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Nothing due right now.</div>
-          ) : dueNext.slice(0, 6).map((g, i) => (
+          ) : dueNext.map((g, i) => (
             <div key={g.key} style={{ display: 'flex', gap: 10, padding: '9px 16px', borderTop: i > 0 ? '1px solid var(--border-light)' : undefined }}>
               <Icon name="user" size={16} style={{ color: 'var(--text-secondary)', marginTop: 2 }} />
               <div style={{ minWidth: 0, flex: 1 }}>
@@ -197,7 +230,8 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
           ))}
         </DashCard>
 
-        <DashCard title="Pool snapshot" icon="layers" trailing={<button className="btn btn-ghost btn-sm" onClick={() => onGo?.('pool')}>Open</button>}>
+        <DashCard title="Pool snapshot" icon="layers" height={CARD_H}
+          trailing={<button className="btn btn-ghost btn-sm" onClick={() => onGo?.('pool')}>Open</button>}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 24px' }}>
             <StatTile value={fmtInt(dash?.poolAvailable ?? 0)} label="units in pool" />
             <StatTile value={`${dash?.myPendingRequests ?? 0}`} label="pending requests" />
@@ -207,7 +241,7 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
           </div>
         </DashCard>
 
-        <DashCard title="Coach's corner" icon="sparkles">
+        <DashCard title="Coach's corner" icon="sparkles" height={CARD_H}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {tips.map((t, i) => (
               <div key={i} style={{ display: 'flex', gap: 8, fontSize: '0.8125rem' }}>
