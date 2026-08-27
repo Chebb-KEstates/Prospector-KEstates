@@ -126,6 +126,18 @@ export interface PropertyQuery {
   outcome?: string; txFrom?: string; txTo?: string; callableOnly?: boolean;
   /** "Called within" window (UTC bounds), computed client-side from the chosen period. */
   calledFrom?: string; calledTo?: string;
+  /** Exact property type (Villa / Apartment / …). */
+  propertyType?: string;
+  /** Last-sale price band (AED), inclusive. */
+  valueFrom?: number; valueTo?: number;
+  /** Built-up area (sqft) band, inclusive. */
+  sizeFrom?: number; sizeTo?: number;
+  /** Plot area (sqft) band, inclusive. */
+  plotFrom?: number; plotTo?: number;
+  /** Follow-up: 'scheduled' (has one) or 'due' (scheduled and now due). */
+  followUp?: 'scheduled' | 'due';
+  /** Only units that carry a written note. */
+  hasNotes?: boolean;
   /** Follow-up due now or overdue — the broker's "Due follow-up" chip. */
   dueOnly?: boolean;
   /** Last outcome was interested (sell or rent) — the "Interested" chip. */
@@ -146,7 +158,8 @@ export interface Page<T> { rows: T[]; total: number; page: number; pageSize: num
 
 export interface PropertyFacets {
   communities: string[]; clusters: string[]; states: PropertyState[];
-  beds: number[]; nationalities: string[]; outcomes: CallOutcome[]; extraKeys: string[];
+  beds: number[]; nationalities: string[]; outcomes: CallOutcome[];
+  propertyTypes: string[]; extraKeys: string[];
 }
 
 /**

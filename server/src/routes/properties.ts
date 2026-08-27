@@ -53,6 +53,15 @@ const listQuerySchema = {
     calledFrom: { type: 'string', maxLength: 40 },
     calledTo: { type: 'string', maxLength: 40 },
     callableOnly: { type: 'boolean' },
+    propertyType: { type: 'string', maxLength: 128 },
+    valueFrom: { type: 'number', minimum: 0 },
+    valueTo: { type: 'number', minimum: 0 },
+    sizeFrom: { type: 'number', minimum: 0 },
+    sizeTo: { type: 'number', minimum: 0 },
+    plotFrom: { type: 'number', minimum: 0 },
+    plotTo: { type: 'number', minimum: 0 },
+    followUp: { type: 'string', enum: ['scheduled', 'due'] },
+    hasNotes: { type: 'boolean' },
     dueOnly: { type: 'boolean' },
     interestedOnly: { type: 'boolean' },
     expiringSoon: { type: 'boolean' },
@@ -76,6 +85,11 @@ interface ListQuery {
   state?: PropertyState | ''; beds?: number; nationality?: string;
   outcome?: string; txFrom?: string; txTo?: string; callableOnly?: boolean;
   calledFrom?: string; calledTo?: string;
+  propertyType?: string;
+  valueFrom?: number; valueTo?: number;
+  sizeFrom?: number; sizeTo?: number;
+  plotFrom?: number; plotTo?: number;
+  followUp?: 'scheduled' | 'due'; hasNotes?: boolean;
   dueOnly?: boolean; interestedOnly?: boolean; expiringSoon?: boolean;
   includeInactive?: boolean;
   tenancy?: 'vacant' | 'rented' | 'leaseSoon';
@@ -166,6 +180,15 @@ export default async function propertyRoutes(app: FastifyInstance) {
       calledFrom: q.calledFrom,
       calledTo: q.calledTo,
       callableOnly: q.callableOnly,
+      propertyType: q.propertyType,
+      valueFrom: q.valueFrom,
+      valueTo: q.valueTo,
+      sizeFrom: q.sizeFrom,
+      sizeTo: q.sizeTo,
+      plotFrom: q.plotFrom,
+      plotTo: q.plotTo,
+      followUp: q.followUp,
+      hasNotes: q.hasNotes,
       dueOnly: q.dueOnly,
       interestedOnly: q.interestedOnly,
       expiringSoon: q.expiringSoon,

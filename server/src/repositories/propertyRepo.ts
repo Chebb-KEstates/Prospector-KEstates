@@ -333,6 +333,21 @@ export interface PropertyFilter {
    */
   calledFrom?: string;
   calledTo?: string;
+  /** Exact property type (Villa / Apartment / …). */
+  propertyType?: string;
+  /** Last-sale price band (AED), inclusive. */
+  valueFrom?: number;
+  valueTo?: number;
+  /** Built-up area (sqft) band, inclusive. */
+  sizeFrom?: number;
+  sizeTo?: number;
+  /** Plot area (sqft) band, inclusive. */
+  plotFrom?: number;
+  plotTo?: number;
+  /** Follow-up state: 'scheduled' (has one) or 'due' (scheduled and now due). */
+  followUp?: 'scheduled' | 'due';
+  /** Only units that carry a written note. */
+  hasNotes?: boolean;
 }
 
 export interface PropertyQuery extends PropertyFilter {
@@ -363,6 +378,10 @@ const SORTABLE: Record<string, string> = {
   calledAt: 'last_called_at',
   followUp: 'next_follow_up_at',
   state: 'state',
+  nationality: 'LOWER(owner_nationality)',
+  attempts: 'call_attempts',
+  assignedAt: 'assigned_at',
+  createdAt: 'created_at',
 };
 
 /**
@@ -492,6 +511,26 @@ function buildWhere(f: PropertyFilter): { sql: string; params: unknown[] } {
     if (!isNaN(d.getTime())) { where.push('last_called_at < ?'); params.push(d); }
   }
 
+  if (f.propertyType) { where.push('property_type = ?'); params.push(f.propertyType); }
+
+  // Numeric bands — last-sale price, built-up area, plot area. Each end is
+  // optional so "from 1M with no ceiling" works. NaN guards keep a stray value
+  // out of the SQL.
+  const band = (col: string, from?: number, to?: number) => {
+    if (from != null && !isNaN(from)) { where.push(`${col} >= ?`); params.push(from); }
+    if (to != null && !isNaN(to)) { where.push(`${col} <= ?`); params.push(to); }
+  };
+  band('last_transaction_value', f.valueFrom, f.valueTo);
+  band('size_sqft', f.sizeFrom, f.sizeTo);
+  band('plot_sqft', f.plotFrom, f.plotTo);
+
+  // Follow-up. UTC_TIMESTAMP for "due", matching dueOnly above (the column is
+  // written as UTC).
+  if (f.followUp === 'scheduled') where.push('next_follow_up_at IS NOT NULL');
+  else if (f.followUp === 'due') where.push('next_follow_up_at IS NOT NULL AND next_follow_up_at <= UTC_TIMESTAMP(3)');
+
+  if (f.hasNotes) where.push("notes IS NOT NULL AND notes <> ''");
+
   if (f.search && f.search.trim().length > 0) {
     // Substring match over the same haystack the client concatenated. LIKE
     // '%q%' cannot use an index, but it is what preserves the existing
@@ -564,6 +603,7 @@ export interface PropertyFacets {
   beds: number[];
   nationalities: string[];
   outcomes: CallOutcome[];
+  propertyTypes: string[];
   extraKeys: string[];
 }
 
@@ -589,7 +629,7 @@ export async function propertyFacets(f: PropertyFilter): Promise<PropertyFacets>
     ? buildWhere({ ...scope, community: f.community })
     : { sql, params };
 
-  const [communities, states, beds, nationalities, outcomes] = await Promise.all([
+  const [communities, states, beds, nationalities, outcomes, propertyTypes] = await Promise.all([
     one('community'),
     pool.query<Row[]>(`SELECT DISTINCT state AS v FROM properties WHERE ${sql}`, params)
       .then(([r]) => r.map(x => x.v as PropertyState)),
@@ -600,6 +640,7 @@ export async function propertyFacets(f: PropertyFilter): Promise<PropertyFacets>
     pool.query<Row[]>(
       `SELECT DISTINCT last_outcome AS v FROM properties WHERE ${sql} AND last_outcome IS NOT NULL`, params)
       .then(([r]) => r.map(x => x.v as CallOutcome)),
+    one('property_type'),
   ]);
 
   const [clusterRows] = await pool.query<Row[]>(
@@ -628,6 +669,7 @@ export async function propertyFacets(f: PropertyFilter): Promise<PropertyFacets>
     beds,
     nationalities: nationalities.map(String),
     outcomes,
+    propertyTypes: propertyTypes.map(String),
     extraKeys: Array.from(extraKeys).sort(),
   };
 }

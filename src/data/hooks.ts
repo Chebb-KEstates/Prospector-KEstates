@@ -341,7 +341,7 @@ export function usePropertyCalls(propertyId?: string) {
 /** Stable empty defaults, so callers can destructure without null checks. */
 export const EMPTY_PROPERTY_FACETS: api.PropertyFacets = {
   communities: [], clusters: [], states: [], beds: [],
-  nationalities: [], outcomes: [], extraKeys: [],
+  nationalities: [], outcomes: [], propertyTypes: [], extraKeys: [],
 };
 
 export const EMPTY_LEAD_FACETS: api.LeadFacets = {

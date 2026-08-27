@@ -273,6 +273,38 @@ test('countStalePortfolio measures the stale window in UTC', async () => {
     'only the unit past the window counts as stale');
 });
 
+test('new filters: property type, price/size bands, follow-up and notes', async () => {
+  await wipe();
+  const a = makeProperty({ unitNumber: '1001' });
+  a.propertyType = 'Villa'; a.sizeSqft = 3000; a.lastTransactionValue = 5_000_000;
+  a.nextFollowUpAt = new Date(Date.now() + 86400_000).toISOString();
+  const b = makeProperty({ unitNumber: '1002' });
+  b.propertyType = 'Apartment'; b.sizeSqft = 900; b.lastTransactionValue = 1_200_000;
+  await saveProperties([a, b]);
+  // Notes are written by the popup's own path (updateNotes), not the bulk import
+  // upsert — so set it directly to exercise the has-notes filter.
+  await pool.query('UPDATE properties SET notes = ? WHERE id = ?', ['Owner keen to sell', a.id]);
+
+  const villas = await queryProperties({ propertyType: 'Villa', limit: 50, offset: 0 });
+  assert.equal(villas.total, 1); assert.equal(villas.rows[0].id, a.id);
+
+  const pricey = await queryProperties({ valueFrom: 2_000_000, limit: 50, offset: 0 });
+  assert.equal(pricey.total, 1, 'price band lower bound'); assert.equal(pricey.rows[0].id, a.id);
+
+  const small = await queryProperties({ sizeTo: 1000, limit: 50, offset: 0 });
+  assert.equal(small.total, 1, 'size band upper bound'); assert.equal(small.rows[0].id, b.id);
+
+  const noted = await queryProperties({ hasNotes: true, limit: 50, offset: 0 });
+  assert.equal(noted.total, 1, 'has-notes'); assert.equal(noted.rows[0].id, a.id);
+
+  const scheduled = await queryProperties({ followUp: 'scheduled', limit: 50, offset: 0 });
+  assert.equal(scheduled.total, 1, 'follow-up scheduled'); assert.equal(scheduled.rows[0].id, a.id);
+
+  const f = await propertyFacets({});
+  assert.deepEqual(f.propertyTypes.slice().sort(), ['Apartment', 'Villa'],
+    'property_type surfaces as a facet');
+});
+
 test.after(async () => {
   await wipe();
   await closePool();

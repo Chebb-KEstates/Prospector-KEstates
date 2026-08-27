@@ -18,6 +18,35 @@ for what each part means for Prospector.
 
 ---
 
+## [3.7.0] — 2026-08-27
+
+Widened what the data tables can show and filter on — every field added here was
+already stored, just not surfaced.
+
+### Added
+- **New filters** (in the Filters popover, all tables, manager and broker):
+  - **Property type** — filter to Villa / Apartment / Townhouse… (you could already
+    see and sort the Type column, but not filter by it).
+  - **Last-sale price (AED)** — a min–max band, so "last sold 2–5M" is one query
+    (previously "Purchased between" filtered by date only).
+  - **Size (BUA, sqft)** and **Plot size (sqft)** — min–max bands.
+  - **Follow-up** — has a follow-up scheduled, or one due now (managers previously
+    had no follow-up filter; brokers keep their quick chip).
+  - **Has a note** — only units someone's written a note on.
+- **New columns** (opt-in via the Columns picker; defaults unchanged):
+  - **Nationality** — you could filter by it but not see it in a column.
+  - **Attempts** — how many times the owner's been called.
+  - **Assigned on** — when the unit went to its current broker.
+  - **Added** — when the record entered the vault.
+  - **Notes** — shows the note text (truncated, full text on hover); hidden in the
+    broker pool teaser like the other owner columns.
+- Server: `/api/properties` gained the matching filters and a `property_type`
+  facet; the new columns are sortable. No schema or data change.
+
+No migration — deploy is pull + rebuild + restart.
+
+---
+
 ## [3.6.1] — 2026-08-26
 
 ### Changed

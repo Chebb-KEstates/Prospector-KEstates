@@ -86,6 +86,12 @@ function baseCols(soonHours: number): ColDef[] {
         );
       },
     },
+    {
+      key: 'nationality', label: 'Nationality', flex: 2, ownerData: true, sortable: true,
+      render: p => p.owner.nationality
+        ? <span style={{ color: 'var(--text-secondary)' }}>{p.owner.nationality}</span>
+        : <span style={{ color: 'var(--text-tertiary)' }}>—</span>,
+    },
     { key: 'beds', label: 'Beds', flex: 1, numeric: true, sortable: true, render: p => p.beds ?? '—' },
     { key: 'size', label: 'Size (BUA)', flex: 2, numeric: true, sortable: true, render: p => fmtArea(p.sizeSqft) },
     { key: 'plotSize', label: 'Plot size', flex: 2, numeric: true, sortable: true, render: p => fmtArea(p.plotSqft) },
@@ -105,6 +111,17 @@ function baseCols(soonHours: number): ColDef[] {
     { key: 'outcome', label: 'Outcome', flex: 2, sortable: true, render: p => p.lastOutcome ? <OutcomeChip outcome={p.lastOutcome} /> : <span style={{ color: 'var(--text-tertiary)' }}>—</span> },
     { key: 'calledAt', label: 'Last call', flex: 2, sortable: true, render: p => <span style={{ color: 'var(--text-secondary)' }}>{fmtDateTime(p.lastCalledAt)}</span> },
     { key: 'followUp', label: 'Follow-up', flex: 2, sortable: true, render: p => <span style={{ color: 'var(--text-secondary)' }}>{fmtDate(p.nextFollowUpAt)}</span> },
+    { key: 'attempts', label: 'Attempts', flex: 1, numeric: true, sortable: true, render: p => p.callAttempts || <span style={{ color: 'var(--text-tertiary)' }}>—</span> },
+    { key: 'assignedAt', label: 'Assigned on', flex: 2, sortable: true, render: p => <span style={{ color: 'var(--text-secondary)' }}>{fmtDate(p.assignedAt)}</span> },
+    { key: 'createdAt', label: 'Added', flex: 2, sortable: true, render: p => <span style={{ color: 'var(--text-secondary)' }}>{fmtDate(p.createdAt)}</span> },
+    {
+      // Broker/manager notes can name the owner, so this rides with the owner
+      // columns — hidden in the teaser/hide-owner views like the rest.
+      key: 'notes', label: 'Notes', flex: 3, ownerData: true,
+      render: p => p.notes
+        ? <span className="truncate" title={p.notes} style={{ color: 'var(--text-secondary)' }}>{p.notes}</span>
+        : <span style={{ color: 'var(--text-tertiary)' }}>—</span>,
+    },
     {
       key: 'state', label: 'State', flex: 2, sortable: true,
       // The assignment timer rides alongside the state so a manager scanning the
@@ -185,6 +202,20 @@ function FilterField({ label, children }: { label: string; children: React.React
   );
 }
 
+/** A min–max pair of number inputs — the price / size / plot bands. */
+function NumberRange({ from, to, setFrom, setTo }: {
+  from: string; to: string; setFrom: (v: string) => void; setTo: (v: string) => void;
+}) {
+  const box = { flex: 1, minWidth: 0, padding: '5px 8px' } as React.CSSProperties;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <input className="input" type="number" min={0} placeholder="Min" style={box} value={from} onChange={e => setFrom(e.target.value)} />
+      <span style={{ color: 'var(--text-tertiary)' }}>–</span>
+      <input className="input" type="number" min={0} placeholder="Max" style={box} value={to} onChange={e => setTo(e.target.value)} />
+    </div>
+  );
+}
+
 type CalledPeriod = '' | 'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'thisMonth' | 'lastMonth';
 const CALLED_PERIODS: { key: CalledPeriod; label: string }[] = [
   { key: '', label: 'Called: any time' },
@@ -253,6 +284,15 @@ export function PropertyTable({
   const [callableOnly, setCallableOnly] = useState(false);
   const [tenancy, setTenancy] = useState<'' | 'vacant' | 'rented' | 'leaseSoon'>('');
   const [calledPeriod, setCalledPeriod] = useState<CalledPeriod>('');
+  const [propertyType, setPropertyType] = useState('');
+  const [valueFrom, setValueFrom] = useState('');
+  const [valueTo, setValueTo] = useState('');
+  const [sizeFrom, setSizeFrom] = useState('');
+  const [sizeTo, setSizeTo] = useState('');
+  const [plotFrom, setPlotFrom] = useState('');
+  const [plotTo, setPlotTo] = useState('');
+  const [followUp, setFollowUp] = useState<'' | 'scheduled' | 'due'>('');
+  const [hasNotes, setHasNotes] = useState(false);
   const [assigneeFilter, setAssigneeFilter] = useState('');
   const [sortKey, setSortKey] = useState<ColKey>(PINNED);
   const [asc, setAsc] = useState(true);
@@ -266,6 +306,8 @@ export function PropertyTable({
   );
 
   const called = calledRange(calledPeriod);
+  // Blank / non-numeric text → undefined, so an empty band end drops out of the query.
+  const num = (s: string) => { const n = parseFloat(s); return s.trim() && !isNaN(n) ? n : undefined; };
   const query = useMemo(() => ({
     scope,
     // A fixed `assignedTo` (broker views) wins; otherwise the manager's
@@ -289,13 +331,24 @@ export function PropertyTable({
     tenancy: tenancy || undefined,
     calledFrom: called.from,
     calledTo: called.to,
+    propertyType: propertyType || undefined,
+    valueFrom: num(valueFrom),
+    valueTo: num(valueTo),
+    sizeFrom: num(sizeFrom),
+    sizeTo: num(sizeTo),
+    plotFrom: num(plotFrom),
+    plotTo: num(plotTo),
+    followUp: followUp || undefined,
+    hasNotes: hasNotes || undefined,
     sortKey: sortKey === PINNED ? undefined : sortKey,
     asc,
     page,
     pageSize,
   }), [scope, assignedTo, assigneeFilter, datasetId, search, community, cluster, fixedState, state,
        beds, nationality, outcome, forcedOutcome, dueOnly, interestedOnly, expiringSoon, includeInactive,
-       txFrom, txTo, callableOnly, tenancy, called.from, called.to, sortKey, asc, page, pageSize]);
+       txFrom, txTo, callableOnly, tenancy, called.from, called.to,
+       propertyType, valueFrom, valueTo, sizeFrom, sizeTo, plotFrom, plotTo, followUp, hasNotes,
+       sortKey, asc, page, pageSize]);
 
   const { rows, total, loading, initialLoading, error } = usePropertyPage(query);
 
@@ -367,11 +420,14 @@ export function PropertyTable({
   const { order, setOrder, visible, setVisible, persist, reset, visibleCols, loaded } =
     useTableLayout(available, defaultVisible, prefsKey);
 
-  const anyFilter = search.trim() || community || cluster || state || beds || nationality || outcome || txFrom || txTo || callableOnly || tenancy || calledPeriod || assigneeFilter;
+  const anyFilter = search.trim() || community || cluster || state || beds || nationality || outcome || txFrom || txTo || callableOnly || tenancy || calledPeriod || assigneeFilter
+    || propertyType || valueFrom || valueTo || sizeFrom || sizeTo || plotFrom || plotTo || followUp || hasNotes;
   const clearFilters = () => {
     setSearch(''); setCommunity(''); setCluster(''); setState(''); setBeds('');
     setNationality(''); setOutcome(''); setTxFrom(''); setTxTo('');
-    setCallableOnly(false); setTenancy(''); setCalledPeriod(''); setAssigneeFilter(''); setPage(0);
+    setCallableOnly(false); setTenancy(''); setCalledPeriod(''); setAssigneeFilter('');
+    setPropertyType(''); setValueFrom(''); setValueTo(''); setSizeFrom(''); setSizeTo('');
+    setPlotFrom(''); setPlotTo(''); setFollowUp(''); setHasNotes(false); setPage(0);
   };
 
   // Any filter change must reset to page 0 — otherwise you can be stranded on
@@ -379,13 +435,17 @@ export function PropertyTable({
   // switching a quick chip also returns to the first page.
   useEffect(() => { setPage(0); },
     [search, community, cluster, state, beds, nationality, outcome, txFrom, txTo,
-     callableOnly, tenancy, calledPeriod, assigneeFilter, pageSize, sortKey, asc, forcedOutcome, dueOnly, interestedOnly, scope]);
+     callableOnly, tenancy, calledPeriod, assigneeFilter,
+     propertyType, valueFrom, valueTo, sizeFrom, sizeTo, plotFrom, plotTo, followUp, hasNotes,
+     pageSize, sortKey, asc, forcedOutcome, dueOnly, interestedOnly, scope]);
 
   // Notify the owner on FILTER changes (not sort / page size) so a stale
   // multi-select can be cleared when the visible set changes.
   useEffect(() => { onFiltersChange?.(); },
     [search, community, cluster, state, beds, nationality, outcome, txFrom, txTo,
-     callableOnly, tenancy, calledPeriod, assigneeFilter, onFiltersChange]);
+     callableOnly, tenancy, calledPeriod, assigneeFilter,
+     propertyType, valueFrom, valueTo, sizeFrom, sizeTo, plotFrom, plotTo, followUp, hasNotes,
+     onFiltersChange]);
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const pg = Math.min(page, pages - 1);
@@ -429,7 +489,9 @@ export function PropertyTable({
   const secondaryCount =
     (community ? 1 : 0) + (cluster ? 1 : 0) + (beds ? 1 : 0) + (nationality ? 1 : 0) +
     (outcome ? 1 : 0) + (assigneeFilter ? 1 : 0) + (tenancy ? 1 : 0) + (calledPeriod ? 1 : 0) +
-    ((txFrom || txTo) ? 1 : 0) + (callableOnly ? 1 : 0);
+    ((txFrom || txTo) ? 1 : 0) + (callableOnly ? 1 : 0) + (propertyType ? 1 : 0) +
+    ((valueFrom || valueTo) ? 1 : 0) + ((sizeFrom || sizeTo) ? 1 : 0) + ((plotFrom || plotTo) ? 1 : 0) +
+    (followUp ? 1 : 0) + (hasNotes ? 1 : 0);
 
   return (
     <div>
@@ -499,6 +561,19 @@ export function PropertyTable({
                     </select>
                   </FilterField>
                 )}
+                {facets.propertyTypes.length > 0 && (
+                  <FilterField label="Property type">
+                    <select className="input" style={selFull} value={propertyType} onChange={e => setPropertyType(e.target.value)}>
+                      <option value="">Any type</option>{facets.propertyTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </FilterField>
+                )}
+                <FilterField label="Size (BUA, sqft)">
+                  <NumberRange from={sizeFrom} to={sizeTo} setFrom={setSizeFrom} setTo={setSizeTo} />
+                </FilterField>
+                <FilterField label="Plot size (sqft)">
+                  <NumberRange from={plotFrom} to={plotTo} setFrom={setPlotFrom} setTo={setPlotTo} />
+                </FilterField>
                 {!teaser && facets.nationalities.length > 0 && (
                   <FilterField label="Nationality">
                     <select className="input" style={selFull} value={nationality} onChange={e => setNationality(e.target.value)}>
@@ -534,6 +609,13 @@ export function PropertyTable({
                     {CALLED_PERIODS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
                   </select>
                 </FilterField>
+                <FilterField label="Follow-up">
+                  <select className="input" style={selFull} value={followUp} onChange={e => setFollowUp(e.target.value as typeof followUp)}>
+                    <option value="">Any follow-up</option>
+                    <option value="scheduled">Has a follow-up scheduled</option>
+                    <option value="due">Follow-up due now</option>
+                  </select>
+                </FilterField>
                 <FilterField label="Purchased between">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <input className="input" type="date" style={{ flex: 1, minWidth: 0, padding: '5px 8px' }} value={txFrom} onChange={e => setTxFrom(e.target.value)} />
@@ -541,9 +623,16 @@ export function PropertyTable({
                     <input className="input" type="date" style={{ flex: 1, minWidth: 0, padding: '5px 8px' }} value={txTo} onChange={e => setTxTo(e.target.value)} />
                   </div>
                 </FilterField>
+                <FilterField label="Last-sale price (AED)">
+                  <NumberRange from={valueFrom} to={valueTo} setFrom={setValueFrom} setTo={setValueTo} />
+                </FilterField>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', cursor: 'pointer', marginTop: 2 }}>
                   <input type="checkbox" checked={callableOnly} onChange={() => setCallableOnly(v => !v)} />
                   Callable only (has a number)
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={hasNotes} onChange={() => setHasNotes(v => !v)} />
+                  Has a note
                 </label>
                 {anyFilter && (
                   <button className="btn btn-sm btn-ghost" onClick={() => { clearFilters(); setShowFilters(false); }} style={{ alignSelf: 'flex-start', marginTop: 2 }}>
