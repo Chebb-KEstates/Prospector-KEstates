@@ -4,6 +4,7 @@ import { pool, closePool } from '../src/db/pool';
 import {
   saveProperties, queryProperties, findByUnitKeys, findByOwnerKey,
   countByState, countCallable, propertyFacets, toProperty, countStalePortfolio,
+  callableCoverageByBroker, followUpsDueByBroker,
 } from '../src/repositories/propertyRepo';
 import { Property, OwnerInfo, PropertyState, kOrgId } from '../../src/types/models';
 import { ownerKeyOf } from '../../src/logic/ownerGrouping';
@@ -303,6 +304,27 @@ test('new filters: property type, price/size bands, follow-up and notes', async 
   const f = await propertyFacets({});
   assert.deepEqual(f.propertyTypes.slice().sort(), ['Apartment', 'Villa'],
     'property_type surfaces as a facet');
+});
+
+test('Report per-broker coverage and follow-ups group correctly', async () => {
+  await wipe();
+  const a = makeProperty({ unitNumber: '1101', phone: '971500000010' }); // callable, called
+  const b = makeProperty({ unitNumber: '1102', phone: '971500000011' }); // callable, follow-up due
+  const c = makeProperty({ unitNumber: '1103' });                        // not callable (no phone)
+  await saveProperties([a, b, c]);
+  await pool.query(
+    `UPDATE properties SET assigned_to = 'u-director', state = 'assigned' WHERE id IN (?, ?, ?)`,
+    [a.id, b.id, c.id],
+  );
+  await pool.query('UPDATE properties SET last_called_at = UTC_TIMESTAMP(3) WHERE id = ?', [a.id]);
+  await pool.query('UPDATE properties SET next_follow_up_at = (UTC_TIMESTAMP(3) - INTERVAL 1 HOUR) WHERE id = ?', [b.id]);
+
+  const cov = await callableCoverageByBroker();
+  assert.deepEqual(cov.get('u-director'), { callable: 2, worked: 1 },
+    'coverage counts callable held units and how many have been called');
+
+  const fu = await followUpsDueByBroker();
+  assert.equal(fu.get('u-director'), 1, 'only the unit with a past-due follow-up counts');
 });
 
 test.after(async () => {

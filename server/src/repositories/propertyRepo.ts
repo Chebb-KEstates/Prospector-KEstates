@@ -777,6 +777,42 @@ export async function assignedCountByBroker(): Promise<Map<string, number>> {
 }
 
 /** Held units per broker, split by state — the Team screen's two columns. */
+/**
+ * Per-broker book coverage: of the callable units a broker currently holds
+ * (assigned/portfolio), how many have actually been called. Feeds the Report's
+ * "Coverage %" column — a snapshot of the current book, not a windowed figure.
+ */
+export async function callableCoverageByBroker(): Promise<Map<string, { callable: number; worked: number }>> {
+  const [rows] = await pool.query<Row[]>(
+    `SELECT assigned_to,
+            SUM(callable = 1) AS callable,
+            SUM(callable = 1 AND last_called_at IS NOT NULL) AS worked
+     FROM properties
+     WHERE org_id = ? AND assigned_to IS NOT NULL AND state IN ('assigned', 'portfolio')
+     GROUP BY assigned_to`,
+    [kOrgId],
+  );
+  return new Map(rows.map(r => [r.assigned_to as string, {
+    callable: Number(r.callable ?? 0),
+    worked: Number(r.worked ?? 0),
+  }]));
+}
+
+/**
+ * Per-broker follow-ups due now — held units whose next_follow_up_at has passed.
+ * UTC_TIMESTAMP because the column is written as UTC (see the dueOnly filter).
+ */
+export async function followUpsDueByBroker(): Promise<Map<string, number>> {
+  const [rows] = await pool.query<Row[]>(
+    `SELECT assigned_to, COUNT(*) AS n FROM properties
+     WHERE org_id = ? AND assigned_to IS NOT NULL AND state IN ('assigned', 'portfolio')
+       AND next_follow_up_at IS NOT NULL AND next_follow_up_at <= UTC_TIMESTAMP(3)
+     GROUP BY assigned_to`,
+    [kOrgId],
+  );
+  return new Map(rows.map(r => [r.assigned_to as string, Number(r.n)]));
+}
+
 export async function heldByBrokerAndState(): Promise<Map<string, { assigned: number; portfolio: number }>> {
   const [rows] = await pool.query<Row[]>(
     `SELECT assigned_to, state, COUNT(*) AS n FROM properties

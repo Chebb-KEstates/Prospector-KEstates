@@ -5,6 +5,7 @@ import {
   countByState, countCallable, countTotal, listCommunities,
   countDistinctOwners, countStalePortfolio, countExpiringSoon,
   assignedCountByBroker, workedByDataset, heldByBrokerAndState, countCallableWorked,
+  callableCoverageByBroker, followUpsDueByBroker,
 } from '../repositories/propertyRepo';
 import { countLeadsByState, countLeadsTotal } from '../repositories/leadRepo';
 import {
@@ -173,15 +174,26 @@ export default async function dashboardRoutes(app: FastifyInstance) {
    */
   app.get('/api/dashboard/team', {
     preHandler: [app.authenticate, app.requirePermission(Permission.viewReports)],
-  }, async () => {
-    const now = Date.now();
-    const last7d = new Date(now - 7 * 24 * 3600_000);
-    const last24h = new Date(now - 24 * 3600_000);
-    const soon = new Date(now + 60_000);
+    schema: {
+      querystring: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          // Report date range for the per-broker CALL columns (attempts, answered,
+          // interested, rates). ISO bounds, [from, to). Omit both for all-time.
+          from: { type: 'string', maxLength: 40 },
+          to: { type: 'string', maxLength: 40 },
+        },
+      },
+    },
+  }, async (req) => {
+    const { from: fromISO, to: toISO } = req.query as { from?: string; to?: string };
+    const from = fromISO ? new Date(fromISO) : undefined;
+    const to = toISO ? new Date(toISO) : undefined;
+    const ranged = !!(from && !isNaN(from.getTime()) && to && !isNaN(to.getTime()));
 
     const [
       users, stats, held, datasets, totalProperties, callable, callableWorked, lifetime,
-      by7d, by24h, dsStats, matrix,
+      windowStats, coverage, followUps, dsStats, matrix,
     ] = await Promise.all([
       listUsers(),
       brokerCallStats(),
@@ -191,8 +203,11 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       countCallable(),
       countCallableWorked(),
       lifetimeStats(),
-      brokerStatsBetween(last7d, soon),
-      brokerStatsBetween(last24h, soon),
+      // Windowed per-broker call stats when a range is given; otherwise all-time
+      // comes from `stats` (brokerCallStats) below, so this stays empty.
+      ranged ? brokerStatsBetween(from!, to!) : Promise.resolve(new Map()),
+      callableCoverageByBroker(),
+      followUpsDueByBroker(),
       datasetBreakdown(),
       assignmentMatrix(),
     ]);
@@ -229,19 +244,30 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       brokers: users.filter(u => !u.isManager && u.active).map(b => {
         const s = statsById.get(b.id);
         const h = held.get(b.id) ?? { assigned: 0, portfolio: 0 };
+        // Call columns follow the selected range when one is given; otherwise
+        // they're the broker's all-time totals. `lastAt` is always all-time — an
+        // "is this broker still active" recency signal, not a windowed figure.
+        const w = ranged ? windowStats.get(b.id) : undefined;
+        const calls = ranged ? (w?.calls ?? 0) : (s?.calls ?? 0);
+        const reached = ranged ? (w?.reached ?? 0) : (s?.reached ?? 0);
+        const interested = ranged ? (w?.interested ?? 0) : (s?.interested ?? 0);
+        const cov = coverage.get(b.id) ?? { callable: 0, worked: 0 };
         return {
           id: b.id,
           name: b.name,
           team: b.team,
           assigned: h.assigned,
           portfolio: h.portfolio,
-          calls: s?.calls ?? 0,
-          calls7d: by7d.get(b.id)?.calls ?? 0,
-          calls24h: by24h.get(b.id)?.calls ?? 0,
-          reached: s?.reached ?? 0,
-          interested: s?.interested ?? 0,
-          noAnswer: s?.noAnswer ?? 0,
+          calls,
+          reached,
+          interested,
+          // No answer = attempts that didn't connect (no-answer + unreachable),
+          // so Answered + No answer always reconciles to attempts.
+          noAnswer: Math.max(0, calls - reached),
           lastAt: s?.lastAt,
+          callableAssigned: cov.callable,
+          callableWorked: cov.worked,
+          followUpsDue: followUps.get(b.id) ?? 0,
           datasets: (brokerHoldings.get(b.id) ?? []).slice().sort(byUnits),
         };
       }),

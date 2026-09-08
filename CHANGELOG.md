@@ -18,6 +18,36 @@ for what each part means for Prospector.
 
 ---
 
+## [3.8.0] — 2026-09-08
+
+Made the manager Report date-range aware and reworked the broker columns.
+
+### Added
+- **Date-range selector on the Report** (Today / Yesterday / Last 7 days /
+  Last 30 days / Custom range / All time, default Last 30 days). The broker
+  table's **call columns follow the selected range**; assignment & coverage
+  columns stay a snapshot of the current book (the app keeps no history of who
+  held what on a past date), and the data-set table + Data-ROI are all-time —
+  each section is labelled so the timeframe is never ambiguous.
+- **Four new broker columns** (show/hide + reorderable, hidden by default):
+  **Coverage %** (of a broker's callable held units, how many they've called),
+  **Follow-ups due**, **Days since last call**, and **Calls/day** (in range).
+- Server: `/api/dashboard/team` accepts `from`/`to`; new per-broker
+  `callableCoverageByBroker` and `followUpsDueByBroker` queries.
+
+### Changed
+- The broker table's default columns are now **Data assigned, Assigned,
+  Total call attempts, No answer, Answered, Interested, Answer rate,
+  Interested rate, Last call** (in that order). "Reached" is relabelled
+  **Answered**, "Calls" is **Total call attempts**, and **No answer** is now
+  attempts − answered so the two reconcile.
+- Removed the fixed **Calls 7d / Calls 24h** columns — the range selector
+  supersedes them, and mixing timeframes in one row was confusing.
+
+No schema change / no migration — pull + rebuild + restart.
+
+---
+
 ## [3.7.0] — 2026-08-27
 
 Widened what the data tables can show and filter on — every field added here was

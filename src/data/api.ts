@@ -508,9 +508,16 @@ export interface Holding { name: string; units: number; }
 export interface TeamBrokerRow {
   id: string; name: string; team: string;
   assigned: number; portfolio: number;
-  calls: number; calls7d: number; calls24h: number;
+  /** Call columns reflect the Report's selected range (all-time when none set). */
+  calls: number;
   reached: number; interested: number; noAnswer: number;
   lastAt?: string;
+  /** Coverage: of the broker's callable held units, how many have been called.
+   *  A snapshot of the current book (not range-dependent). */
+  callableAssigned: number;
+  callableWorked: number;
+  /** Held units whose follow-up is due now (snapshot). */
+  followUpsDue: number;
   /** Data sets this broker currently holds units of (biggest first). */
   datasets: Holding[];
 }
@@ -547,7 +554,9 @@ export const dashboard = {
     get<ManagerDashboard>('/api/dashboard/manager', { days, tzOffsetMinutes: tzOffsetMinutes() }),
   broker: () =>
     get<BrokerDashboard>('/api/dashboard/broker', { tzOffsetMinutes: tzOffsetMinutes() }),
-  team: () => get<TeamDashboard>('/api/dashboard/team'),
+  /** `range` scopes the per-broker call columns; omit for all-time. */
+  team: (range?: { from?: string; to?: string }) =>
+    get<TeamDashboard>('/api/dashboard/team', { from: range?.from, to: range?.to }),
 };
 
 // ── Imports ────────────────────────────────────────────────────────────────

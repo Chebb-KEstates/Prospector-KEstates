@@ -270,18 +270,20 @@ export function useManagerDashboard(days = 14) {
   return { data, loading, error };
 }
 
-export function useTeamDashboard() {
+export function useTeamDashboard(range?: { from?: string; to?: string }) {
   const { revision } = useVault();
   const [data, setData] = useState<api.TeamDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const from = range?.from;
+  const to = range?.to;
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     void (async () => {
       try {
-        const d = await api.dashboard.team();
+        const d = await api.dashboard.team({ from, to });
         if (!cancelled) { setData(d); setError(null); }
       } catch (err) {
         if (!cancelled && !(err instanceof ApiError && err.isAuth)) {
@@ -292,7 +294,7 @@ export function useTeamDashboard() {
       }
     })();
     return () => { cancelled = true; };
-  }, [revision]);
+  }, [revision, from, to]);
 
   return { data, loading, error };
 }
