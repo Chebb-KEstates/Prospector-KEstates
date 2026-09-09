@@ -154,6 +154,8 @@ export interface ActivityRow {
   /** Readable unit (community · cluster · #unit); "+N more" when several. */
   unitLabel?: string;
   unitCount: number;
+  /** First linked property that still exists — lets the log open its detail. */
+  propertyId?: string;
   note?: string;
   /** The owner's number, MASKED (••••1234) — never the real number. */
   numberMasked?: string;
@@ -289,13 +291,15 @@ export async function listActivity(q: ActivityQuery): Promise<ActivityPage> {
     }
   }
 
-  const labelFor = (propIds: string[]): { unitLabel?: string; unitCount: number } => {
-    const infos = propIds.map(id => propInfo.get(id)).filter(Boolean) as { label: string }[];
-    if (infos.length === 0) return { unitLabel: undefined, unitCount: propIds.length };
-    const first = infos[0].label;
+  const labelFor = (propIds: string[]): { unitLabel?: string; unitCount: number; propertyId?: string } => {
+    // Only properties that still exist resolve — a deleted unit can't be opened.
+    const resolved = propIds.filter(id => propInfo.has(id));
+    if (resolved.length === 0) return { unitLabel: undefined, unitCount: propIds.length, propertyId: undefined };
+    const first = propInfo.get(resolved[0])!.label;
     return {
-      unitLabel: infos.length > 1 ? `${first} +${infos.length - 1} more` : first,
-      unitCount: infos.length,
+      unitLabel: resolved.length > 1 ? `${first} +${resolved.length - 1} more` : first,
+      unitCount: resolved.length,
+      propertyId: resolved[0],
     };
   };
 
@@ -306,14 +310,14 @@ export async function listActivity(q: ActivityQuery): Promise<ActivityPage> {
 
     if (r.src === 'call') {
       const propIds = callUnits.get(id) ?? [];
-      const { unitLabel, unitCount } = labelFor(propIds);
+      const { unitLabel, unitCount, propertyId } = labelFor(propIds);
       const owner = String(r.owner_name ?? '').trim() || (propIds[0] ? propInfo.get(propIds[0])?.ownerName : '') || undefined;
       return {
         id, at, actorId,
         action: 'call', displayAction: 'call',
         outcome: (r.outcome as string) ?? undefined,
         ownerName: owner,
-        unitLabel, unitCount,
+        unitLabel, unitCount, propertyId,
         note: (r.note as string) ?? undefined,
         detail: '',
       };
@@ -323,7 +327,7 @@ export async function listActivity(q: ActivityQuery): Promise<ActivityPage> {
     const action = r.action as string;
     const detail = String(r.detail ?? '');
     const linked = auditUnits.get(id) ?? (parsedByAudit.has(id) ? [parsedByAudit.get(id)!] : []);
-    const { unitLabel, unitCount } = labelFor(linked);
+    const { unitLabel, unitCount, propertyId } = labelFor(linked);
     const isReveal = action === 'view' && /^Revealed/i.test(detail);
     const primary = linked[0] ? propInfo.get(linked[0]) : undefined;
     const ownerName = primary?.ownerName
@@ -338,7 +342,7 @@ export async function listActivity(q: ActivityQuery): Promise<ActivityPage> {
       action,
       displayAction: isReveal ? 'reveal' : action,
       ownerName,
-      unitLabel, unitCount,
+      unitLabel, unitCount, propertyId,
       numberMasked: isReveal ? primary?.numberMasked : undefined,
       detail: cleanDetail,
     };

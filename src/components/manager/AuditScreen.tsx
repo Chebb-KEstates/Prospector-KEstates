@@ -6,6 +6,7 @@ import { Icon } from '../common/Icon';
 import { saveBlob } from '../../logic/downloadFile';
 import * as api from '../../data/api';
 import { ApiError } from '../../data/apiClient';
+import { PropertyPopup } from './PropertyPopup';
 
 /**
  * The activity log — a complete, readable history of everything on the app.
@@ -74,6 +75,8 @@ export function AuditScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  // The unit whose detail popup is open (opened by clicking a Unit cell).
+  const [detailProperty, setDetailProperty] = useState<string | null>(null);
 
   // Debounce the search box so we don't query on every keystroke.
   useEffect(() => {
@@ -138,6 +141,13 @@ export function AuditScreen() {
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const pg = Math.min(page, pages - 1);
   const filtersActive = actionFilter !== 'all' || actorFilter || from || to || search;
+
+  // Distinct units referenced on this page, so the detail popup's prev/next can
+  // step through the properties in the log.
+  const pageIds = useMemo(
+    () => Array.from(new Set(rows.map(r => r.propertyId).filter((x): x is string => !!x))),
+    [rows],
+  );
 
   const th = (label: string, col?: 'at' | 'actor' | 'action') => (
     <th
@@ -214,7 +224,20 @@ export function AuditScreen() {
                     <td style={{ whiteSpace: 'nowrap' }}>{userById(a.actorId ?? '')?.name ?? a.actorId ?? '—'}</td>
                     <td><span className="chip" style={{ background: c.bg, color: c.fg }}>{a.displayAction}</span></td>
                     <td>{a.ownerName ?? <span style={{ color: 'var(--text-tertiary)' }}>—</span>}</td>
-                    <td><span style={{ fontSize: '0.8125rem' }}>{a.unitLabel ?? <span style={{ color: 'var(--text-tertiary)' }}>—</span>}</span></td>
+                    <td>
+                      {a.unitLabel
+                        ? (a.propertyId
+                          ? <button type="button" title="Open this unit's details"
+                              onClick={() => setDetailProperty(a.propertyId!)}
+                              style={{
+                                fontSize: '0.8125rem', textAlign: 'left', cursor: 'pointer',
+                                background: 'none', border: 'none', padding: 0,
+                                color: 'var(--primary)', textDecoration: 'underline',
+                                textUnderlineOffset: 2, font: 'inherit',
+                              }}>{a.unitLabel}</button>
+                          : <span style={{ fontSize: '0.8125rem' }}>{a.unitLabel}</span>)
+                        : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
+                    </td>
                     <td><Details r={a} /></td>
                   </tr>
                 );
@@ -230,6 +253,15 @@ export function AuditScreen() {
           <button className="btn btn-icon btn-sm" disabled={pg >= pages - 1} onClick={() => setPage(pg + 1)}><Icon name="chevronRight" size={16} /></button>
         </div>
       </div>
+
+      {detailProperty && (
+        <PropertyPopup
+          propertyId={detailProperty}
+          ids={pageIds}
+          onNavigate={(id) => setDetailProperty(id)}
+          onClose={() => setDetailProperty(null)}
+        />
+      )}
     </div>
   );
 }

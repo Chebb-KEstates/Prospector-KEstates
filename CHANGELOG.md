@@ -18,6 +18,20 @@ for what each part means for Prospector.
 
 ---
 
+## [3.11.0] — 2026-09-09
+
+### Added
+- **In the Activity Log, the Unit is now clickable** — click it to open that
+  property's full detail popup (the same record view as the Database), so you can
+  review a unit without leaving the log. Prev/next steps through the other units
+  referenced on the current page. Entries whose unit no longer exists stay plain
+  text. Server: each activity row now carries the first still-existing linked
+  property id.
+
+No schema change / no migration — pull + rebuild (server) + restart.
+
+---
+
 ## [3.10.1] — 2026-09-09
 
 ### Fixed

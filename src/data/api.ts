@@ -415,6 +415,8 @@ export interface ActivityRow {
   ownerName?: string;
   unitLabel?: string;
   unitCount: number;
+  /** First linked property that still exists — click the unit to open its detail. */
+  propertyId?: string;
   note?: string;
   numberMasked?: string;
   detail: string;
