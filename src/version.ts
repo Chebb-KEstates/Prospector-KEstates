@@ -11,4 +11,4 @@
  *   MINOR — a new capability that doesn't break existing data.
  *   PATCH — a fix or polish that changes no data and adds no feature.
  */
-export const APP_VERSION = '3.10.0';
+export const APP_VERSION = '3.10.1';

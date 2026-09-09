@@ -7,6 +7,7 @@ import multipart from '@fastify/multipart';
 import { env } from './config/env';
 import { ApiError } from './http/errors';
 import authPlugin from './plugins/auth';
+import { SESSION_COOKIE } from './auth/sessions';
 
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
@@ -65,9 +66,18 @@ export async function buildApp(): Promise<FastifyInstance> {
     global: true,
     max: 300,
     timeWindow: '1 minute',
-    // Per-user where we know them, per-IP otherwise: a shared office NAT
-    // shouldn't let one busy broker rate-limit the whole team.
-    keyGenerator: (req) => req.currentUser?.id ?? req.ip,
+    // Per-session where we can tell, per-IP otherwise: a shared office NAT must
+    // not let the whole team drain one bucket.
+    //
+    // We key off the SESSION COOKIE, not `req.currentUser`, on purpose. The rate
+    // limiter runs as an onRequest hook, and this plugin is registered BEFORE the
+    // auth plugin — so `req.currentUser` is still null here and the old
+    // `currentUser?.id ?? req.ip` collapsed to req.ip for every request, giving
+    // the entire office (one NAT IP) a single shared limit. The cookie is already
+    // parsed by @fastify/cookie (registered above), so it identifies the signed-in
+    // session this early; unauthenticated requests (login) still fall back to IP.
+    keyGenerator: (req) =>
+      req.currentUser?.id ?? (req.cookies?.[SESSION_COOKIE] as string | undefined) ?? req.ip,
     errorResponseBuilder: () => ({
       error: { code: 'too_many_requests', message: 'Too many requests. Slow down and try again.' },
     }),

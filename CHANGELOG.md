@@ -18,6 +18,24 @@ for what each part means for Prospector.
 
 ---
 
+## [3.10.1] — 2026-09-09
+
+### Fixed
+- **Brokers were being wrongly throttled ("capped") on a busy day.** The rate
+  limiter was meant to count requests per user, but it read the user too early
+  (before sign-in is resolved on each request) and always fell back to the
+  client IP. Since the whole office shares one office IP, the entire team drained
+  a single shared budget (300 requests/min, 60 number-reveals/min) — so on a busy
+  morning a broker could be blocked with "Too many requests" even though **there
+  is no per-day call limit** (that was removed long ago). Now keyed by the
+  signed-in session, so each person gets their own budget as intended. Recent
+  dashboard auto-refresh made the shared-bucket contention worse, which is why it
+  surfaced now. No limits were lowered; login stays rate-limited per IP.
+
+No schema change / no migration — pull + rebuild (server) + restart.
+
+---
+
 ## [3.10.0] — 2026-09-09
 
 ### Changed
