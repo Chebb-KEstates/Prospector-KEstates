@@ -1,12 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { fmtInt, fmtAed, fmtDate } from '../../utils/format';
-import { DataModuleLabel } from '../../types/models';
+import { fmtInt, fmtAed } from '../../utils/format';
 import { StatTile } from '../common/Dash';
 import { Icon } from '../common/Icon';
 import { AnalyticsTable, Col } from '../common/AnalyticsTable';
 import { brokerBoardColumns, HoldingList } from './brokerColumns';
 import { useTeamDashboard } from '../../data/hooks';
-import type { TeamDatasetRow } from '../../data/api';
+import type { TeamAreaRow } from '../../data/api';
 
 /**
  * Team & Data — the manager Report.
@@ -83,25 +82,24 @@ export function TeamScreen() {
   const brokerDefault = ['sets', 'assigned', 'attempts', 'noAnswer', 'answered', 'interested', 'answerRate', 'interestRate', 'lastAt'];
   const brokerCols = brokerBoardColumns(days);
 
-  // ── Data-set breakdown columns (all-time) ───────────────────────────────────
-  const datasetCols: Col<TeamDatasetRow>[] = [
-    { key: 'brokers', label: 'Assigned brokers', render: d => <HoldingList items={d.brokers} /> },
-    { key: 'module', label: 'Module', render: d => DataModuleLabel[d.module], sortValue: d => DataModuleLabel[d.module] },
-    { key: 'properties', label: 'Properties', align: 'right', render: d => fmtInt(d.properties), sortValue: d => d.properties },
-    { key: 'callable', label: 'Callable', align: 'right', render: d => fmtInt(d.callable), sortValue: d => d.callable },
-    { key: 'numbers', label: 'Numbers', align: 'right', render: d => fmtInt(d.numbers), sortValue: d => d.numbers },
-    { key: 'agents', label: 'Agents', align: 'right', render: d => fmtInt(d.agents), sortValue: d => d.agents },
-    { key: 'assigned', label: 'Assigned', align: 'right', render: d => fmtInt(d.assigned), sortValue: d => d.assigned },
-    { key: 'untouched', label: 'Untouched', align: 'right', render: d => <span style={{ color: d.untouched > 0 ? 'var(--warning)' : undefined }}>{fmtInt(d.untouched)}</span>, sortValue: d => d.untouched },
-    { key: 'calls', label: 'Calls', align: 'right', render: d => fmtInt(d.calls), sortValue: d => d.calls },
-    { key: 'noAnswer', label: 'No answer', align: 'right', render: d => fmtInt(d.noAnswer), sortValue: d => d.noAnswer },
+  // ── Area breakdown columns ──────────────────────────────────────────────────
+  // One row per area (community + sub-community), with the brokers holding units
+  // there — so an area split across several data sets still reads as one row.
+  const areaLabel = (a: TeamAreaRow) => {
+    const community = a.community || '(no community)';
+    return a.cluster ? `${community} · ${a.cluster}` : community;
+  };
+  const areaCols: Col<TeamAreaRow>[] = [
+    { key: 'brokers', label: 'Assigned brokers', render: a => <HoldingList items={a.brokers} /> },
+    { key: 'properties', label: 'Units', align: 'right', render: a => fmtInt(a.properties), sortValue: a => a.properties },
+    { key: 'callable', label: 'Callable', align: 'right', render: a => fmtInt(a.callable), sortValue: a => a.callable },
+    { key: 'assigned', label: 'Assigned', align: 'right', render: a => fmtInt(a.assigned), sortValue: a => a.assigned },
+    { key: 'pool', label: 'In pool', align: 'right', render: a => fmtInt(a.pool), sortValue: a => a.pool },
+    { key: 'untouched', label: 'Untouched', align: 'right', render: a => <span style={{ color: a.untouched > 0 ? 'var(--warning)' : undefined }}>{fmtInt(a.untouched)}</span>, sortValue: a => a.untouched },
     {
-      key: 'interested', label: 'Interested', align: 'right', sortValue: d => d.interested,
-      render: d => <span style={{ color: d.interested > 0 ? 'var(--success)' : undefined, fontWeight: d.interested > 0 ? 700 : undefined }}>{fmtInt(d.interested)}</span>,
+      key: 'interested', label: 'Interested', align: 'right', sortValue: a => a.interested,
+      render: a => <span style={{ color: a.interested > 0 ? 'var(--success)' : undefined, fontWeight: a.interested > 0 ? 700 : undefined }}>{fmtInt(a.interested)}</span>,
     },
-    { key: 'cost', label: 'Cost', align: 'right', render: d => (d.cost != null && d.cost > 0 ? fmtAed(d.cost) : '—'), sortValue: d => d.cost ?? undefined },
-    { key: 'imported', label: 'Imported', render: d => <span style={{ fontSize: '0.75rem' }}>{fmtDate(d.importedAt)}</span>, sortValue: d => (d.importedAt ? new Date(d.importedAt).getTime() : undefined) },
-    { key: 'updated', label: 'Updated', render: d => <span style={{ fontSize: '0.75rem', color: d.lastUpdatedAt ? 'var(--text)' : 'var(--text-tertiary)' }}>{d.lastUpdatedAt ? fmtDate(d.lastUpdatedAt) : '—'}</span>, sortValue: d => (d.lastUpdatedAt ? new Date(d.lastUpdatedAt).getTime() : undefined) },
   ];
 
   return (
@@ -144,13 +142,15 @@ export function TeamScreen() {
           <div style={{ height: 28 }} />
 
           <SectionTitle>
-            Data sets
-            <span style={{ fontWeight: 400, fontSize: '0.8125rem', color: 'var(--text-secondary)', marginLeft: 8 }}>all time</span>
+            Area breakdown
+            <span style={{ fontWeight: 400, fontSize: '0.8125rem', color: 'var(--text-secondary)', marginLeft: 8 }}>
+              community · sub-community — who holds what
+            </span>
           </SectionTitle>
           <AnalyticsTable
-            rows={data.datasetStats} prefsKey="team.datasets.v2"
-            pinned={{ label: 'Name', render: d => d.name, sortValue: d => d.name }}
-            columns={datasetCols} empty="No data sets yet." />
+            rows={data.areas} prefsKey="team.areas.v1"
+            pinned={{ label: 'Area', render: areaLabel, sortValue: areaLabel }}
+            columns={areaCols} empty="No areas yet." />
 
           <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: '28px 0 12px' }}>Data ROI <span style={{ fontWeight: 400, fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>· all time</span></h3>
           <div className="card">

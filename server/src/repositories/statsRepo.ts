@@ -136,3 +136,84 @@ export async function assignmentMatrix(): Promise<AssignmentCell[]> {
     units: Number(r.units ?? 0),
   }));
 }
+
+/**
+ * Per-AREA breakdown — one row per (community, sub-community), independent of
+ * which upload a unit came from. A data set can span several areas, so the Report
+ * needs this to answer "how many units in THIS area does each broker hold". All
+ * property-level (no calls join): interested/untouched read the unit's stored last
+ * outcome / last-called, which is what the table shows anyway.
+ */
+export interface AreaStat {
+  community: string;
+  /** '' when the area has no sub-community. */
+  cluster: string;
+  properties: number;
+  callable: number;
+  /** Units held by a broker (assigned or portfolio). */
+  assigned: number;
+  /** Units still in the pool. */
+  pool: number;
+  /** Callable units never called yet. */
+  untouched: number;
+  /** Units whose last outcome was "interested". */
+  interested: number;
+}
+
+export async function areaBreakdown(): Promise<AreaStat[]> {
+  const [rows] = await pool.query<Row[]>(
+    `SELECT community,
+            COALESCE(cluster, '')                                      AS cluster,
+            COUNT(*)                                                   AS properties,
+            SUM(callable)                                              AS callable,
+            SUM(assigned_to IS NOT NULL AND state IN ('assigned', 'portfolio')) AS assigned,
+            SUM(state = 'pool')                                        AS pool,
+            SUM(callable = 1 AND last_called_at IS NULL)               AS untouched,
+            SUM(last_outcome IN ('interestedSell', 'interestedRent'))  AS interested
+     FROM properties
+     WHERE org_id = ?
+     GROUP BY community, COALESCE(cluster, '')
+     ORDER BY community, cluster`,
+    [kOrgId],
+  );
+  return rows.map(r => ({
+    community: String(r.community ?? ''),
+    cluster: String(r.cluster ?? ''),
+    properties: Number(r.properties ?? 0),
+    callable: Number(r.callable ?? 0),
+    assigned: Number(r.assigned ?? 0),
+    pool: Number(r.pool ?? 0),
+    untouched: Number(r.untouched ?? 0),
+    interested: Number(r.interested ?? 0),
+  }));
+}
+
+/** One (broker, area) pair with how many of that area's units the broker holds. */
+export interface AreaAssignmentCell {
+  community: string;
+  cluster: string;
+  brokerId: string;
+  units: number;
+}
+
+/**
+ * Broker × area holdings — who currently holds how many units in each
+ * (community, sub-community). Only actively-held units (assigned / portfolio).
+ */
+export async function areaAssignmentMatrix(): Promise<AreaAssignmentCell[]> {
+  const [rows] = await pool.query<Row[]>(
+    `SELECT community, COALESCE(cluster, '') AS cluster, assigned_to AS broker_id, COUNT(*) AS units
+       FROM properties
+      WHERE org_id = ?
+        AND assigned_to IS NOT NULL
+        AND state IN ('assigned', 'portfolio')
+      GROUP BY community, COALESCE(cluster, ''), assigned_to`,
+    [kOrgId],
+  );
+  return rows.map(r => ({
+    community: String(r.community ?? ''),
+    cluster: String(r.cluster ?? ''),
+    brokerId: r.broker_id as string,
+    units: Number(r.units ?? 0),
+  }));
+}

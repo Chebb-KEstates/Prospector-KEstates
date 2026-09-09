@@ -18,6 +18,25 @@ for what each part means for Prospector.
 
 ---
 
+## [3.13.0] — 2026-09-09
+
+### Changed
+- **The Report's second table is now an "Area breakdown" instead of a data-set
+  breakdown.** It lists every area (Community + Sub-community) with the brokers
+  holding units there (name + unit count), plus Units, Callable, Assigned, In
+  pool, Untouched and Interested per area — so when one uploaded sheet spans
+  several areas you can finally see how many of a specific area's units each
+  broker holds. Columns are sortable + show/hide/reorderable like every other
+  table. (The brokers' "Data assigned" column and the Data-ROI tiles are
+  unchanged; per-data-set figures still live on the Control screen.)
+- Server: `/api/dashboard/team` now returns per-area stats + a broker×area
+  holdings matrix (new `areaBreakdown` / `areaAssignmentMatrix`) in place of the
+  per-data-set breakdown.
+
+No schema change / no migration — pull + rebuild (server) + restart.
+
+---
+
 ## [3.12.0] — 2026-09-09
 
 ### Added

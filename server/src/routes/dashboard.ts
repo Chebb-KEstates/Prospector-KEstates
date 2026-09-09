@@ -16,7 +16,7 @@ import { countPending } from '../repositories/requestRepo';
 import { listUsers } from '../repositories/userRepo';
 import { listAudit } from '../repositories/auditRepo';
 import { listDatasets } from '../repositories/datasetRepo';
-import { datasetBreakdown, assignmentMatrix } from '../repositories/statsRepo';
+import { assignmentMatrix, areaBreakdown, areaAssignmentMatrix } from '../repositories/statsRepo';
 import { loadSettings } from '../repositories/settingsRepo';
 import { serializeAudit } from '../http/serializers';
 
@@ -193,7 +193,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
 
     const [
       users, stats, held, datasets, totalProperties, callable, callableWorked, lifetime,
-      windowStats, coverage, followUps, dsStats, matrix,
+      windowStats, coverage, followUps, matrix, areaStats, areaMatrix,
     ] = await Promise.all([
       listUsers(),
       brokerCallStats(),
@@ -208,37 +208,41 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       ranged ? brokerStatsBetween(from!, to!) : Promise.resolve(new Map()),
       callableCoverageByBroker(),
       followUpsDueByBroker(),
-      datasetBreakdown(),
       assignmentMatrix(),
+      areaBreakdown(),
+      areaAssignmentMatrix(),
     ]);
 
     const statsById = new Map(stats.map(s => [s.brokerId, s]));
     const totalCost = datasets.reduce((sum, d) => sum + (d.cost ?? 0), 0);
 
-    // Broker ⇄ data-set cross-reference, built once from the holdings matrix.
-    // brokerHoldings: which data sets each broker is holding (name + unit count);
-    // datasetBrokers: which brokers hold each set. Both sorted by unit count so
-    // the biggest holding leads. Names resolved from the users/datasets we
-    // already loaded — an entry whose set/broker no longer exists is skipped.
+    // Which data sets each broker holds (name + unit count), for the broker
+    // table's "Data assigned" column. Sorted biggest-first; a set that no longer
+    // exists is skipped.
     const brokerName = new Map(users.map(u => [u.id, u.name]));
     const setName = new Map(datasets.map(d => [d.id, d.name]));
     const brokerHoldings = new Map<string, { name: string; units: number }[]>();
-    const datasetBrokers = new Map<string, { name: string; units: number }[]>();
     for (const c of matrix) {
       const dName = setName.get(c.datasetId);
-      const bName = brokerName.get(c.brokerId);
       if (dName) {
         const list = brokerHoldings.get(c.brokerId) ?? [];
         list.push({ name: dName, units: c.units });
         brokerHoldings.set(c.brokerId, list);
       }
-      if (bName) {
-        const list = datasetBrokers.get(c.datasetId) ?? [];
-        list.push({ name: bName, units: c.units });
-        datasetBrokers.set(c.datasetId, list);
-      }
     }
     const byUnits = (a: { units: number }, b: { units: number }) => b.units - a.units;
+
+    // Which brokers hold how many units in each AREA (community + sub-community).
+    const areaKey = (community: string, cluster: string) => `${community}${cluster}`;
+    const areaBrokers = new Map<string, { name: string; units: number }[]>();
+    for (const c of areaMatrix) {
+      const bName = brokerName.get(c.brokerId);
+      if (!bName) continue;
+      const key = areaKey(c.community, c.cluster);
+      const list = areaBrokers.get(key) ?? [];
+      list.push({ name: bName, units: c.units });
+      areaBrokers.set(key, list);
+    }
 
     return {
       brokers: users.filter(u => !u.isManager && u.active).map(b => {
@@ -271,31 +275,21 @@ export default async function dashboardRoutes(app: FastifyInstance) {
           datasets: (brokerHoldings.get(b.id) ?? []).slice().sort(byUnits),
         };
       }),
-      // Per-data-set breakdown, joined with each set's identity/dates. Counts
-      // are LIVE (computed from the rows that currently belong to the set), not
-      // the stored total — so a set whose units were merged elsewhere reads 0,
-      // which is the truth, rather than a stale stored count.
-      datasetStats: datasets.map(d => {
-        const st = dsStats.get(d.id);
-        return {
-          id: d.id,
-          name: d.name,
-          module: d.module,
-          properties: st?.properties ?? 0,
-          callable: st?.callable ?? 0,
-          numbers: st?.numbers ?? 0,
-          agents: st?.agents ?? 0,
-          assigned: st?.assigned ?? 0,
-          untouched: st?.untouched ?? 0,
-          calls: st?.calls ?? 0,
-          noAnswer: st?.noAnswer ?? 0,
-          interested: st?.interested ?? 0,
-          cost: d.cost,
-          importedAt: d.importedAt,
-          lastUpdatedAt: d.lastUpdatedAt,
-          brokers: (datasetBrokers.get(d.id) ?? []).slice().sort(byUnits),
-        };
-      }),
+      // Per-AREA breakdown (community + sub-community), with the brokers holding
+      // units in each. Independent of which upload a unit came from, so an area
+      // split across several data sets still reads as one row.
+      areas: areaStats.map(a => ({
+        id: areaKey(a.community, a.cluster),
+        community: a.community,
+        cluster: a.cluster,
+        properties: a.properties,
+        callable: a.callable,
+        assigned: a.assigned,
+        pool: a.pool,
+        untouched: a.untouched,
+        interested: a.interested,
+        brokers: (areaBrokers.get(areaKey(a.community, a.cluster)) ?? []).slice().sort(byUnits),
+      })),
       roi: {
         totalCost,
         datasets: datasets.length,

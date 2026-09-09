@@ -524,20 +524,29 @@ export interface TeamBrokerRow {
   datasets: Holding[];
 }
 
-export interface TeamDatasetRow {
-  id: string; name: string; module: DataModule;
-  properties: number; callable: number; numbers: number;
-  agents: number; assigned: number; untouched: number;
-  calls: number; noAnswer: number; interested: number;
-  cost?: number;
-  importedAt: string; lastUpdatedAt?: string;
-  /** Brokers currently holding units of this set (biggest first). */
+/** One area (community + sub-community) with the brokers holding units there. */
+export interface TeamAreaRow {
+  id: string;
+  community: string;
+  /** '' when the area has no sub-community. */
+  cluster: string;
+  properties: number;
+  callable: number;
+  /** Units held by a broker (assigned or portfolio). */
+  assigned: number;
+  /** Units still in the pool. */
+  pool: number;
+  /** Callable units never called yet. */
+  untouched: number;
+  /** Units whose last outcome was "interested". */
+  interested: number;
+  /** Brokers currently holding units in this area (biggest first). */
   brokers: Holding[];
 }
 
 export interface TeamDashboard {
   brokers: TeamBrokerRow[];
-  datasetStats: TeamDatasetRow[];
+  areas: TeamAreaRow[];
   roi: {
     totalCost: number;
     datasets: number;

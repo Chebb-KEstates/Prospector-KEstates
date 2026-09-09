@@ -6,6 +6,7 @@ import {
   countByState, countCallable, propertyFacets, toProperty, countStalePortfolio,
   callableCoverageByBroker, followUpsDueByBroker,
 } from '../src/repositories/propertyRepo';
+import { areaBreakdown, areaAssignmentMatrix } from '../src/repositories/statsRepo';
 import { Property, OwnerInfo, PropertyState, kOrgId } from '../../src/types/models';
 import { ownerKeyOf } from '../../src/logic/ownerGrouping';
 import { ImportPipeline } from '../../src/logic/importPipeline';
@@ -325,6 +326,36 @@ test('Report per-broker coverage and follow-ups group correctly', async () => {
 
   const fu = await followUpsDueByBroker();
   assert.equal(fu.get('u-director'), 1, 'only the unit with a past-due follow-up counts');
+});
+
+test('area breakdown groups by community + sub-community with per-broker holdings', async () => {
+  await wipe();
+  // "Palm" spans two sub-communities: Frond A (2 units) and Frond B (1 unit).
+  // Distinct building+unit per row — unit identity is tower+number, so reusing a
+  // tower+unit across clusters would (correctly) collapse to one unit.
+  const a1 = makeProperty({ community: 'Palm', cluster: 'Frond A', building: 'Villa 1', unitNumber: '1', phone: '971500000021' });
+  const a2 = makeProperty({ community: 'Palm', cluster: 'Frond A', building: 'Villa 2', unitNumber: '2' });
+  const b1 = makeProperty({ community: 'Palm', cluster: 'Frond B', building: 'Villa 3', unitNumber: '3', phone: '971500000022' });
+  await saveProperties([a1, a2, b1]);
+  // a1 and b1 held by a broker; a2 stays in the pool.
+  await pool.query(
+    "UPDATE properties SET assigned_to = 'u-director', state = 'assigned' WHERE id IN (?, ?)",
+    [a1.id, b1.id],
+  );
+
+  const areas = await areaBreakdown();
+  const frondA = areas.find(x => x.community === 'Palm' && x.cluster === 'Frond A')!;
+  assert.equal(frondA.properties, 2);
+  assert.equal(frondA.assigned, 1, 'one of Frond A is held, one pooled');
+  assert.equal(frondA.pool, 1);
+  const frondB = areas.find(x => x.community === 'Palm' && x.cluster === 'Frond B')!;
+  assert.equal(frondB.properties, 1);
+  assert.equal(frondB.assigned, 1);
+
+  // Per-area, per-broker holdings: one unit each in Frond A and Frond B.
+  const matrix = await areaAssignmentMatrix();
+  assert.equal(matrix.find(c => c.cluster === 'Frond A' && c.brokerId === 'u-director')?.units, 1);
+  assert.equal(matrix.find(c => c.cluster === 'Frond B' && c.brokerId === 'u-director')?.units, 1);
 });
 
 test.after(async () => {
