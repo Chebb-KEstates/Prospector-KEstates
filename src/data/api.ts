@@ -520,6 +520,8 @@ export interface TeamBrokerRow {
   callableWorked: number;
   /** Held units whose follow-up is due now (snapshot). */
   followUpsDue: number;
+  /** Areas (community · sub-community) this broker holds units in (biggest first). */
+  areas: Holding[];
   /** Data sets this broker currently holds units of (biggest first). */
   datasets: Holding[];
 }

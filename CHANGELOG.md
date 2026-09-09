@@ -18,6 +18,21 @@ for what each part means for Prospector.
 
 ---
 
+## [3.14.0] — 2026-09-09
+
+### Changed
+- **The Brokers table now leads with an "Areas held" column** — each broker's
+  areas (community · sub-community) with the unit count in each — matching the new
+  Area breakdown table. So you can see which areas a broker works and how many
+  units in each, not just which upload sheets they hold. The old "Data assigned"
+  (data-set) column is still there, one click away in Columns.
+- Server: each broker row on `/api/dashboard/team` now carries its per-area
+  holdings alongside its per-data-set holdings.
+
+No schema change / no migration — pull + rebuild (server) + restart.
+
+---
+
 ## [3.13.0] — 2026-09-09
 
 ### Changed

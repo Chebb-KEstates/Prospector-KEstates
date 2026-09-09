@@ -234,7 +234,13 @@ export default async function dashboardRoutes(app: FastifyInstance) {
 
     // Which brokers hold how many units in each AREA (community + sub-community).
     const areaKey = (community: string, cluster: string) => `${community}${cluster}`;
+    const areaLabelOf = (community: string, cluster: string) => {
+      const c = community || '(no community)';
+      return cluster ? `${c} · ${cluster}` : c;
+    };
     const areaBrokers = new Map<string, { name: string; units: number }[]>();
+    // Which areas each broker holds — the broker table's "Areas held" column.
+    const brokerAreas = new Map<string, { name: string; units: number }[]>();
     for (const c of areaMatrix) {
       const bName = brokerName.get(c.brokerId);
       if (!bName) continue;
@@ -242,6 +248,10 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       const list = areaBrokers.get(key) ?? [];
       list.push({ name: bName, units: c.units });
       areaBrokers.set(key, list);
+
+      const bList = brokerAreas.get(c.brokerId) ?? [];
+      bList.push({ name: areaLabelOf(c.community, c.cluster), units: c.units });
+      brokerAreas.set(c.brokerId, bList);
     }
 
     return {
@@ -272,6 +282,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
           callableAssigned: cov.callable,
           callableWorked: cov.worked,
           followUpsDue: followUps.get(b.id) ?? 0,
+          areas: (brokerAreas.get(b.id) ?? []).slice().sort(byUnits),
           datasets: (brokerHoldings.get(b.id) ?? []).slice().sort(byUnits),
         };
       }),

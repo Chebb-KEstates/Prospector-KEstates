@@ -79,7 +79,7 @@ export function TeamScreen() {
   // Shared with the dashboard's broker board so both offer the same columns.
   // Default view = the nine below (in this order); the rest are available but
   // hidden until toggled on. Call columns follow the selected range.
-  const brokerDefault = ['sets', 'assigned', 'attempts', 'noAnswer', 'answered', 'interested', 'answerRate', 'interestRate', 'lastAt'];
+  const brokerDefault = ['areas', 'assigned', 'attempts', 'noAnswer', 'answered', 'interested', 'answerRate', 'interestRate', 'lastAt'];
   const brokerCols = brokerBoardColumns(days);
 
   // ── Area breakdown columns ──────────────────────────────────────────────────
@@ -135,7 +135,7 @@ export function TeamScreen() {
             </span>
           </SectionTitle>
           <AnalyticsTable
-            rows={data.brokers} prefsKey="team.brokers.v3"
+            rows={data.brokers} prefsKey="team.brokers.v4"
             pinned={{ label: 'Broker', render: b => b.name, sortValue: b => b.name }}
             columns={brokerCols} defaultVisible={brokerDefault} empty="No active brokers." />
 

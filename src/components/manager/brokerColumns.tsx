@@ -21,6 +21,7 @@ export function brokerBoardColumns(days?: number): Col<TeamBrokerRow>[] {
     return d <= 0 ? 'today' : `${d}d`;
   };
   return [
+    { key: 'areas', label: 'Areas held', render: b => <HoldingList items={b.areas} /> },
     { key: 'sets', label: 'Data assigned', render: b => <HoldingList items={b.datasets} /> },
     // Portfolio is hidden for now — kept units fold into the Assigned figure.
     { key: 'assigned', label: 'Assigned', align: 'right', render: b => fmtInt(b.assigned + b.portfolio), sortValue: b => b.assigned + b.portfolio },
