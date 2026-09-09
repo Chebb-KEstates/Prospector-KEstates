@@ -18,6 +18,20 @@ for what each part means for Prospector.
 
 ---
 
+## [3.12.0] — 2026-09-09
+
+### Added
+- **The manager Database now has the same quick-filter chips as the broker
+  Database** — next to Filters: All · ⏰ Expiring soon · Due follow-up · Never
+  called · No answer · Call back later · Interested. ("To call" is broker-only —
+  a personal working-list; for the manager "All" clears the quick filter.) They
+  sit in the sticky filter bar, combine with the State filter and the rest of the
+  filter bar, and clear the current multi-selection when switched.
+
+Client-only. No schema change / no migration.
+
+---
+
 ## [3.11.0] — 2026-09-09
 
 ### Added

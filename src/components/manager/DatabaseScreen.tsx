@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { useAuth } from '../../state/AuthContext';
-import { DataModule, DataModuleLabel } from '../../types/models';
+import { DataModule, DataModuleLabel, CallOutcome } from '../../types/models';
 import { Permission } from '../../types/user';
 import { PropertyTable } from './PropertyTable';
 import { LeadTable } from './LeadTable';
@@ -24,12 +24,44 @@ import { useStickyHeader, stickyHeaderStyle } from '../common/useStickyHeader';
  */
 type View = 'owners' | 'leads' | 'requests';
 
+/**
+ * Quick filter chips for the owners table — the same shortcuts the broker
+ * Database carries, next to the Filters button. "To call"/"All" are broker-only
+ * (a personal working-list concept); for the manager, who sees every state via
+ * the State filter, "All" simply means "no quick filter". Each chip maps onto the
+ * same server filters the broker chips use.
+ */
+type Quick = 'all' | 'expiring' | 'due' | 'fresh' | 'noAnswer' | 'callback' | 'interested';
+const QUICKS: { key: Quick; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'expiring', label: '⏰ Expiring soon' },
+  { key: 'due', label: 'Due follow-up' },
+  { key: 'fresh', label: 'Never called' },
+  { key: 'noAnswer', label: 'No answer' },
+  { key: 'callback', label: 'Call back later' },
+  { key: 'interested', label: 'Interested' },
+];
+function quickToQuery(quick: Quick): {
+  forcedOutcome?: string; dueOnly?: boolean; interestedOnly?: boolean; expiringSoon?: boolean;
+} {
+  switch (quick) {
+    case 'fresh': return { forcedOutcome: 'none' };
+    case 'noAnswer': return { forcedOutcome: CallOutcome.noAnswer };
+    case 'callback': return { forcedOutcome: CallOutcome.callbackLater };
+    case 'due': return { dueOnly: true };
+    case 'interested': return { interestedOnly: true };
+    case 'expiring': return { expiringSoon: true };
+    default: return {};
+  }
+}
+
 export function DatabaseScreen() {
   const { recordView, brokers, assign, reclaim, pendingRequests } = useVault();
   const { user } = useAuth();
   const canAssign = !!user?.can(Permission.assignData);
 
   const [view, setView] = useState<View>('owners');
+  const [quick, setQuick] = useState<Quick>('all');
   const [detailProperty, setDetailProperty] = useState<string | null>(null);
   const [pageIds, setPageIds] = useState<string[]>([]);
   const [detailLead, setDetailLead] = useState<string | null>(null);
@@ -146,10 +178,21 @@ export function DatabaseScreen() {
           scope="all"
           showAssignee
           stickyTop={headerH}
+          {...quickToQuery(quick)}
           checkedIds={canAssign ? selected : undefined}
           onCheckedChanged={canAssign ? setSelected : undefined}
           onFiltersChange={canAssign ? clearSelection : undefined}
           onSelect={(id, orderedIds) => void openProperty(id, orderedIds)}
+          headerExtra={
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {QUICKS.map(q => (
+                <button key={q.key} className={`btn btn-sm ${quick === q.key ? 'btn-primary' : ''}`}
+                  onClick={() => { setQuick(q.key); clearSelection(); }}>
+                  {q.label}
+                </button>
+              ))}
+            </div>
+          }
         />
       )}
 
