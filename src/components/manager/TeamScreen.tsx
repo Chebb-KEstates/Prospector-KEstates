@@ -135,7 +135,7 @@ export function TeamScreen() {
             </span>
           </SectionTitle>
           <AnalyticsTable
-            rows={data.brokers} prefsKey="team.brokers.v4"
+            rows={data.brokers ?? []} prefsKey="team.brokers.v4"
             pinned={{ label: 'Broker', render: b => b.name, sortValue: b => b.name }}
             columns={brokerCols} defaultVisible={brokerDefault} empty="No active brokers." />
 
@@ -148,7 +148,7 @@ export function TeamScreen() {
             </span>
           </SectionTitle>
           <AnalyticsTable
-            rows={data.areas} prefsKey="team.areas.v1"
+            rows={data.areas ?? []} prefsKey="team.areas.v1"
             pinned={{ label: 'Area', render: areaLabel, sortValue: areaLabel }}
             columns={areaCols} empty="No areas yet." />
 

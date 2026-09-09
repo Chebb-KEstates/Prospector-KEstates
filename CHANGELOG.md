@@ -18,6 +18,20 @@ for what each part means for Prospector.
 
 ---
 
+## [3.15.1] — 2026-09-09
+
+### Fixed
+- **Report page hardened against a client/server version mismatch.** If the
+  frontend and backend are ever out of step (e.g. the client bundle wasn't
+  rebuilt on deploy), the Report's tables now fall back to empty instead of
+  crashing the page. (Version bump also serves as a deploy marker — the login
+  screen showing this version confirms the new frontend is actually live.)
+
+Client-only. No schema change / no migration. **Deploying only takes effect
+once the CLIENT is rebuilt and the browser loads the new bundle.**
+
+---
+
 ## [3.15.0] — 2026-09-09
 
 ### Changed
