@@ -147,7 +147,14 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
   // Broker board columns — the SAME set as the Report broker table (shared),
   // scoped to today (days = 1). Default view keeps the board's familiar five.
   const boardCols = brokerBoardColumns(1);
-  const boardDefault = ['assigned', 'attempts', 'answered', 'interested', 'lastAt'];
+  const boardDefault = ['areas', 'assigned', 'attempts', 'answered', 'interested', 'lastAt'];
+
+  // Areas (community · sub-community) for the coverage card, biggest stock first.
+  const areaLabel = (a: { community: string; cluster: string }) => {
+    const c = a.community || '(no community)';
+    return a.cluster ? `${c} · ${a.cluster}` : c;
+  };
+  const areas = (teamData?.areas ?? []).slice().sort((a, b) => b.callable - a.callable);
 
   return (
     <div style={{ maxWidth: 1700, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -224,12 +231,14 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
           ))}
         </DashCard>
 
-        <DashCard title="Data coverage" icon="coin" trailing={openBtn('team')} height={CARD_H}>
-          {data.datasets.length === 0
-            ? <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>No data sets uploaded yet.</span>
-            : data.datasets.slice(0, 5).map(d => {
-              const base = d.callableUnits === 0 ? 1 : d.callableUnits;
-              return <ProgressLine key={d.id} label={d.name} fraction={d.worked / base} trailing={`${Math.round(d.worked / base * 100)}%`} />;
+        <DashCard title="Area coverage" icon="coin" trailing={openBtn('team')} height={CARD_H}>
+          {areas.length === 0
+            ? <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>No areas yet.</span>
+            : areas.map(a => {
+              // Of the area's callable stock, how much has ever been called.
+              const worked = Math.max(0, a.callable - a.untouched);
+              const base = a.callable === 0 ? 1 : a.callable;
+              return <ProgressLine key={a.id} label={areaLabel(a)} fraction={worked / base} trailing={`${Math.round(worked / base * 100)}%`} />;
             })}
         </DashCard>
 
@@ -259,7 +268,7 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
           {openBtn('team')}
         </div>
         <AnalyticsTable
-          rows={teamData?.brokers ?? []} prefsKey="dash.board.v2"
+          rows={teamData?.brokers ?? []} prefsKey="dash.board.v3"
           pinned={{
             label: 'Broker', sortValue: b => b.name,
             render: b => {

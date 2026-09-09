@@ -18,6 +18,19 @@ for what each part means for Prospector.
 
 ---
 
+## [3.15.0] — 2026-09-09
+
+### Changed
+- **Dashboard: "Data coverage" is now "Area coverage"** — it shows, per area
+  (community · sub-community), how much of that area's callable stock has been
+  called, biggest areas first, instead of per uploaded data set.
+- **Dashboard broker board now shows "Areas held" by default** — each broker's
+  areas + unit counts, matching the Report. (Still customisable via Columns.)
+
+Client-only. No schema change / no migration.
+
+---
+
 ## [3.14.0] — 2026-09-09
 
 ### Changed
