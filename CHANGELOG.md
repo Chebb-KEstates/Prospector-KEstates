@@ -18,6 +18,33 @@ for what each part means for Prospector.
 
 ---
 
+## [3.9.0] — 2026-09-09
+
+Made the manager dashboard's broker board sortable + customisable, and the
+dashboard live.
+
+### Added
+- **The daily broker board is now a full table**: click any column header to
+  sort (numeric columns sort highest-first on the first click), and a **Columns**
+  button to show/hide and drag-reorder columns — remembered per screen, same as
+  the Report and Database tables. **Team** is available as an extra column.
+- **The dashboard refreshes itself live** — it re-fetches every 30 seconds while
+  the tab is open (and the moment you switch back to it), updating the numbers in
+  place with no flicker and no reload. A small **● Live** marker sits by the
+  funnel's period selector. Chosen deliberately over WebSockets/streaming: no new
+  server infrastructure, nothing to break in the proxy, and 30s is effectively
+  live for a calling floor.
+
+### Changed
+- The broker board's sort/column behaviour now comes from a **shared
+  `AnalyticsTable`** (extracted from the Report), so the board, the Report broker
+  table and the Report data-set table all behave identically — and the Report
+  tables gained click-to-sort in the process.
+
+No schema change / no migration — pull + rebuild + restart.
+
+---
+
 ## [3.8.0] — 2026-09-08
 
 Made the manager Report date-range aware and reworked the broker columns.

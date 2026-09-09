@@ -243,31 +243,59 @@ export function useMyLeads(): { rows: Lead[]; loading: boolean; refetch: () => v
   return { rows, loading, refetch: useCallback(() => setNonce(n => n + 1), []) };
 }
 
-export function useManagerDashboard(days = 14) {
+/**
+ * Manager mission control, kept live by lightweight polling.
+ *
+ * The first load shows the usual loading state; after that the dashboard
+ * refreshes itself silently every `pollMs` (default 30s) and whenever the
+ * manager returns to the tab — the numbers update in place with no flicker and
+ * no new server infrastructure. Background refreshes never clear the current
+ * data or raise a blocking error; only the first load can. `updatedAt` is the
+ * timestamp of the last successful refresh, for a "live" indicator.
+ */
+export function useManagerDashboard(days = 14, pollMs = 30_000) {
   const { revision } = useVault();
   const [data, setData] = useState<api.ManagerDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    void (async () => {
+
+    const load = async (silent: boolean) => {
+      if (!silent) setLoading(true);
       try {
         const d = await api.dashboard.manager(days);
-        if (!cancelled) { setData(d); setError(null); }
+        if (!cancelled) { setData(d); setError(null); setUpdatedAt(Date.now()); }
       } catch (err) {
-        if (!cancelled && !(err instanceof ApiError && err.isAuth)) {
-          setError(err instanceof Error ? err.message : 'Could not load the dashboard.');
-        }
+        if (cancelled || (err instanceof ApiError && err.isAuth)) return;
+        // A failed background refresh keeps the last good data on screen.
+        if (!silent) setError(err instanceof Error ? err.message : 'Could not load the dashboard.');
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && !silent) setLoading(false);
       }
-    })();
-    return () => { cancelled = true; };
-  }, [days, revision]);
+    };
 
-  return { data, loading, error };
+    void load(false);
+
+    // Poll only while the tab is visible, and refresh on return to the tab.
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load(true);
+    }, pollMs);
+    const refresh = () => { if (document.visibilityState === 'visible') void load(true); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [days, revision, pollMs]);
+
+  return { data, loading, error, updatedAt };
 }
 
 export function useTeamDashboard(range?: { from?: string; to?: string }) {

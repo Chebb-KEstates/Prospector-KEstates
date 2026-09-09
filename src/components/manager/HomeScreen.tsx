@@ -10,6 +10,10 @@ import {
   MiniBarChart, ProgressLine, Segment, Funnel, FunnelStage,
 } from '../common/Dash';
 import { Icon, IconName } from '../common/Icon';
+import { AnalyticsTable, Col } from '../common/AnalyticsTable';
+import type { ManagerDashboard } from '../../data/api';
+
+type BoardRow = ManagerDashboard['board'][number];
 
 /**
  * Manager mission control — one screen, funnel-led.
@@ -58,7 +62,7 @@ function actionIcon(action: string): IconName {
 export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
   const vault = useVault();
   const { user: me } = useAuth();
-  const { data, loading, error } = useManagerDashboard(14);
+  const { data, loading, error, updatedAt } = useManagerDashboard(14);
   const [period, setPeriod] = useState<Period>('today');
 
   if (!me) return null;
@@ -130,6 +134,21 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
     <button className="btn btn-ghost btn-sm" onClick={() => go(tab)}>Open</button>
   );
 
+  // Broker board columns — click-to-sort + show/hide/reorder (shared table).
+  const boardCols: Col<BoardRow>[] = [
+    { key: 'onList', label: 'On list', align: 'right', render: b => fmtInt(b.onList), sortValue: b => b.onList },
+    { key: 'calls', label: 'Calls', align: 'right', render: b => fmtInt(b.callsToday), sortValue: b => b.callsToday },
+    { key: 'reached', label: 'Reached', align: 'right', render: b => fmtInt(b.reachedToday), sortValue: b => b.reachedToday },
+    {
+      key: 'interested', label: 'Interested', align: 'right', sortValue: b => b.interestedToday,
+      render: b => <span style={{ color: b.interestedToday > 0 ? 'var(--primary)' : undefined, fontWeight: b.interestedToday > 0 ? 700 : undefined }}>{fmtInt(b.interestedToday)}</span>,
+    },
+    { key: 'lastAt', label: 'Last call', render: b => <span style={{ color: 'var(--text-secondary)' }}>{b.lastAt ? timeAgo(b.lastAt, now) : 'never'}</span>, sortValue: b => (b.lastAt ? new Date(b.lastAt).getTime() : undefined) },
+    // Available but hidden by default.
+    { key: 'team', label: 'Team', render: b => b.team || '—', sortValue: b => b.team },
+  ];
+  const boardDefault = ['onList', 'calls', 'reached', 'interested', 'lastAt'];
+
   return (
     <div style={{ maxWidth: 1700, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
       <HeroSlab
@@ -149,9 +168,15 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
       {/* The prospecting funnel — the screen's centrepiece. */}
       <DashCard title="Prospecting funnel" icon="sparkles"
         trailing={
-          <select className="input" style={{ width: 'auto', padding: '4px 8px' }} value={period} onChange={e => setPeriod(e.target.value as Period)}>
-            {PERIODS.map(p => <option key={p.k} value={p.k}>{p.label}</option>)}
-          </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span title={updatedAt ? `Updated ${timeAgo(new Date(updatedAt).toISOString(), now)}` : 'Live — refreshes automatically'}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--success)' }} /> Live
+            </span>
+            <select className="input" style={{ width: 'auto', padding: '4px 8px' }} value={period} onChange={e => setPeriod(e.target.value as Period)}>
+              {PERIODS.map(p => <option key={p.k} value={p.k}>{p.label}</option>)}
+            </select>
+          </div>
         }>
         <Funnel stages={funnelStages} />
         <StatRow tiles={[
@@ -225,40 +250,27 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
         </DashCard>
       </DashColumns>
 
-      {/* Broker board */}
-      <DashCard title="Broker board — today" icon="team" trailing={openBtn('team')} flush>
-        <div style={{ overflowX: 'auto' }}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Broker</th>
-                <th style={{ textAlign: 'right' }}>On list</th>
-                <th style={{ textAlign: 'right' }}>Calls</th>
-                <th style={{ textAlign: 'right' }}>Reached</th>
-                <th style={{ textAlign: 'right' }}>Interested</th>
-                <th>Last call</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.board.length === 0 ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 24 }}>No active brokers.</td></tr>
-              ) : data.board.map(b => (
-                <tr key={b.id}>
-                  <td style={{ fontWeight: 500 }}>
-                    {b.name}
-                    {b.quiet && <span style={{ marginLeft: 6, color: 'var(--warning)' }} title="Has data but no calls today">●</span>}
-                  </td>
-                  <td className="tabular-nums" style={{ textAlign: 'right' }}>{fmtInt(b.onList)}</td>
-                  <td className="tabular-nums" style={{ textAlign: 'right' }}>{b.callsToday}</td>
-                  <td className="tabular-nums" style={{ textAlign: 'right' }}>{b.reachedToday}</td>
-                  <td className="tabular-nums" style={{ textAlign: 'right', color: b.interestedToday > 0 ? 'var(--primary)' : undefined, fontWeight: b.interestedToday > 0 ? 700 : undefined }}>{b.interestedToday}</td>
-                  <td style={{ color: 'var(--text-secondary)' }}>{b.lastAt ? timeAgo(b.lastAt, now) : 'never'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Broker board — sortable + show/hide/reorder columns (shared table). */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <Icon name="team" size={17} style={{ color: 'var(--primary)' }} />
+          <span style={{ fontWeight: 600 }}>Broker board — today</span>
+          <div style={{ flex: 1 }} />
+          {openBtn('team')}
         </div>
-      </DashCard>
+        <AnalyticsTable
+          rows={data.board} prefsKey="dash.board.v1"
+          pinned={{
+            label: 'Broker', sortValue: b => b.name,
+            render: b => (
+              <>
+                {b.name}
+                {b.quiet && <span style={{ marginLeft: 6, color: 'var(--warning)' }} title="Has data but no calls today">●</span>}
+              </>
+            ),
+          }}
+          columns={boardCols} defaultVisible={boardDefault} empty="No active brokers." />
+      </div>
     </div>
   );
 }
