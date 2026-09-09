@@ -18,6 +18,24 @@ for what each part means for Prospector.
 
 ---
 
+## [3.10.0] — 2026-09-09
+
+### Changed
+- **The dashboard's broker board now offers the exact same columns as the Report
+  broker table** — Data assigned, Assigned, Total call attempts, No answer,
+  Answered, Interested, Answer rate, Interested rate, Last call, plus Team,
+  Coverage %, Follow-ups due, Days since last call and Calls/day — all
+  show/hide + reorderable and click-to-sort. The board's call columns are scoped
+  to **today** (the board stays "today"); assignment/coverage are the current
+  book, exactly as on the Report. It refreshes live on the same 30s cadence.
+- Under the hood the two tables now share one column definition
+  (`brokerColumns.tsx`) so they can never drift apart; the board's saved layout
+  key was reset (new columns).
+
+No schema change / no migration — pull + rebuild + restart.
+
+---
+
 ## [3.9.0] — 2026-09-09
 
 Made the manager dashboard's broker board sortable + customisable, and the

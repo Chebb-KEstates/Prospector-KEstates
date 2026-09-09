@@ -298,7 +298,12 @@ export function useManagerDashboard(days = 14, pollMs = 30_000) {
   return { data, loading, error, updatedAt };
 }
 
-export function useTeamDashboard(range?: { from?: string; to?: string }) {
+/**
+ * The Team/Report data. `pollMs > 0` keeps it live (silent background refresh
+ * while the tab is visible + on tab focus) — used by the dashboard's broker
+ * board; the Report page omits it and so fetches once per range/revision.
+ */
+export function useTeamDashboard(range?: { from?: string; to?: string }, pollMs = 0) {
   const { revision } = useVault();
   const [data, setData] = useState<api.TeamDashboard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -308,21 +313,38 @@ export function useTeamDashboard(range?: { from?: string; to?: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    void (async () => {
+
+    const load = async (silent: boolean) => {
+      if (!silent) setLoading(true);
       try {
         const d = await api.dashboard.team({ from, to });
         if (!cancelled) { setData(d); setError(null); }
       } catch (err) {
-        if (!cancelled && !(err instanceof ApiError && err.isAuth)) {
-          setError(err instanceof Error ? err.message : 'Could not load the team report.');
-        }
+        if (cancelled || (err instanceof ApiError && err.isAuth)) return;
+        if (!silent) setError(err instanceof Error ? err.message : 'Could not load the team report.');
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && !silent) setLoading(false);
       }
-    })();
-    return () => { cancelled = true; };
-  }, [revision, from, to]);
+    };
+
+    void load(false);
+
+    if (pollMs <= 0) return () => { cancelled = true; };
+
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load(true);
+    }, pollMs);
+    const refresh = () => { if (document.visibilityState === 'visible') void load(true); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [revision, from, to, pollMs]);
 
   return { data, loading, error };
 }

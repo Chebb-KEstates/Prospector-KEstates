@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { useAuth } from '../../state/AuthContext';
-import { useManagerDashboard } from '../../data/hooks';
+import { useManagerDashboard, useTeamDashboard } from '../../data/hooks';
 import { PropertyState, AuditEntry } from '../../types/models';
 import { Permission } from '../../types/user';
 import { fmtInt, fmtDate, greetingName, timeAgo } from '../../utils/format';
@@ -10,10 +10,8 @@ import {
   MiniBarChart, ProgressLine, Segment, Funnel, FunnelStage,
 } from '../common/Dash';
 import { Icon, IconName } from '../common/Icon';
-import { AnalyticsTable, Col } from '../common/AnalyticsTable';
-import type { ManagerDashboard } from '../../data/api';
-
-type BoardRow = ManagerDashboard['board'][number];
+import { AnalyticsTable } from '../common/AnalyticsTable';
+import { brokerBoardColumns } from './brokerColumns';
 
 /**
  * Manager mission control — one screen, funnel-led.
@@ -63,6 +61,18 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
   const vault = useVault();
   const { user: me } = useAuth();
   const { data, loading, error, updatedAt } = useManagerDashboard(14);
+
+  // The broker board reuses the Report's broker rows (same columns to choose
+  // from), scoped to today and kept live on the same 30s cadence as the rest of
+  // the dashboard. The [start-of-today, start-of-tomorrow) window is stable, so
+  // the fetch doesn't churn every render; polling keeps the numbers fresh.
+  const todayWindow = useMemo(() => {
+    const d = new Date();
+    const start = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const end = new Date(start); end.setDate(end.getDate() + 1);
+    return { from: start.toISOString(), to: end.toISOString() };
+  }, []);
+  const { data: teamData } = useTeamDashboard(todayWindow, 30_000);
   const [period, setPeriod] = useState<Period>('today');
 
   if (!me) return null;
@@ -134,20 +144,10 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
     <button className="btn btn-ghost btn-sm" onClick={() => go(tab)}>Open</button>
   );
 
-  // Broker board columns — click-to-sort + show/hide/reorder (shared table).
-  const boardCols: Col<BoardRow>[] = [
-    { key: 'onList', label: 'On list', align: 'right', render: b => fmtInt(b.onList), sortValue: b => b.onList },
-    { key: 'calls', label: 'Calls', align: 'right', render: b => fmtInt(b.callsToday), sortValue: b => b.callsToday },
-    { key: 'reached', label: 'Reached', align: 'right', render: b => fmtInt(b.reachedToday), sortValue: b => b.reachedToday },
-    {
-      key: 'interested', label: 'Interested', align: 'right', sortValue: b => b.interestedToday,
-      render: b => <span style={{ color: b.interestedToday > 0 ? 'var(--primary)' : undefined, fontWeight: b.interestedToday > 0 ? 700 : undefined }}>{fmtInt(b.interestedToday)}</span>,
-    },
-    { key: 'lastAt', label: 'Last call', render: b => <span style={{ color: 'var(--text-secondary)' }}>{b.lastAt ? timeAgo(b.lastAt, now) : 'never'}</span>, sortValue: b => (b.lastAt ? new Date(b.lastAt).getTime() : undefined) },
-    // Available but hidden by default.
-    { key: 'team', label: 'Team', render: b => b.team || '—', sortValue: b => b.team },
-  ];
-  const boardDefault = ['onList', 'calls', 'reached', 'interested', 'lastAt'];
+  // Broker board columns — the SAME set as the Report broker table (shared),
+  // scoped to today (days = 1). Default view keeps the board's familiar five.
+  const boardCols = brokerBoardColumns(1);
+  const boardDefault = ['assigned', 'attempts', 'answered', 'interested', 'lastAt'];
 
   return (
     <div style={{ maxWidth: 1700, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -259,15 +259,19 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
           {openBtn('team')}
         </div>
         <AnalyticsTable
-          rows={data.board} prefsKey="dash.board.v1"
+          rows={teamData?.brokers ?? []} prefsKey="dash.board.v2"
           pinned={{
             label: 'Broker', sortValue: b => b.name,
-            render: b => (
-              <>
-                {b.name}
-                {b.quiet && <span style={{ marginLeft: 6, color: 'var(--warning)' }} title="Has data but no calls today">●</span>}
-              </>
-            ),
+            render: b => {
+              // "Has units but no calls today" — the board's amber dot.
+              const quiet = (b.assigned + b.portfolio) > 0 && b.calls === 0;
+              return (
+                <>
+                  {b.name}
+                  {quiet && <span style={{ marginLeft: 6, color: 'var(--warning)' }} title="Has data but no calls today">●</span>}
+                </>
+              );
+            },
           }}
           columns={boardCols} defaultVisible={boardDefault} empty="No active brokers." />
       </div>
