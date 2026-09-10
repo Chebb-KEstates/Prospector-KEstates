@@ -18,6 +18,18 @@ for what each part means for Prospector.
 
 ---
 
+## [3.16.1] — 2026-09-10
+
+### Fixed
+- **A call can no longer be logged as both "Interested" and "Not interested".**
+  On the record popup's outcome chips, "Interested — sell/rent" and "Not
+  interested" (incl. "Living in property") are contradictory, so picking one now
+  clears the other — they can never both be selected or saved.
+
+Client-only. No schema change / no migration.
+
+---
+
 ## [3.16.0] — 2026-09-10
 
 ### Added

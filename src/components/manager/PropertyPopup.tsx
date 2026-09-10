@@ -353,6 +353,31 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     localStorage.setItem('prospector.popup.randomizeNext', on ? '1' : '0');
   };
 
+  /**
+   * Toggle a call-outcome chip. Outcomes are multi-select, but "Interested"
+   * (sell/rent) and "Not interested" (incl. "Living in property") are
+   * contradictory — picking one clears the other, so a call can never be saved as
+   * both interested and not interested.
+   */
+  const toggleResult = (opt: ResultOption) => {
+    const isInterested = (o: CallOutcome) => o === CallOutcome.interestedSell || o === CallOutcome.interestedRent;
+    const isNotInterested = (o: CallOutcome) => o === CallOutcome.notInterested;
+    setResults(prev => {
+      const n = new Set(prev);
+      if (n.has(opt.key)) { n.delete(opt.key); return n; }
+      if (isInterested(opt.outcome) || isNotInterested(opt.outcome)) {
+        for (const o of RESULT_OPTIONS) {
+          if (!n.has(o.key)) continue;
+          const clash = isInterested(opt.outcome) ? isNotInterested(o.outcome) : isInterested(o.outcome);
+          if (clash) n.delete(o.key);
+        }
+      }
+      n.add(opt.key);
+      return n;
+    });
+    setJustSaved(false);
+  };
+
   const doReveal = async () => {
     if (!stop || revealing) return;
     setRevealing(true); setRevealError(null);
@@ -705,7 +730,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                         const c = outcomeColor(r.outcome); const sel = results.has(r.key);
                         return (
                           <button key={r.key} className="btn btn-sm"
-                            onClick={() => { setResults(prev => { const n = new Set(prev); if (n.has(r.key)) n.delete(r.key); else n.add(r.key); return n; }); setJustSaved(false); }}
+                            onClick={() => toggleResult(r)}
                             style={{ borderColor: sel ? c : 'var(--border)', borderWidth: sel ? 1.5 : 1, color: sel ? c : 'var(--text)', background: sel ? `color-mix(in srgb, ${c} 16%, transparent)` : 'var(--surface)', fontWeight: sel ? 600 : 500 }}>
                             {r.label}
                           </button>
