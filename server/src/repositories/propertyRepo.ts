@@ -303,6 +303,8 @@ export interface PropertyFilter {
   txFrom?: string;
   txTo?: string;
   callableOnly?: boolean;
+  /** Only units WITHOUT a number (the inverse of callableOnly). */
+  noContactOnly?: boolean;
   assignedTo?: string;
   datasetId?: string;
   /** Restricts to these states — used by the broker pool/teaser views. */
@@ -430,6 +432,7 @@ function buildWhere(f: PropertyFilter): { sql: string; params: unknown[] } {
     }
   }
   if (f.callableOnly) where.push('callable = 1');
+  if (f.noContactOnly) where.push('callable = 0');
 
   // The broker's quick chips. `dueOnly` compares against the server's clock,
   // where the client compared against the browser's — a difference of at most

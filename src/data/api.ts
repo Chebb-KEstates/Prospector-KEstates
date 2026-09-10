@@ -124,6 +124,8 @@ export interface PropertyQuery {
   search?: string; community?: string; cluster?: string;
   state?: PropertyState | ''; beds?: number; nationality?: string;
   outcome?: string; txFrom?: string; txTo?: string; callableOnly?: boolean;
+  /** Only units WITHOUT a number — the inverse of callableOnly. */
+  noContactOnly?: boolean;
   /** "Called within" window (UTC bounds), computed client-side from the chosen period. */
   calledFrom?: string; calledTo?: string;
   /** Exact property type (Villa / Apartment / …). */

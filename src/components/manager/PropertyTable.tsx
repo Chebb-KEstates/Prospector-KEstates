@@ -281,7 +281,8 @@ export function PropertyTable({
   const [outcome, setOutcome] = useState('');
   const [txFrom, setTxFrom] = useState('');
   const [txTo, setTxTo] = useState('');
-  const [callableOnly, setCallableOnly] = useState(false);
+  // Contact-info filter: '' any · 'has' has a number (callable) · 'none' no number.
+  const [contact, setContact] = useState<'' | 'has' | 'none'>('');
   const [tenancy, setTenancy] = useState<'' | 'vacant' | 'rented' | 'leaseSoon'>('');
   const [calledPeriod, setCalledPeriod] = useState<CalledPeriod>('');
   const [propertyType, setPropertyType] = useState('');
@@ -327,7 +328,8 @@ export function PropertyTable({
     includeInactive: includeInactive || undefined,
     txFrom: txFrom || undefined,
     txTo: txTo || undefined,
-    callableOnly: callableOnly || undefined,
+    callableOnly: contact === 'has' || undefined,
+    noContactOnly: contact === 'none' || undefined,
     tenancy: tenancy || undefined,
     calledFrom: called.from,
     calledTo: called.to,
@@ -346,7 +348,7 @@ export function PropertyTable({
     pageSize,
   }), [scope, assignedTo, assigneeFilter, datasetId, search, community, cluster, fixedState, state,
        beds, nationality, outcome, forcedOutcome, dueOnly, interestedOnly, expiringSoon, includeInactive,
-       txFrom, txTo, callableOnly, tenancy, called.from, called.to,
+       txFrom, txTo, contact, tenancy, called.from, called.to,
        propertyType, valueFrom, valueTo, sizeFrom, sizeTo, plotFrom, plotTo, followUp, hasNotes,
        sortKey, asc, page, pageSize]);
 
@@ -420,12 +422,12 @@ export function PropertyTable({
   const { order, setOrder, visible, setVisible, persist, reset, visibleCols, loaded } =
     useTableLayout(available, defaultVisible, prefsKey);
 
-  const anyFilter = search.trim() || community || cluster || state || beds || nationality || outcome || txFrom || txTo || callableOnly || tenancy || calledPeriod || assigneeFilter
+  const anyFilter = search.trim() || community || cluster || state || beds || nationality || outcome || txFrom || txTo || contact || tenancy || calledPeriod || assigneeFilter
     || propertyType || valueFrom || valueTo || sizeFrom || sizeTo || plotFrom || plotTo || followUp || hasNotes;
   const clearFilters = () => {
     setSearch(''); setCommunity(''); setCluster(''); setState(''); setBeds('');
     setNationality(''); setOutcome(''); setTxFrom(''); setTxTo('');
-    setCallableOnly(false); setTenancy(''); setCalledPeriod(''); setAssigneeFilter('');
+    setContact(''); setTenancy(''); setCalledPeriod(''); setAssigneeFilter('');
     setPropertyType(''); setValueFrom(''); setValueTo(''); setSizeFrom(''); setSizeTo('');
     setPlotFrom(''); setPlotTo(''); setFollowUp(''); setHasNotes(false); setPage(0);
   };
@@ -435,7 +437,7 @@ export function PropertyTable({
   // switching a quick chip also returns to the first page.
   useEffect(() => { setPage(0); },
     [search, community, cluster, state, beds, nationality, outcome, txFrom, txTo,
-     callableOnly, tenancy, calledPeriod, assigneeFilter,
+     contact, tenancy, calledPeriod, assigneeFilter,
      propertyType, valueFrom, valueTo, sizeFrom, sizeTo, plotFrom, plotTo, followUp, hasNotes,
      pageSize, sortKey, asc, forcedOutcome, dueOnly, interestedOnly, scope]);
 
@@ -443,7 +445,7 @@ export function PropertyTable({
   // multi-select can be cleared when the visible set changes.
   useEffect(() => { onFiltersChange?.(); },
     [search, community, cluster, state, beds, nationality, outcome, txFrom, txTo,
-     callableOnly, tenancy, calledPeriod, assigneeFilter,
+     contact, tenancy, calledPeriod, assigneeFilter,
      propertyType, valueFrom, valueTo, sizeFrom, sizeTo, plotFrom, plotTo, followUp, hasNotes,
      onFiltersChange]);
 
@@ -489,7 +491,7 @@ export function PropertyTable({
   const secondaryCount =
     (community ? 1 : 0) + (cluster ? 1 : 0) + (beds ? 1 : 0) + (nationality ? 1 : 0) +
     (outcome ? 1 : 0) + (assigneeFilter ? 1 : 0) + (tenancy ? 1 : 0) + (calledPeriod ? 1 : 0) +
-    ((txFrom || txTo) ? 1 : 0) + (callableOnly ? 1 : 0) + (propertyType ? 1 : 0) +
+    ((txFrom || txTo) ? 1 : 0) + (contact ? 1 : 0) + (propertyType ? 1 : 0) +
     ((valueFrom || valueTo) ? 1 : 0) + ((sizeFrom || sizeTo) ? 1 : 0) + ((plotFrom || plotTo) ? 1 : 0) +
     (followUp ? 1 : 0) + (hasNotes ? 1 : 0);
 
@@ -626,10 +628,13 @@ export function PropertyTable({
                 <FilterField label="Last-sale price (AED)">
                   <NumberRange from={valueFrom} to={valueTo} setFrom={setValueFrom} setTo={setValueTo} />
                 </FilterField>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', cursor: 'pointer', marginTop: 2 }}>
-                  <input type="checkbox" checked={callableOnly} onChange={() => setCallableOnly(v => !v)} />
-                  Callable only (has a number)
-                </label>
+                <FilterField label="Contact info">
+                  <select className="input" style={selFull} value={contact} onChange={e => setContact(e.target.value as typeof contact)}>
+                    <option value="">Any</option>
+                    <option value="has">Has a number</option>
+                    <option value="none">No number</option>
+                  </select>
+                </FilterField>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', cursor: 'pointer' }}>
                   <input type="checkbox" checked={hasNotes} onChange={() => setHasNotes(v => !v)} />
                   Has a note

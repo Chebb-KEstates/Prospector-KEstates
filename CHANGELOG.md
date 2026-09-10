@@ -18,6 +18,20 @@ for what each part means for Prospector.
 
 ---
 
+## [3.17.0] — 2026-09-10
+
+### Added
+- **Filter by units WITHOUT contact info.** The data tables' "Callable only"
+  checkbox is now a **Contact info** dropdown — Any / Has a number / No number —
+  so you can filter to units that have no contact number as easily as those that
+  do. Applies to every data table (manager Database, broker Database/Pool).
+- Server: `/api/properties` gained a `noContactOnly` filter (the inverse of
+  `callableOnly`).
+
+No schema change / no migration — pull + rebuild (server) + restart.
+
+---
+
 ## [3.16.1] — 2026-09-10
 
 ### Fixed

@@ -111,6 +111,11 @@ test('generated `callable` column matches Property.callable', async () => {
   const page = await queryProperties({ callableOnly: true, limit: 50, offset: 0 });
   assert.equal(page.total, 1);
   assert.equal(page.rows[0].id, withPhone.id);
+
+  // The inverse filter: units WITHOUT a number.
+  const noContact = await queryProperties({ noContactOnly: true, limit: 50, offset: 0 });
+  assert.equal(noContact.total, 1, 'no-contact filter returns the un-callable unit');
+  assert.equal(noContact.rows[0].id, without.id);
 });
 
 test('owner_key column agrees with the shared ownerKeyOf()', async () => {

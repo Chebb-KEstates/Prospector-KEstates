@@ -53,6 +53,7 @@ const listQuerySchema = {
     calledFrom: { type: 'string', maxLength: 40 },
     calledTo: { type: 'string', maxLength: 40 },
     callableOnly: { type: 'boolean' },
+    noContactOnly: { type: 'boolean' },
     propertyType: { type: 'string', maxLength: 128 },
     valueFrom: { type: 'number', minimum: 0 },
     valueTo: { type: 'number', minimum: 0 },
@@ -83,7 +84,7 @@ const listQuerySchema = {
 interface ListQuery {
   search?: string; community?: string; cluster?: string;
   state?: PropertyState | ''; beds?: number; nationality?: string;
-  outcome?: string; txFrom?: string; txTo?: string; callableOnly?: boolean;
+  outcome?: string; txFrom?: string; txTo?: string; callableOnly?: boolean; noContactOnly?: boolean;
   calledFrom?: string; calledTo?: string;
   propertyType?: string;
   valueFrom?: number; valueTo?: number;
@@ -180,6 +181,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
       calledFrom: q.calledFrom,
       calledTo: q.calledTo,
       callableOnly: q.callableOnly,
+      noContactOnly: q.noContactOnly,
       propertyType: q.propertyType,
       valueFrom: q.valueFrom,
       valueTo: q.valueTo,
