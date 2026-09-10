@@ -18,6 +18,29 @@ for what each part means for Prospector.
 
 ---
 
+## [3.19.0] — 2026-09-10
+
+### Added
+- **"Add update" — note progress on a record without logging a call.** The record
+  popup's history journal now has an **Add update** button: type an update (an
+  email sent, a viewing booked, any progress) and it's added to the journal,
+  dated and attributed, with no call logged and no effect on call counts or the
+  last outcome. Like saving notes, adding an update counts as working the unit and
+  renews its assignment hold.
+
+### Changed
+- **A record now shows its current outcome when you reopen it.** The outcome tabs
+  used to reset to blank every time; they now open pre-selected to the unit's last
+  recorded outcome, with a **Current status** line (the outcome, who set it, when)
+  — so anyone opening the record, including a newly-assigned agent, sees where it
+  stands. The pre-filled status is a preview only: it can't be saved as a fresh
+  call until you actually pick/confirm an outcome, so reopening never logs a
+  duplicate.
+
+No schema change / no migration — pull + rebuild (server) + restart.
+
+---
+
 ## [3.18.0] — 2026-09-10
 
 ### Changed

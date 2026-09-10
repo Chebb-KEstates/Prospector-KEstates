@@ -256,6 +256,11 @@ export const properties = {
   async saveNotes(id: string, notes: string): Promise<Property> {
     return Property.fromJson(await patch(`/api/properties/${id}/notes`, { notes }));
   },
+
+  /** Add a dated note to the record's journal without logging a call. */
+  async addUpdate(id: string, note: string): Promise<void> {
+    await post(`/api/properties/${id}/note`, { note });
+  },
 };
 
 // ── Leads ──────────────────────────────────────────────────────────────────

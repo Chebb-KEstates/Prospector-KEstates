@@ -7,7 +7,7 @@ import {
 } from '../repositories/propertyRepo';
 import { ownerKeyOf } from '../../../src/logic/ownerGrouping';
 import { callsForProperties } from '../repositories/callRepo';
-import { listAuditForProperty } from '../repositories/auditRepo';
+import { listAuditForProperty, writeAudit } from '../repositories/auditRepo';
 import { findDatasetById } from '../repositories/datasetRepo';
 import { loadSettings } from '../repositories/settingsRepo';
 import {
@@ -500,6 +500,44 @@ export default async function propertyRoutes(app: FastifyInstance) {
     await updatePropertyNotes(id, notes.trim(), await loadSettings());
     const updated = await findPropertyById(id);
     return serializeProperty(updated!);
+  });
+
+  /**
+   * Add a dated note to the record's history journal WITHOUT logging a call — an
+   * "Add update" from the record popup. It's a timeline entry (progress, an email
+   * sent, a viewing booked), not a call, so it never touches the call count or the
+   * last-outcome. Like saving notes, it counts as working the unit and renews the
+   * assignment hold. Written as an audit 'note' row so the journal picks it up.
+   */
+  app.post('/api/properties/:id/note', {
+    preHandler: [app.authenticate],
+    schema: {
+      params: {
+        type: 'object', required: ['id'],
+        properties: { id: { type: 'string', maxLength: 64 } },
+      },
+      body: {
+        type: 'object', required: ['note'], additionalProperties: false,
+        properties: { note: { type: 'string', maxLength: 2000 } },
+      },
+    },
+  }, async (req) => {
+    const { id } = req.params as { id: string };
+    const text = (req.body as { note: string }).note.trim();
+    if (!text) throw badRequest('An update needs some text.');
+    const me = req.currentUser!;
+
+    const p = await findPropertyById(id);
+    if (!p) throw notFound('That unit no longer exists.');
+    if (!me.isManager && p.assignedTo !== me.id) {
+      throw forbidden('You can only add updates to a unit assigned to you.');
+    }
+
+    await writeAudit({ actorId: me.id, action: 'note', detail: text, propertyIds: [id] });
+    // Adding an update is "working" the unit, so renew the hold like notes do —
+    // pass the current notes through unchanged so only the timer moves.
+    await updatePropertyNotes(id, p.notes ?? '', await loadSettings());
+    return { ok: true };
   });
 
   app.post('/api/properties/assign', {

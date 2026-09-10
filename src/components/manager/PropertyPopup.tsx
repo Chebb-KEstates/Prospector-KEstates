@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { useAuth } from '../../state/AuthContext';
-import { CallStop, CallUnit, OwnerNumbers } from '../../state/callTypes';
+import { CallStop, CallUnit, CallHistoryEntry, OwnerNumbers } from '../../state/callTypes';
 import { CallOutcome, PropertyState } from '../../types/models';
 import type { PhoneEntry } from '../../types/models';
 import { StateChip, CountdownBadge, OutcomeChip } from '../common/StateChip';
@@ -59,6 +59,32 @@ const OUTCOME_PRIORITY: CallOutcome[] = [
 function strongestOutcome(rs: ResultOption[]): CallOutcome | null {
   for (const o of OUTCOME_PRIORITY) if (rs.some(r => r.outcome === o)) return o;
   return null;
+}
+
+/** The unit's most recent call (its current recorded status), or none. */
+function latestEntry(u?: CallUnit): CallHistoryEntry | undefined {
+  const h = u?.history;
+  if (!h || h.length === 0) return undefined;
+  return h.reduce((a, b) => (a.at >= b.at ? a : b));
+}
+
+/**
+ * Which tabs represent a stored outcome — so reopening a record shows its
+ * current status pre-selected (issue: "the outcome should still show when I come
+ * back, even after reassignment"). A no-answer/unreachable is just the connection
+ * step; the answered outcomes map to their canonical result chip.
+ */
+function presetForOutcome(o: CallOutcome): { connection: Connection; resultKey?: string } {
+  switch (o) {
+    case CallOutcome.noAnswer: return { connection: 'noAnswer' };
+    case CallOutcome.unreachable: return { connection: 'unreachable' };
+    case CallOutcome.interestedSell: return { connection: 'answered', resultKey: 'sell' };
+    case CallOutcome.interestedRent: return { connection: 'answered', resultKey: 'rent' };
+    case CallOutcome.callbackLater: return { connection: 'answered', resultKey: 'callback' };
+    case CallOutcome.notInterested: return { connection: 'answered', resultKey: 'notInterested' };
+    case CallOutcome.dnc: return { connection: 'answered', resultKey: 'dnc' };
+    default: return { connection: 'answered' };
+  }
 }
 
 /**
@@ -119,6 +145,10 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
+  // The outcome tabs are pre-filled to the unit's current status when it opens,
+  // so a reassigned agent still sees what it is. That preview must NOT arm the
+  // Save button — only a deliberate change/confirm counts as a new call.
+  const [outcomeTouched, setOutcomeTouched] = useState(false);
   // Manager handoff dialog for an "interested" call (choose broker / keep in pool).
   const [showHandoff, setShowHandoff] = useState(false);
   const [handoffBroker, setHandoffBroker] = useState('');
@@ -151,6 +181,12 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   const [events, setEvents] = useState<PropertyEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsKey, setEventsKey] = useState(0);
+
+  // "Add update" — a journal note without a call.
+  const [addingUpdate, setAddingUpdate] = useState(false);
+  const [updateText, setUpdateText] = useState('');
+  const [updateSaving, setUpdateSaving] = useState(false);
+  const [updateErr, setUpdateErr] = useState<string | null>(null);
 
   // The owner's other units (across areas / brokers / pool) — cross-area coordination.
   const [ownerUnits, setOwnerUnits] = useState<api.OwnerUnit[]>([]);
@@ -187,7 +223,20 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   useEffect(() => {
     setNotes(noteOverrides[focusedId] ?? focusedUnit?.notes ?? '');
     setNotesSaved(false); setNotesDirty(false);
-    setConnection(null); setResults(new Set()); setFeedback(''); setFollowUpAt(''); setJustSaved(false);
+    // Pre-fill the outcome tabs with the unit's current status so it's visible on
+    // reopen (and for a new agent after reassignment). `outcomeTouched` stays
+    // false so this preview can't be saved as a fresh call by accident.
+    const last = latestEntry(focusedUnit);
+    if (last) {
+      const preset = presetForOutcome(last.outcome);
+      setConnection(preset.connection);
+      setResults(preset.resultKey ? new Set([preset.resultKey]) : new Set());
+    } else {
+      setConnection(null); setResults(new Set());
+    }
+    setOutcomeTouched(false);
+    setFeedback(''); setFollowUpAt(''); setJustSaved(false);
+    setAddingUpdate(false); setUpdateText(''); setUpdateErr(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusedId, stop]);
 
@@ -266,6 +315,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   const wantsCallback = answered && selectedResults.some(r => r.key === 'callback' || r.key === 'future');
   const needFeedback = answered;                   // an answered call must be explained
   const canSave = primary != null
+    && outcomeTouched                              // don't save the pre-filled status preview
     && (!answered || selectedResults.length > 0)   // answered ⇒ at least one result
     && (!needFeedback || feedback.trim().length > 0)
     && (!wantsCallback || !!followUpAt)
@@ -290,6 +340,9 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
 
   const curState = refresh[focusedId]?.state ?? focusedUnit?.state ?? PropertyState.pool;
   const curExpires = refresh[focusedId]?.expiresAt ?? focusedUnit?.expiresAt;
+  // The unit's current recorded status — shown persistently so reopening the
+  // record (even by a newly-assigned agent) makes its last outcome obvious.
+  const lastStatus = latestEntry(focusedUnit);
 
   // Structured detail for the focused unit's boxes.
   const detail = focusedUnit?.detail;
@@ -309,6 +362,26 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
       setNotesDirty(false); setNotesSaved(true);
       setEventsKey(k => k + 1);
     } catch { /* keep the text; a later close retries */ }
+  };
+
+  // Add a journal update without logging a call. Renews the hold server-side.
+  const submitUpdate = async () => {
+    const text = updateText.trim();
+    if (!text || updateSaving) return;
+    setUpdateSaving(true); setUpdateErr(null);
+    try {
+      await api.properties.addUpdate(focusedId, text);
+      setUpdateText(''); setAddingUpdate(false);
+      setEventsKey(k => k + 1); // refresh the journal
+      try {
+        const p2 = await api.properties.byId(focusedId);
+        setRefresh(r => ({ ...r, [focusedId]: { state: p2.state, expiresAt: p2.assignmentExpiresAt } }));
+      } catch { /* keep the old chip */ }
+    } catch (e) {
+      setUpdateErr(e instanceof ApiError ? e.message : 'Could not add that update.');
+    } finally {
+      setUpdateSaving(false);
+    }
   };
 
   const tryClose = async () => { if (locked) return; await flushNotes(); onClose(); };
@@ -375,6 +448,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
       n.add(opt.key);
       return n;
     });
+    setOutcomeTouched(true);
     setJustSaved(false);
   };
 
@@ -706,6 +780,22 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   Log the outcome{multiUnit ? ` — ${focusedUnit?.label ?? ''}` : ''}
                 </div>
 
+                {/* Current status — the last recorded outcome, persistent across
+                    reopen and reassignment. The tabs below start on this status. */}
+                {lastStatus && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                    marginBottom: 10, padding: '7px 11px', borderRadius: 10,
+                    background: 'var(--surface-2)', border: '1px solid var(--border-light)',
+                  }}>
+                    <span style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)', fontWeight: 600 }}>Current status</span>
+                    <OutcomeChip outcome={lastStatus.outcome} />
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>
+                      {[vault.userById(lastStatus.by ?? '')?.name, timeAgo(lastStatus.at)].filter(Boolean).join(' · ')}
+                    </span>
+                  </div>
+                )}
+
                 {/* Section 1 — did the call connect? */}
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 5 }}>Did the call connect?</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -713,7 +803,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                     const sel = connection === key;
                     return (
                       <button key={key} className="btn btn-sm"
-                        onClick={() => { setConnection(key); if (key !== 'answered') setResults(new Set()); setJustSaved(false); }}
+                        onClick={() => { setConnection(key); if (key !== 'answered') setResults(new Set()); setOutcomeTouched(true); setJustSaved(false); }}
                         style={{ borderColor: sel ? 'var(--gold)' : 'var(--border)', borderWidth: sel ? 1.5 : 1, color: sel ? 'var(--gold-dark)' : 'var(--text)', background: sel ? 'color-mix(in srgb, var(--gold) 14%, transparent)' : 'var(--surface)', fontWeight: sel ? 600 : 500 }}>
                         {label}
                       </button>
@@ -751,6 +841,11 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   placeholder={needFeedback ? 'Call feedback — what was said… (required)' : 'Call feedback — what was said…'}
                   onChange={e => { setFeedback(e.target.value); setJustSaved(false); }} />
 
+                {lastStatus && !outcomeTouched && (
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: 8 }}>
+                    Showing the last recorded outcome. Pick an outcome to log a <b>new</b> call, or use <b>Add update</b> to note progress without a call.
+                  </div>
+                )}
                 {connection != null && (
                   <button className="btn btn-primary" onClick={() => void attemptSave()} disabled={!canSave}
                     style={{ marginTop: 8, width: '100%', justifyContent: 'center', padding: '10px', background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013', opacity: canSave ? 1 : 0.5 }}>
@@ -784,7 +879,33 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
 
               {/* ── RIGHT: history journal ──────────────────────────────────── */}
               <Column>
-                <div style={sectionLabel}>History journal{multiUnit ? ` — ${focusedUnit?.label ?? ''}` : ''}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                  <div style={{ ...sectionLabel, marginBottom: 0, flex: 1 }}>History journal{multiUnit ? ` — ${focusedUnit?.label ?? ''}` : ''}</div>
+                  {!addingUpdate && (
+                    <button className="btn btn-sm btn-ghost" onClick={() => { setAddingUpdate(true); setUpdateErr(null); }}
+                      style={{ flexShrink: 0 }} title="Add a note to the journal without logging a call">
+                      <Icon name="plus" size={13} /> Add update
+                    </button>
+                  )}
+                </div>
+
+                {/* Compose a journal update — no call logged. */}
+                {addingUpdate && (
+                  <div style={{ marginBottom: 10, padding: 10, borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border-light)' }}>
+                    <textarea className="input" value={updateText} rows={3} autoFocus
+                      style={{ resize: 'vertical', width: '100%' }}
+                      placeholder="Add an update — progress, an email sent, a viewing booked… (no call logged)"
+                      onChange={e => { setUpdateText(e.target.value); setUpdateErr(null); }} />
+                    {updateErr && <ErrorBox>{updateErr}</ErrorBox>}
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8, justifyContent: 'flex-end' }}>
+                      <button className="btn btn-sm btn-ghost" disabled={updateSaving}
+                        onClick={() => { setAddingUpdate(false); setUpdateText(''); setUpdateErr(null); }}>Cancel</button>
+                      <button className="btn btn-sm btn-primary" disabled={updateSaving || !updateText.trim()} onClick={() => void submitUpdate()}>
+                        {updateSaving ? 'Adding…' : 'Add to journal'}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {eventsLoading && events.length === 0 ? (
                   <div style={{ color: 'var(--text-tertiary)', fontSize: '0.82rem', padding: 8 }}>Loading…</div>
                 ) : events.length === 0 ? (
@@ -866,13 +987,15 @@ function ErrorBox({ children }: { children: React.ReactNode }) {
 
 /** One entry in the history journal: a call, a record event, or the import. */
 function JournalRow({ e, actorName }: { e: PropertyEvent; actorName: (id: string) => string | undefined }) {
+  const isNote = e.kind === 'audit' && e.action === 'note';
   const icon = e.kind === 'call' ? 'phoneCall'
     : e.kind === 'import' ? 'upload'
-      : e.action === 'view' ? 'eye'
-        : e.action === 'assign' ? 'assign'
-          : e.action === 'reclaim' ? 'refresh'
-            : e.action === 'update' ? 'refresh'
-              : 'clock';
+      : e.action === 'note' ? 'plus'
+        : e.action === 'view' ? 'eye'
+          : e.action === 'assign' ? 'assign'
+            : e.action === 'reclaim' ? 'refresh'
+              : e.action === 'update' ? 'refresh'
+                : 'clock';
   const who = e.kind === 'import' ? undefined : actorName(e.actorId ?? '') ?? undefined;
   // A call's ticked results are kept in the note as "[Label · Label] free text";
   // show every ticked label as a chip, not just the single strongest outcome.
@@ -888,7 +1011,7 @@ function JournalRow({ e, actorName }: { e: PropertyEvent; actorName: (id: string
             ? <FeedbackChips tags={fb.tags} color={outcomeColor(e.outcome)} />
             : <OutcomeChip outcome={e.outcome} />)}
           <span style={{ fontWeight: 600, fontSize: '0.82rem' }}>
-            {e.kind === 'call' ? (e.ownerName ? `Call · ${e.ownerName}` : 'Call') : e.detail}
+            {e.kind === 'call' ? (e.ownerName ? `Call · ${e.ownerName}` : 'Call') : isNote ? 'Update' : e.detail}
           </span>
           {/* Which of the owner's units the call was about — so a note left on
               another unit is clearly attributed. */}
@@ -902,6 +1025,7 @@ function JournalRow({ e, actorName }: { e: PropertyEvent; actorName: (id: string
           )}
         </div>
         {e.kind === 'call' && fb.text && <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 2 }}>“{fb.text}”</div>}
+        {e.kind === 'audit' && e.action === 'note' && <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 2, whiteSpace: 'pre-wrap' }}>{e.detail}</div>}
         <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
           {[who, fmtDateTime(e.at), timeAgo(e.at)].filter(Boolean).join(' · ')}
         </div>
