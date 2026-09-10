@@ -11,7 +11,7 @@ import { countLeadsByState, countLeadsTotal } from '../repositories/leadRepo';
 import {
   brokerCallStats, brokerStatsBetween, statsBetween, rollingStats,
   callsPerDay, countCallsTotal, lifetimeStats, brokerFunnelWindow,
-  interestedUnitsByBroker,
+  newInterestedUnitsByBroker,
 } from '../repositories/callRepo';
 import { countPending } from '../repositories/requestRepo';
 import { listUsers } from '../repositories/userRepo';
@@ -212,9 +212,9 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       assignmentMatrix(),
       areaBreakdown(),
       areaAssignmentMatrix(),
-      // Interested = distinct UNITS with an interested outcome (deduped), scoped
-      // to the range when set — not interested CALL events.
-      ranged ? interestedUnitsByBroker(from!, to!) : interestedUnitsByBroker(),
+      // Interested = distinct NEW interested units generated in the range — units
+      // that transitioned into interested (not just any interested call).
+      ranged ? newInterestedUnitsByBroker(from!, to!) : newInterestedUnitsByBroker(),
     ]);
 
     const statsById = new Map(stats.map(s => [s.brokerId, s]));
@@ -268,8 +268,8 @@ export default async function dashboardRoutes(app: FastifyInstance) {
         const w = ranged ? windowStats.get(b.id) : undefined;
         const calls = ranged ? (w?.calls ?? 0) : (s?.calls ?? 0);
         const reached = ranged ? (w?.reached ?? 0) : (s?.reached ?? 0);
-        // Interested = distinct interested UNITS (deduped), not interested calls —
-        // so it counts units the way the Database "Interested" filter does.
+        // Interested = distinct NEW interested units the broker generated in the
+        // range (a transition into interested), not interested call events.
         const interested = interestedUnits.get(b.id) ?? 0;
         const cov = coverage.get(b.id) ?? { callable: 0, worked: 0 };
         return {

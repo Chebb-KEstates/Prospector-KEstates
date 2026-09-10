@@ -29,8 +29,8 @@ export function brokerBoardColumns(days?: number): Col<TeamBrokerRow>[] {
     { key: 'noAnswer', label: 'No answer', align: 'right', render: b => fmtInt(b.noAnswer), sortValue: b => b.noAnswer },
     { key: 'answered', label: 'Answered', align: 'right', render: b => fmtInt(b.reached), sortValue: b => b.reached },
     {
-      key: 'interested', label: 'Interested', align: 'right', sortValue: b => b.interested,
-      render: b => <span style={{ color: b.interested > 0 ? 'var(--success)' : undefined, fontWeight: b.interested > 0 ? 700 : undefined }}>{fmtInt(b.interested)}</span>,
+      key: 'interested', label: 'New interested', align: 'right', sortValue: b => b.interested,
+      render: b => <span title="Units that newly became interested in the selected period" style={{ color: b.interested > 0 ? 'var(--success)' : undefined, fontWeight: b.interested > 0 ? 700 : undefined }}>{fmtInt(b.interested)}</span>,
     },
     { key: 'answerRate', label: 'Answer rate', align: 'right', render: b => pct(b.reached, b.calls), sortValue: b => (b.calls ? b.reached / b.calls : undefined) },
     { key: 'interestRate', label: 'Interested rate', align: 'right', render: b => pct(b.interested, b.reached), sortValue: b => (b.reached ? b.interested / b.reached : undefined) },

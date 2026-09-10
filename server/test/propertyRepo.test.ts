@@ -7,7 +7,7 @@ import {
   callableCoverageByBroker, followUpsDueByBroker,
 } from '../src/repositories/propertyRepo';
 import { areaBreakdown, areaAssignmentMatrix } from '../src/repositories/statsRepo';
-import { insertCall, interestedUnitsByBroker } from '../src/repositories/callRepo';
+import { insertCall, newInterestedUnitsByBroker } from '../src/repositories/callRepo';
 import { CallLog, CallOutcome } from '../../src/types/models';
 import { newCallId } from '../src/domain/ids';
 import { Property, OwnerInfo, PropertyState, kOrgId } from '../../src/types/models';
@@ -366,28 +366,42 @@ test('area breakdown groups by community + sub-community with per-broker holding
   assert.equal(matrix.find(c => c.cluster === 'Frond B' && c.brokerId === 'u-director')?.units, 1);
 });
 
-test('interested count is DISTINCT units, not call events (repeat calls dedupe)', async () => {
+test('new-interested counts transitions INTO interested, deduped per unit', async () => {
   await wipe();
-  const a = makeProperty({ unitNumber: '1201', phone: '971500000031' });
-  const b = makeProperty({ unitNumber: '1202', phone: '971500000032' });
-  await saveProperties([a, b]);
-  await pool.query("UPDATE properties SET assigned_to = 'u-director', state = 'assigned' WHERE id IN (?, ?)", [a.id, b.id]);
+  const A = makeProperty({ unitNumber: '1301', phone: '971500000041' });
+  const B = makeProperty({ unitNumber: '1302', phone: '971500000042' });
+  const C = makeProperty({ unitNumber: '1303', phone: '971500000043' });
+  const D = makeProperty({ unitNumber: '1304', phone: '971500000044' });
+  await saveProperties([A, B, C, D]);
+  await pool.query("UPDATE properties SET assigned_to = 'u-director', state = 'assigned' WHERE id IN (?, ?, ?, ?)", [A.id, B.id, C.id, D.id]);
 
-  const call = (propId: string, at: Date) =>
-    insertCall(new CallLog(newCallId(), kOrgId, [propId], [], 'u-director', at.toISOString(), CallOutcome.interestedSell));
-  const now = new Date();
-  await call(a.id, now);                                   // unit a — interested
-  await call(a.id, new Date(now.getTime() - 3600_000));    // unit a again — a REPEAT, must not double-count
-  await call(b.id, now);                                   // unit b — interested
+  const t = (min: number) => new Date(Date.UTC(2026, 2, 1, 10, min, 0)).toISOString();
+  const call = (propId: string, min: number, outcome: CallOutcome) =>
+    insertCall(new CallLog(newCallId(), kOrgId, [propId], [], 'u-director', t(min), outcome));
 
-  const all = await interestedUnitsByBroker();
-  assert.equal(all.get('u-director'), 2, 'three interested calls on two units → 2 distinct units');
+  // A: no-answer → interested (transition), then sell+rent on the same unit → still ONE.
+  await call(A.id, 0, CallOutcome.noAnswer);
+  await call(A.id, 1, CallOutcome.interestedSell);
+  await call(A.id, 2, CallOutcome.interestedRent);
+  // B: first call interested (transition), later follow-up stays interested (NOT new).
+  await call(B.id, 1, CallOutcome.interestedSell);
+  await call(B.id, 3, CallOutcome.interestedSell);
+  // C: interested → not-interested → interested again (a re-interest transition).
+  await call(C.id, 0, CallOutcome.interestedSell);
+  await call(C.id, 2, CallOutcome.notInterested);
+  await call(C.id, 4, CallOutcome.interestedSell);
+  // D: only no-answer — never interested.
+  await call(D.id, 0, CallOutcome.noAnswer);
 
-  // Windowed: only the last hour excludes the older repeat, still 2 distinct units.
-  const from = new Date(now.getTime() - 30 * 60_000);
-  const to = new Date(now.getTime() + 60_000);
-  const windowed = await interestedUnitsByBroker(from, to);
-  assert.equal(windowed.get('u-director'), 2, 'both units still have an interested call inside the window');
+  const all = await newInterestedUnitsByBroker();
+  assert.equal(all.get('u-director'), 3, 'A, B, C each became interested; D never did');
+
+  // Window [min 3, min 5): B's follow-up (min 3) stays interested → excluded; C's
+  // re-interest (min 4) is a fresh transition → counted. Only C.
+  const from = new Date(Date.UTC(2026, 2, 1, 10, 3, 0));
+  const to = new Date(Date.UTC(2026, 2, 1, 10, 5, 0));
+  const win = await newInterestedUnitsByBroker(from, to);
+  assert.equal(win.get('u-director'), 1, 'only C re-transitioned in the window; B merely stayed interested');
 });
 
 test.after(async () => {

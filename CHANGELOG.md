@@ -18,6 +18,24 @@ for what each part means for Prospector.
 
 ---
 
+## [3.17.2] — 2026-09-10
+
+### Changed
+- **Report "Interested" is now "New interested" — units that newly *became*
+  interested in the selected period.** A unit counts when a call in the range
+  moves it into interested from a non-interested state; a follow-up that merely
+  keeps an already-interested unit interested does **not** count; a unit that
+  swings interested → not-interested → interested again **does** count as a fresh
+  interest; and logging both "interested to sell" and "interested to rent" on one
+  unit still counts it **once**. Any non-interested prior outcome (no-answer,
+  callback, not-interested) breaks the streak. Attributed to the broker who made
+  the transitioning call. Refines v3.17.1 (which counted any interested call in
+  the range).
+
+No schema change / no migration — pull + rebuild (server) + restart.
+
+---
+
 ## [3.17.1] — 2026-09-10
 
 ### Fixed

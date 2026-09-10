@@ -285,22 +285,39 @@ export async function brokerStatsBetween(from: Date, to: Date): Promise<Map<stri
 }
 
 /**
- * Distinct interested UNITS per broker (optionally within a window). Unlike the
- * `interested` in the stats above — which counts interested CALL events — this
- * counts each unit that got an interested outcome once, so repeat interested
- * calls on the same unit don't inflate it. Attributed to the broker who made the
- * interested call. Every popup call links exactly one unit, so this stays ≤ the
- * interested-call count (the interest rate can't exceed 100%).
+ * NEW interested units per broker — distinct units that TRANSITIONED into
+ * interested during the window (optionally all-time when no window).
+ *
+ * "New" means the unit went from a non-interested state to interested: an
+ * interested call whose immediately-preceding call (across the unit's whole
+ * history) was NOT interested, or which is the unit's first call. So:
+ *   • not-interested / never-called → interested  ⇒ counts (fresh interest)
+ *   • already interested, follow-up stays interested ⇒ does NOT count
+ *   • interested → not-interested → interested again ⇒ counts (re-interest)
+ *   • sell + rent logged on one unit in the period ⇒ one transition ⇒ counts once
+ * Any non-interested prior outcome (no-answer, callback, not-interested…) breaks
+ * the streak, matching the unit's live last-outcome status. Attributed to the
+ * broker who made the transitioning call. Uses LAG (MySQL 8) over each unit's
+ * call history.
  */
-export async function interestedUnitsByBroker(from?: Date, to?: Date): Promise<Map<string, number>> {
-  const clauses = ['c.org_id = ?', `c.${INTERESTED_SQL}`];
+export async function newInterestedUnitsByBroker(from?: Date, to?: Date): Promise<Map<string, number>> {
   const params: unknown[] = [kOrgId];
-  if (from && to) { clauses.push('c.at >= ? AND c.at < ?'); params.push(from, to); }
+  let windowClause = '';
+  if (from && to) { windowClause = 'AND uc.at >= ? AND uc.at < ?'; params.push(from, to); }
   const [rows] = await pool.query<Row[]>(
-    `SELECT c.broker_id AS broker_id, COUNT(DISTINCT cp.property_id) AS n
-       FROM calls c JOIN call_properties cp ON cp.call_id = c.id
-      WHERE ${clauses.join(' AND ')}
-      GROUP BY c.broker_id`,
+    `WITH uc AS (
+       SELECT cp.property_id AS unit_id, c.broker_id, c.at, c.outcome,
+              LAG(c.outcome) OVER (PARTITION BY cp.property_id ORDER BY c.at, c.id) AS prev_outcome
+         FROM calls c
+         JOIN call_properties cp ON cp.call_id = c.id
+        WHERE c.org_id = ?
+     )
+     SELECT broker_id, COUNT(DISTINCT unit_id) AS n
+       FROM uc
+      WHERE outcome IN ('interestedSell', 'interestedRent')
+        AND (prev_outcome IS NULL OR prev_outcome NOT IN ('interestedSell', 'interestedRent'))
+        ${windowClause}
+      GROUP BY broker_id`,
     params,
   );
   return new Map(rows.map(r => [r.broker_id as string, Number(r.n ?? 0)]));
