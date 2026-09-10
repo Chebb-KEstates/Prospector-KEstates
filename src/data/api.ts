@@ -345,6 +345,12 @@ export const requests = {
 
   pendingCount: () => get<{ count: number }>('/api/requests/pending-count'),
 
+  /** The individual units of one request — for the manager's "view units" popup. */
+  async units(id: string): Promise<Property[]> {
+    const rows = await get<Record<string, unknown>[]>(`/api/requests/${id}/units`);
+    return rows.map(Property.fromJson);
+  },
+
   async approve(id: string): Promise<{ granted: number; request: BatchRequest }> {
     const r = await post<{ granted: number; request: Record<string, unknown> }>(
       `/api/requests/${id}/approve`,

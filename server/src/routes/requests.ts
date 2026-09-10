@@ -1,12 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { Permission } from '../../../src/types/user';
-import { BatchRequest, RequestStatus, kOrgId } from '../../../src/types/models';
-import { insertRequest, listRequests, countPending } from '../repositories/requestRepo';
+import { BatchRequest, RequestArea, RequestStatus, kOrgId } from '../../../src/types/models';
+import { insertRequest, listRequests, countPending, findRequestById } from '../repositories/requestRepo';
+import { findPropertiesByIds } from '../repositories/propertyRepo';
 import { approveRequest, denyRequest } from '../services/assignmentService';
 import { writeAudit } from '../repositories/auditRepo';
-import { serializeRequest } from '../http/serializers';
+import { serializeRequest, serializeProperty } from '../http/serializers';
 import { newRequestId } from '../domain/ids';
-import { forbidden } from '../http/errors';
+import { forbidden, notFound } from '../http/errors';
 
 /**
  * Broker requests for pool data.
@@ -76,7 +77,49 @@ export default async function requestRoutes(app: FastifyInstance) {
     }
 
     const rows = await listRequests({ status: q.status, brokerId });
+
+    // Resolve each request's hand-picked units into a per-area breakdown
+    // (community · sub-community + count). One query for every unit across the
+    // page; bulk requests (no unitIds) fall back to their single stated area.
+    const allIds = Array.from(new Set(rows.flatMap(r => r.unitIds)));
+    const areaById = new Map<string, { community: string; cluster: string }>();
+    if (allIds.length > 0) {
+      const props = await findPropertiesByIds(allIds);
+      for (const p of props) areaById.set(p.id, { community: p.community, cluster: p.cluster ?? '' });
+    }
+    for (const r of rows) {
+      if (r.unitIds.length > 0) {
+        const m = new Map<string, RequestArea>();
+        for (const id of r.unitIds) {
+          const a = areaById.get(id);
+          if (!a) continue; // unit no longer exists
+          const key = `${a.community}${a.cluster}`;
+          const e = m.get(key) ?? { community: a.community, cluster: a.cluster, count: 0 };
+          e.count += 1;
+          m.set(key, e);
+        }
+        r.areas = Array.from(m.values()).sort((x, y) => y.count - x.count);
+      } else {
+        r.areas = [{ community: r.community, cluster: r.cluster ?? '', count: r.count }];
+      }
+    }
+
     return rows.map(serializeRequest);
+  });
+
+  /** The individual units of one request — the manager's "view units" popup. */
+  app.get('/api/requests/:id/units', {
+    preHandler: [app.authenticate, app.requirePermission(Permission.assignData)],
+    schema: {
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'string', maxLength: 64 } } },
+    },
+  }, async (req) => {
+    const { id } = req.params as { id: string };
+    const request = await findRequestById(id);
+    if (!request) throw notFound('That request no longer exists.');
+    if (request.unitIds.length === 0) return [];
+    const props = await findPropertiesByIds(request.unitIds);
+    return props.map(serializeProperty);
   });
 
   /** Drives the pending badge on the manager's Assignments tab. */

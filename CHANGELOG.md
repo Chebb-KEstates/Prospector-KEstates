@@ -18,6 +18,23 @@ for what each part means for Prospector.
 
 ---
 
+## [3.16.0] — 2026-09-10
+
+### Added
+- **The manager Requests table now shows a per-area breakdown of each request**
+  — Community · Sub-community with a unit count for each, plus the total —
+  instead of a vague "N communities" label when a broker hand-picks units across
+  several areas.
+- **Click a request's area summary to open a popup** listing the individual
+  requested units (unit, community, sub-community, beds, size, state, owner).
+- Server: each request from `GET /api/requests` now carries an `areas` breakdown
+  computed from its hand-picked units, and a new `GET /api/requests/:id/units`
+  returns those units (manager-only, masked).
+
+No schema change / no migration — pull + rebuild (server) + restart.
+
+---
+
 ## [3.15.1] — 2026-09-09
 
 ### Fixed

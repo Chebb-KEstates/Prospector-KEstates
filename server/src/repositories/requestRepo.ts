@@ -117,6 +117,13 @@ export async function listRequests(opts: {
   return hydrate(rows, pool);
 }
 
+export async function findRequestById(id: string): Promise<BatchRequest | null> {
+  const [rows] = await pool.query<Row[]>(`SELECT ${COLS} FROM requests WHERE org_id = ? AND id = ?`, [kOrgId, id]);
+  if (rows.length === 0) return null;
+  const hydrated = await hydrate(rows, pool);
+  return hydrated[0];
+}
+
 export async function countPending(): Promise<number> {
   const [rows] = await pool.query<Row[]>(
     `SELECT COUNT(*) AS n FROM requests WHERE org_id = ? AND status = 'pending'`, [kOrgId],

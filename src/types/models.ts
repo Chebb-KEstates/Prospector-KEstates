@@ -431,7 +431,18 @@ export enum RequestStatus {
   denied = 'denied',
 }
 
+/** One area within a request: how many of the requested units are in it. */
+export interface RequestArea { community: string; cluster: string; count: number; }
+
 export class BatchRequest {
+  /**
+   * Per-area breakdown of the requested units (community · sub-community + count).
+   * A broker can hand-pick units across several areas, which the single
+   * `community`/`cluster` fields collapse to a label — this carries the truth.
+   * Server-computed on the list response; empty until then.
+   */
+  areas: RequestArea[] = [];
+
   constructor(
     public id: string,
     public orgId: string,
@@ -469,11 +480,12 @@ export class BatchRequest {
       community: this.community, cluster: this.cluster, count: this.count,
       unitIds: this.unitIds, note: this.note, at: this.at,
       status: this.status, decidedAt: this.decidedAt, grantedCount: this.grantedCount,
+      areas: this.areas,
     };
   }
 
   static fromJson(j: Record<string, unknown>): BatchRequest {
-    return new BatchRequest(
+    const r = new BatchRequest(
       j.id as string, (j.orgId as string) ?? kOrgId,
       j.brokerId as string, (j.community as string) ?? '',
       j.cluster as string | undefined,
@@ -485,6 +497,12 @@ export class BatchRequest {
       j.decidedAt as string | undefined,
       (j.grantedCount as number) ?? 0,
     );
+    r.areas = ((j.areas as RequestArea[]) ?? []).map(a => ({
+      community: String(a.community ?? ''),
+      cluster: String(a.cluster ?? ''),
+      count: Number(a.count ?? 0),
+    }));
+    return r;
   }
 }
 
