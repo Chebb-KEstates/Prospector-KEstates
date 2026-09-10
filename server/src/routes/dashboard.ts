@@ -13,6 +13,7 @@ import {
   callsPerDay, countCallsTotal, lifetimeStats, brokerFunnelWindow,
   newInterestedUnitsByBroker,
   newInterestedUnitsByArea,
+  newInterestedUnitsCount,
 } from '../repositories/callRepo';
 import { countPending } from '../repositories/requestRepo';
 import { listUsers } from '../repositories/userRepo';
@@ -79,6 +80,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       allBrokerStats, assignedCounts, worked,
       stale, expiringSoon, users, audit,
       weekStats, monthStats,
+      todayUnits, weekUnits, monthUnits, rollingUnits, todayUnitsByBroker,
     ] = await Promise.all([
       countByState(),
       countLeadsByState(),
@@ -103,12 +105,21 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       listAudit({ limit: 8, offset: 0 }),
       statsBetween(last7d, soon),
       statsBetween(last30d, soon),
+      // Interested is now distinct units that BECAME interested in each window
+      // (counted once each), not interested call events — one meaning app-wide.
+      newInterestedUnitsCount(today.from, today.to),
+      newInterestedUnitsCount(last7d, soon),
+      newInterestedUnitsCount(last30d, soon),
+      newInterestedUnitsCount(since, soon),
+      newInterestedUnitsByBroker(today.from, today.to),
     ]);
 
     // The calling funnel per period — calls → reached → interested, plus the
-    // no-answer count (from each window's outcome breakdown).
-    const funnelOf = (w: { calls: number; reached: number; interested: number; outcomes: Record<string, number> }) => ({
-      calls: w.calls, reached: w.reached, interested: w.interested, noAnswer: w.outcomes['noAnswer'] ?? 0,
+    // no-answer count (from each window's outcome breakdown). `interested` is the
+    // distinct units that became interested in the window (a transition), passed
+    // in separately, so it means the same as everywhere else — not a call count.
+    const funnelOf = (w: { calls: number; reached: number; outcomes: Record<string, number> }, interestedUnits: number) => ({
+      calls: w.calls, reached: w.reached, interested: interestedUnits, noAnswer: w.outcomes['noAnswer'] ?? 0,
     });
 
     const brokers = users.filter(u => !u.isManager && u.active);
@@ -125,7 +136,9 @@ export default async function dashboardRoutes(app: FastifyInstance) {
         onList,
         callsToday: t?.calls ?? 0,
         reachedToday: t?.reached ?? 0,
-        interestedToday: t?.interested ?? 0,
+        // Distinct units this broker turned interested today (once each), matching
+        // the report's "New interested" — not interested call events.
+        interestedToday: todayUnitsByBroker.get(b.id) ?? 0,
         lastAt: lifetime?.lastAt,
         // "Has data but hasn't called today" — the board's amber dot and the
         // idle-broker alert are the same condition, computed once.
@@ -142,17 +155,17 @@ export default async function dashboardRoutes(app: FastifyInstance) {
         callableUnits: d.callableUnits,
         worked: worked.get(d.id) ?? 0,
       })),
-      today: todayStats,
+      today: { ...todayStats, interested: todayUnits },
       funnel: {
-        today: funnelOf(todayStats),
-        week: funnelOf(weekStats),
-        month: funnelOf(monthStats),
+        today: funnelOf(todayStats, todayUnits),
+        week: funnelOf(weekStats, weekUnits),
+        month: funnelOf(monthStats, monthUnits),
       },
       rolling: {
         days,
         calls: rolling.calls,
         reached: rolling.reached,
-        interested: rolling.interested,
+        interested: rollingUnits,
         momentum,
       },
       alerts: {
@@ -196,7 +209,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     const [
       users, stats, held, datasets, totalProperties, callable, callableWorked, lifetime,
       windowStats, coverage, followUps, matrix, areaStats, areaMatrix, interestedUnits,
-      areaInterested,
+      areaInterested, roiInterestedUnits,
     ] = await Promise.all([
       listUsers(),
       brokerCallStats(),
@@ -220,6 +233,9 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       // Per-AREA new interested units — same transition rule, grouped by area,
       // driven by the same range as the broker columns.
       ranged ? newInterestedUnitsByArea(from!, to!) : newInterestedUnitsByArea(),
+      // ROI is all-time and org-wide: distinct units the vault ever turned
+      // interested, so "cost per interested" is cost per interested PROPERTY.
+      newInterestedUnitsCount(),
     ]);
 
     const statsById = new Map(stats.map(s => [s.brokerId, s]));
@@ -327,10 +343,13 @@ export default async function dashboardRoutes(app: FastifyInstance) {
         callableWorked,
         calls: lifetime.calls,
         reached: lifetime.reached,
-        interested: lifetime.interested,
+        // Interested = distinct units the vault ever turned interested (counted
+        // once each), not interested call events — so it matches the report
+        // tables and never double-counts a re-called unit.
+        interested: roiInterestedUnits,
         // Undefined rather than Infinity/0 when nothing is interested yet —
         // "no data" and "costs nothing per lead" are very different claims.
-        costPerInterested: lifetime.interested > 0 ? totalCost / lifetime.interested : undefined,
+        costPerInterested: roiInterestedUnits > 0 ? totalCost / roiInterestedUnits : undefined,
       },
     };
   });
@@ -362,6 +381,15 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       brokerFunnelWindow(me.id, last30d, soon),
     ]);
 
+    // Interested = distinct units this broker turned interested (once each), for
+    // each window and all-time — the same meaning as the manager report.
+    const [myTodayUnits, myWeekUnits, myMonthUnits, myAllTimeUnits] = await Promise.all([
+      newInterestedUnitsCount(today.from, today.to, me.id),
+      newInterestedUnitsCount(last7d, soon, me.id),
+      newInterestedUnitsCount(last30d, soon, me.id),
+      newInterestedUnitsCount(undefined, undefined, me.id),
+    ]);
+
     const mine = allStats.find(s => s.brokerId === me.id);
     const others = allStats.filter(s => s.brokerId !== me.id);
     const teamAverage = others.length > 0
@@ -370,11 +398,11 @@ export default async function dashboardRoutes(app: FastifyInstance) {
 
     return {
       myCalls: mine?.calls ?? 0,
-      myInterested: mine?.interested ?? 0,
+      myInterested: myAllTimeUnits,
       myLastAt: mine?.lastAt,
       myCallsToday: todayFunnel.calls,
       myReachedToday: todayFunnel.reached,
-      myInterestedToday: todayFunnel.interested,
+      myInterestedToday: myTodayUnits,
       myOnList: assignedCounts.get(me.id) ?? 0,
       myExpiringSoon,
       teamAverageCalls: teamAverage,
@@ -382,9 +410,9 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       myPendingRequests: pending,
       byState: propertyStates,
       funnel: {
-        today: todayFunnel,
-        week: weekFunnel,
-        month: monthFunnel,
+        today: { ...todayFunnel, interested: myTodayUnits },
+        week: { ...weekFunnel, interested: myWeekUnits },
+        month: { ...monthFunnel, interested: myMonthUnits },
       },
     };
   });

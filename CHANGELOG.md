@@ -18,6 +18,25 @@ for what each part means for Prospector.
 
 ---
 
+## [3.18.0] — 2026-09-10
+
+### Changed
+- **"Interested" now means the same thing everywhere — a distinct interested
+  PROPERTY, never an interested call.** After the Report tables (v3.17.1–3), the
+  remaining places that still counted interested *call events* now count distinct
+  units that became interested (a transition into interested, counted once each):
+  the **prospecting funnel** (manager + broker, every period), the manager
+  **daily board's** interested-today column, the **momentum** card, the broker
+  home's **interested (all-time)** and today figures, and the **Data-ROI** panel
+  — so "cost per interested" is now cost per interested *unit*. Logging two
+  interested calls on the same property no longer shows "2 interested" anywhere.
+  (The Database's Interested filter is a live snapshot of units interested right
+  now, unchanged by design.)
+
+No schema change / no migration — pull + rebuild (server) + restart.
+
+---
+
 ## [3.17.3] — 2026-09-10
 
 ### Changed

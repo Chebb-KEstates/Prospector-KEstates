@@ -323,6 +323,40 @@ export async function newInterestedUnitsByBroker(from?: Date, to?: Date): Promis
   return new Map(rows.map(r => [r.broker_id as string, Number(r.n ?? 0)]));
 }
 
+/**
+ * How many distinct units NEWLY became interested — the single-number counterpart
+ * of `newInterestedUnitsByBroker`, for the funnels, the ROI panel and the
+ * momentum card so every "interested" figure in the app means the same thing: a
+ * property that transitioned into interested, counted once, never an interested
+ * call event. Optional [from, to) window (omit for all-time) and optional broker
+ * (omit for the whole org — org-wide dedups a unit even if two brokers each made
+ * it interested at different times).
+ */
+export async function newInterestedUnitsCount(from?: Date, to?: Date, brokerId?: string): Promise<number> {
+  const params: unknown[] = [kOrgId];
+  let brokerClause = '';
+  if (brokerId) { brokerClause = 'AND broker_id = ?'; params.push(brokerId); }
+  let windowClause = '';
+  if (from && to) { windowClause = 'AND uc.at >= ? AND uc.at < ?'; params.push(from, to); }
+  const [rows] = await pool.query<Row[]>(
+    `WITH uc AS (
+       SELECT cp.property_id AS unit_id, c.broker_id, c.at, c.outcome,
+              LAG(c.outcome) OVER (PARTITION BY cp.property_id ORDER BY c.at, c.id) AS prev_outcome
+         FROM calls c
+         JOIN call_properties cp ON cp.call_id = c.id
+        WHERE c.org_id = ?
+     )
+     SELECT COUNT(DISTINCT unit_id) AS n
+       FROM uc
+      WHERE outcome IN ('interestedSell', 'interestedRent')
+        AND (prev_outcome IS NULL OR prev_outcome NOT IN ('interestedSell', 'interestedRent'))
+        ${brokerClause}
+        ${windowClause}`,
+    params,
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
 /** One area's new-interested tally — matches statsRepo's (community, cluster) grouping. */
 export interface AreaInterested {
   community: string;

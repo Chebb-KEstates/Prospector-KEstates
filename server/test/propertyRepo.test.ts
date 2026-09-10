@@ -7,7 +7,7 @@ import {
   callableCoverageByBroker, followUpsDueByBroker,
 } from '../src/repositories/propertyRepo';
 import { areaBreakdown, areaAssignmentMatrix } from '../src/repositories/statsRepo';
-import { insertCall, newInterestedUnitsByBroker, newInterestedUnitsByArea } from '../src/repositories/callRepo';
+import { insertCall, newInterestedUnitsByBroker, newInterestedUnitsByArea, newInterestedUnitsCount } from '../src/repositories/callRepo';
 import { CallLog, CallOutcome } from '../../src/types/models';
 import { newCallId } from '../src/domain/ids';
 import { Property, OwnerInfo, PropertyState, kOrgId } from '../../src/types/models';
@@ -442,6 +442,42 @@ test('new-interested per AREA groups transitions by community + sub-community', 
   const win = await newInterestedUnitsByArea(from, to);
   assert.equal(win.find(a => a.community === 'Marina')?.n, undefined, 'no fresh Marina transition in window');
   assert.equal(win.find(a => a.community === 'Downtown' && a.cluster === '')?.n, 1, 'only D1 re-transitioned in the window');
+});
+
+test('newInterestedUnitsCount: org-wide dedups across brokers; broker + window filters', async () => {
+  await wipe();
+  // A second real broker (seeded) — calls.broker_id is FK'd to users.id.
+  const [brokerRows] = await pool.query<any[]>("SELECT id FROM users WHERE role = 'broker' AND active = 1 LIMIT 1");
+  const b2 = brokerRows[0]?.id as string;
+  assert.ok(b2, 'seed provides at least one demo broker');
+
+  const X = makeProperty({ unitNumber: '1401', phone: '971500000061' });
+  const Y = makeProperty({ unitNumber: '1402', phone: '971500000062' });
+  const Z = makeProperty({ unitNumber: '1403', phone: '971500000063' });
+  await saveProperties([X, Y, Z]);
+
+  const t = (min: number) => new Date(Date.UTC(2026, 2, 1, 10, min, 0)).toISOString();
+  const callBy = (bid: string, propId: string, min: number, outcome: CallOutcome) =>
+    insertCall(new CallLog(newCallId(), kOrgId, [propId], [], bid, t(min), outcome));
+
+  // X: director makes it interested (min 0), b2 flips it not-interested (min 2),
+  // b2 re-interests it (min 4) — two transitions on ONE unit, by two brokers.
+  await callBy('u-director', X.id, 0, CallOutcome.interestedSell);
+  await callBy(b2, X.id, 2, CallOutcome.notInterested);
+  await callBy(b2, X.id, 4, CallOutcome.interestedSell);
+  // Y: only no-answer. Z: director interests it once (min 1).
+  await callBy('u-director', Y.id, 0, CallOutcome.noAnswer);
+  await callBy('u-director', Z.id, 1, CallOutcome.interestedSell);
+
+  assert.equal(await newInterestedUnitsCount(), 2, 'org-wide: X and Z, X counted once despite two brokers');
+  assert.equal(await newInterestedUnitsCount(undefined, undefined, 'u-director'), 2, 'director turned X and Z interested');
+  assert.equal(await newInterestedUnitsCount(undefined, undefined, b2), 1, 'b2 re-interested X');
+
+  const from = new Date(Date.UTC(2026, 2, 1, 10, 3, 0));
+  const to = new Date(Date.UTC(2026, 2, 1, 10, 5, 0));
+  assert.equal(await newInterestedUnitsCount(from, to), 1, 'only X re-transitioned in the window');
+  assert.equal(await newInterestedUnitsCount(from, to, 'u-director'), 0, 'director had no transition in the window');
+  assert.equal(await newInterestedUnitsCount(from, to, b2), 1, 'b2 re-interested X inside the window');
 });
 
 test.after(async () => {
