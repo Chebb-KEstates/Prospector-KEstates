@@ -18,6 +18,28 @@ for what each part means for Prospector.
 
 ---
 
+## [3.20.1] — 2026-09-10
+
+### Fixed
+- **Coverage % now credits only the calls the current holder actually made.** It
+  read the unit's "last called" timestamp, which survives reassignment — so a
+  broker who inherited a unit already showed it as "worked". It now checks for a
+  call logged by the current holder.
+
+### Changed
+- **Clearer filter labels** so a unit's *current status* can't be mistaken for the
+  Report's date-range figures: the Database/Today chips now read "Interested
+  (now)", "No answer (last call)" and "Awaiting callback".
+
+### Removed
+- Tidied dead reporting code left over from the interested-counting rework — the
+  old call-based "interested" totals are gone from the codebase, so "interested"
+  can only ever mean distinct units.
+
+No schema change / no migration — pull + rebuild (server + client) + restart.
+
+---
+
 ## [3.20.0] — 2026-09-10
 
 ### Changed

@@ -325,12 +325,17 @@ test('Report per-broker coverage and follow-ups group correctly', async () => {
     `UPDATE properties SET assigned_to = 'u-director', state = 'assigned' WHERE id IN (?, ?, ?)`,
     [a.id, b.id, c.id],
   );
-  await pool.query('UPDATE properties SET last_called_at = UTC_TIMESTAMP(3) WHERE id = ?', [a.id]);
+  // a is "worked" because u-director actually logged a call on it.
+  await insertCall(new CallLog(newCallId(), kOrgId, [a.id], [], 'u-director',
+    new Date().toISOString(), CallOutcome.noAnswer));
+  // b carries a last_called_at from a PREVIOUS holder (no call by u-director) — it
+  // must NOT count as worked for u-director. It's the follow-up-due unit.
+  await pool.query('UPDATE properties SET last_called_at = UTC_TIMESTAMP(3) WHERE id = ?', [b.id]);
   await pool.query('UPDATE properties SET next_follow_up_at = (UTC_TIMESTAMP(3) - INTERVAL 1 HOUR) WHERE id = ?', [b.id]);
 
   const cov = await callableCoverageByBroker();
   assert.deepEqual(cov.get('u-director'), { callable: 2, worked: 1 },
-    'coverage counts callable held units and how many have been called');
+    'coverage counts only callable held units THIS broker has actually called (not a prior holder\'s last_called_at)');
 
   const fu = await followUpsDueByBroker();
   assert.equal(fu.get('u-director'), 1, 'only the unit with a past-due follow-up counts');

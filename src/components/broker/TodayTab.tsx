@@ -30,11 +30,13 @@ const QUICKS: { key: Quick; label: string }[] = [
   { key: 'toCall', label: 'To call' },
   { key: 'all', label: 'All' },
   { key: 'expiring', label: '⏰ Expiring soon' },
-  { key: 'due', label: 'Due follow-up' },
+  { key: 'due', label: 'Follow-up due' },
   { key: 'fresh', label: 'Never called' },
-  { key: 'noAnswer', label: 'No answer' },
-  { key: 'callback', label: 'Call back later' },
-  { key: 'interested', label: 'Interested' },
+  // These filter on the unit's CURRENT status (its last outcome), not activity in
+  // a date range — the labels say so.
+  { key: 'noAnswer', label: 'No answer (last call)' },
+  { key: 'callback', label: 'Awaiting callback' },
+  { key: 'interested', label: 'Interested (now)' },
 ];
 
 /**

@@ -786,13 +786,20 @@ export async function assignedCountByBroker(): Promise<Map<string, number>> {
  * "Coverage %" column — a snapshot of the current book, not a windowed figure.
  */
 export async function callableCoverageByBroker(): Promise<Map<string, { callable: number; worked: number }>> {
+  // "Worked" = a callable held unit THIS broker has actually called. Using
+  // last_called_at would credit the current holder for a previous holder's call
+  // (reassignment keeps last_called_at), so check for a call by assigned_to.
   const [rows] = await pool.query<Row[]>(
-    `SELECT assigned_to,
-            SUM(callable = 1) AS callable,
-            SUM(callable = 1 AND last_called_at IS NOT NULL) AS worked
-     FROM properties
-     WHERE org_id = ? AND assigned_to IS NOT NULL AND state IN ('assigned', 'portfolio')
-     GROUP BY assigned_to`,
+    `SELECT p.assigned_to,
+            SUM(p.callable = 1) AS callable,
+            SUM(p.callable = 1 AND EXISTS (
+              SELECT 1 FROM call_properties cp
+                JOIN calls c ON c.id = cp.call_id
+               WHERE cp.property_id = p.id AND c.broker_id = p.assigned_to
+            )) AS worked
+     FROM properties p
+     WHERE p.org_id = ? AND p.assigned_to IS NOT NULL AND p.state IN ('assigned', 'portfolio')
+     GROUP BY p.assigned_to`,
     [kOrgId],
   );
   return new Map(rows.map(r => [r.assigned_to as string, {

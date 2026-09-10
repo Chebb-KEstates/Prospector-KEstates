@@ -81,7 +81,6 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       todayStats, todayByBroker, rolling, momentum,
       allBrokerStats, assignedCounts, worked,
       stale, expiringSoon, users, audit,
-      weekStats, monthStats,
       todayUnits, weekUnits, monthUnits, rollingUnits, todayUnitsByBroker,
     ] = await Promise.all([
       countByState(),
@@ -105,8 +104,6 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       countExpiringSoon(settings.expiringSoonHours),
       listUsers(),
       listAudit({ limit: 8, offset: 0 }),
-      statsBetween(last7d, soon),
-      statsBetween(last30d, soon),
       // Interested is now distinct units that BECAME interested in each window
       // (counted once each), not interested call events — one meaning app-wide.
       newInterestedUnitsCount(today.from, today.to),

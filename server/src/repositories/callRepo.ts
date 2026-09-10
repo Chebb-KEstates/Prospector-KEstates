@@ -140,7 +140,6 @@ export interface BrokerCallStats {
   brokerId: string;
   calls: number;
   reached: number;
-  interested: number;
   noAnswer: number;
   lastAt?: string;
 }
@@ -155,7 +154,6 @@ export async function brokerCallStats(): Promise<BrokerCallStats[]> {
     `SELECT broker_id,
             COUNT(*) AS calls,
             SUM(outcome NOT IN ('noAnswer', 'unreachable')) AS reached,
-            SUM(outcome IN ('interestedSell', 'interestedRent')) AS interested,
             SUM(outcome = 'noAnswer') AS no_answer,
             MAX(at) AS last_at
      FROM calls WHERE org_id = ?
@@ -166,25 +164,26 @@ export async function brokerCallStats(): Promise<BrokerCallStats[]> {
     brokerId: r.broker_id as string,
     calls: Number(r.calls),
     reached: Number(r.reached ?? 0),
-    interested: Number(r.interested ?? 0),
     noAnswer: Number(r.no_answer ?? 0),
     lastAt: fromDb(r.last_at),
   }));
 }
 
-/** Lifetime totals across the org — the ROI panel. */
-export async function lifetimeStats(): Promise<{ calls: number; reached: number; interested: number }> {
+/**
+ * Lifetime call totals across the org — the ROI panel's call-effort figures.
+ * Interested is NOT here: the ROI panel counts distinct interested UNITS
+ * (newInterestedUnitsCount), never interested call events.
+ */
+export async function lifetimeStats(): Promise<{ calls: number; reached: number }> {
   const [rows] = await pool.query<Row[]>(
     `SELECT COUNT(*) AS calls,
-            SUM(outcome NOT IN ('noAnswer', 'unreachable')) AS reached,
-            SUM(outcome IN ('interestedSell', 'interestedRent')) AS interested
+            SUM(outcome NOT IN ('noAnswer', 'unreachable')) AS reached
      FROM calls WHERE org_id = ?`,
     [kOrgId],
   );
   return {
     calls: Number(rows[0].calls ?? 0),
     reached: Number(rows[0].reached ?? 0),
-    interested: Number(rows[0].interested ?? 0),
   };
 }
 
@@ -224,21 +223,22 @@ export async function countCallsTotal(): Promise<number> {
  * manager home and the broker home can't drift on what counts.
  */
 const CONNECTED_SQL = `outcome NOT IN ('noAnswer', 'unreachable')`;
-const INTERESTED_SQL = `outcome IN ('interestedSell', 'interestedRent')`;
 
 export interface WindowStats {
   calls: number;
   reached: number;
-  interested: number;
   outcomes: Record<string, number>;
 }
 
-/** Totals over an explicit window — used with the caller's local day bounds. */
+/**
+ * Call totals over an explicit window — call events (attempts, connected) plus
+ * the outcome mix. No "interested" here: interested is always distinct units
+ * (newInterestedUnitsCount), never a call count.
+ */
 export async function statsBetween(from: Date, to: Date): Promise<WindowStats> {
   const [totals] = await pool.query<Row[]>(
     `SELECT COUNT(*) AS calls,
-            SUM(${CONNECTED_SQL}) AS reached,
-            SUM(${INTERESTED_SQL}) AS interested
+            SUM(${CONNECTED_SQL}) AS reached
      FROM calls WHERE org_id = ? AND at >= ? AND at < ?`,
     [kOrgId, from, to],
   );
@@ -253,7 +253,6 @@ export async function statsBetween(from: Date, to: Date): Promise<WindowStats> {
   return {
     calls: Number(totals[0].calls ?? 0),
     reached: Number(totals[0].reached ?? 0),
-    interested: Number(totals[0].interested ?? 0),
     outcomes,
   };
 }
@@ -262,16 +261,15 @@ export interface BrokerWindowStats {
   brokerId: string;
   calls: number;
   reached: number;
-  interested: number;
 }
 
-/** Per-broker totals over a window — the board's today columns. */
+/** Per-broker CALL totals over a window — attempts + connected (the board/report
+ *  call-effort columns). Interested is counted as units elsewhere. */
 export async function brokerStatsBetween(from: Date, to: Date): Promise<Map<string, BrokerWindowStats>> {
   const [rows] = await pool.query<Row[]>(
     `SELECT broker_id,
             COUNT(*) AS calls,
-            SUM(${CONNECTED_SQL}) AS reached,
-            SUM(${INTERESTED_SQL}) AS interested
+            SUM(${CONNECTED_SQL}) AS reached
      FROM calls WHERE org_id = ? AND at >= ? AND at < ?
      GROUP BY broker_id`,
     [kOrgId, from, to],
@@ -280,7 +278,6 @@ export async function brokerStatsBetween(from: Date, to: Date): Promise<Map<stri
     brokerId: r.broker_id as string,
     calls: Number(r.calls),
     reached: Number(r.reached ?? 0),
-    interested: Number(r.interested ?? 0),
   }]));
 }
 
@@ -460,24 +457,21 @@ export async function newInterestedUnitsByArea(from?: Date, to?: Date): Promise<
   }));
 }
 
-export interface BrokerFunnelWindow {
+export interface BrokerCallWindow {
   calls: number;
   reached: number;
-  interested: number;
-  noAnswer: number;
 }
 
 /**
- * One broker's calling funnel over a window — the broker home's period selector
- * (today / this week / this month). The per-broker counterpart of `statsBetween`,
- * scoped to a single broker so a broker never sees the team's numbers.
+ * One broker's CALL totals over a window — attempts + connected — scoped to a
+ * single broker (a broker never sees the team's numbers). Feeds the broker home's
+ * "answer rate today". The unit funnel (called/reached/interested owners) is built
+ * from distinctUnitsCount / newInterestedUnitsCount, not here.
  */
-export async function brokerFunnelWindow(brokerId: string, from: Date, to: Date): Promise<BrokerFunnelWindow> {
+export async function brokerFunnelWindow(brokerId: string, from: Date, to: Date): Promise<BrokerCallWindow> {
   const [rows] = await pool.query<Row[]>(
     `SELECT COUNT(*) AS calls,
-            SUM(${CONNECTED_SQL}) AS reached,
-            SUM(${INTERESTED_SQL}) AS interested,
-            SUM(outcome = 'noAnswer') AS no_answer
+            SUM(${CONNECTED_SQL}) AS reached
      FROM calls WHERE org_id = ? AND broker_id = ? AND at >= ? AND at < ?`,
     [kOrgId, brokerId, from, to],
   );
@@ -485,8 +479,6 @@ export async function brokerFunnelWindow(brokerId: string, from: Date, to: Date)
   return {
     calls: Number(r?.calls ?? 0),
     reached: Number(r?.reached ?? 0),
-    interested: Number(r?.interested ?? 0),
-    noAnswer: Number(r?.no_answer ?? 0),
   };
 }
 

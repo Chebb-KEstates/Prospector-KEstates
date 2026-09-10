@@ -32,14 +32,18 @@ type View = 'owners' | 'leads' | 'requests';
  * same server filters the broker chips use.
  */
 type Quick = 'all' | 'expiring' | 'due' | 'fresh' | 'noAnswer' | 'callback' | 'interested';
+// These chips filter on each unit's CURRENT status (its last outcome / state) —
+// a live worklist, distinct from the Report's date-range columns (e.g. the
+// Report's "New interested" counts what changed in a period). The "(now)"/"(last
+// call)" labels keep that difference obvious.
 const QUICKS: { key: Quick; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'expiring', label: '⏰ Expiring soon' },
-  { key: 'due', label: 'Due follow-up' },
+  { key: 'due', label: 'Follow-up due' },
   { key: 'fresh', label: 'Never called' },
-  { key: 'noAnswer', label: 'No answer' },
-  { key: 'callback', label: 'Call back later' },
-  { key: 'interested', label: 'Interested' },
+  { key: 'noAnswer', label: 'No answer (last call)' },
+  { key: 'callback', label: 'Awaiting callback' },
+  { key: 'interested', label: 'Interested (now)' },
 ];
 function quickToQuery(quick: Quick): {
   forcedOutcome?: string; dueOnly?: boolean; interestedOnly?: boolean; expiringSoon?: boolean;
