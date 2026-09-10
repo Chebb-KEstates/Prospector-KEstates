@@ -463,12 +463,20 @@ export interface ManagerDashboard {
     calls: number; reached: number; interested: number;
     outcomes: Record<string, number>;
   };
-  /** The calling funnel per period — for the dashboard's period selector. */
+  /**
+   * The all-units prospecting funnel per period. Every field is DISTINCT UNITS
+   * (owner-property units), not call events: `calls` = units called, `reached` =
+   * units reached, `interested` = units newly interested, `noAnswer` = units
+   * called but not reached. So the funnel always narrows.
+   */
   funnel: Record<'today' | 'week' | 'month', {
     calls: number; reached: number; noAnswer: number; interested: number;
   }>;
   rolling: {
-    days: number; calls: number; reached: number; interested: number;
+    // calls + reached are call EVENTS (answer rate = reached ÷ calls);
+    // reachedUnits is distinct owners reached (interest-rate denominator);
+    // interested is distinct units newly interested.
+    days: number; calls: number; reached: number; reachedUnits: number; interested: number;
     momentum: { day: string; n: number }[];
   };
   alerts: {
@@ -487,7 +495,11 @@ export interface ManagerDashboard {
   recentAudit: Record<string, unknown>[];
 }
 
-/** One broker's calling funnel over a window — calls → reached → interested. */
+/**
+ * One broker's all-units funnel over a window: `calls` = units called, `reached`
+ * = units reached, `interested` = units newly interested, `noAnswer` = units
+ * called but not reached. Distinct units, not call events.
+ */
 export interface BrokerFunnelWindow {
   calls: number;
   reached: number;
@@ -501,6 +513,8 @@ export interface BrokerDashboard {
   myLastAt?: string;
   myCallsToday: number;
   myReachedToday: number;
+  /** Distinct owners reached today — the interest-rate denominator. */
+  myReachedUnitsToday: number;
   myInterestedToday: number;
   myOnList: number;
   /** My held units whose assignment timer is nearly up. */
@@ -526,6 +540,9 @@ export interface TeamBrokerRow {
   /** Call columns reflect the Report's selected range (all-time when none set). */
   calls: number;
   reached: number; interested: number; noAnswer: number;
+  /** Distinct owners reached in the range — the "Interested rate" denominator
+   *  (interested owners ÷ owners reached), so both sides are units. */
+  reachedUnits: number;
   lastAt?: string;
   /** Coverage: of the broker's callable held units, how many have been called.
    *  A snapshot of the current book (not range-dependent). */
@@ -574,6 +591,8 @@ export interface TeamDashboard {
     callableWorked: number;
     calls: number;
     reached: number;
+    /** Owners reached all-time — the interest-rate denominator (units ÷ units). */
+    reachedUnits: number;
     interested: number;
     costPerInterested?: number;
   };

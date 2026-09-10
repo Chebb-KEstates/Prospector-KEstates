@@ -166,7 +166,7 @@ export function TeamScreen() {
               <StatTile value={fmtInt(data.roi.callable)} label="callable" />
               <StatTile value={data.roi.callable ? `${Math.round(data.roi.callableWorked / data.roi.callable * 100)}%` : '—'} label="callable worked" />
               <StatTile value={fmtInt(data.roi.calls)} label="total calls" />
-              <StatTile value={data.roi.reached ? `${Math.round(data.roi.interested / data.roi.reached * 100)}%` : '—'} label="interest rate" color="var(--success)" />
+              <StatTile value={data.roi.reachedUnits ? `${Math.round(data.roi.interested / data.roi.reachedUnits * 100)}%` : '—'} label="interest rate" color="var(--success)" />
               <StatTile value={data.roi.costPerInterested != null ? fmtAed(data.roi.costPerInterested) : '—'} label="cost per interested" color="var(--info)" />
             </div>
           </div>

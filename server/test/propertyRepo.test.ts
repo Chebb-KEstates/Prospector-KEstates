@@ -7,7 +7,7 @@ import {
   callableCoverageByBroker, followUpsDueByBroker,
 } from '../src/repositories/propertyRepo';
 import { areaBreakdown, areaAssignmentMatrix } from '../src/repositories/statsRepo';
-import { insertCall, newInterestedUnitsByBroker, newInterestedUnitsByArea, newInterestedUnitsCount } from '../src/repositories/callRepo';
+import { insertCall, newInterestedUnitsByBroker, newInterestedUnitsByArea, newInterestedUnitsCount, distinctUnitsCount, distinctUnitsByBroker } from '../src/repositories/callRepo';
 import { CallLog, CallOutcome } from '../../src/types/models';
 import { newCallId } from '../src/domain/ids';
 import { Property, OwnerInfo, PropertyState, kOrgId } from '../../src/types/models';
@@ -478,6 +478,48 @@ test('newInterestedUnitsCount: org-wide dedups across brokers; broker + window f
   assert.equal(await newInterestedUnitsCount(from, to), 1, 'only X re-transitioned in the window');
   assert.equal(await newInterestedUnitsCount(from, to, 'u-director'), 0, 'director had no transition in the window');
   assert.equal(await newInterestedUnitsCount(from, to, b2), 1, 'b2 re-interested X inside the window');
+});
+
+test('distinctUnitsCount: units called vs reached, deduped, by broker + window', async () => {
+  await wipe();
+  const [brokerRows] = await pool.query<any[]>("SELECT id FROM users WHERE role = 'broker' AND active = 1 LIMIT 1");
+  const b2 = brokerRows[0]?.id as string;
+  assert.ok(b2, 'seed provides a demo broker');
+
+  const X = makeProperty({ unitNumber: '1501', phone: '971500000071' });
+  const Y = makeProperty({ unitNumber: '1502', phone: '971500000072' });
+  const Z = makeProperty({ unitNumber: '1503', phone: '971500000073' });
+  await saveProperties([X, Y, Z]);
+
+  const t = (min: number) => new Date(Date.UTC(2026, 2, 1, 10, min, 0)).toISOString();
+  const callBy = (bid: string, propId: string, min: number, outcome: CallOutcome) =>
+    insertCall(new CallLog(newCallId(), kOrgId, [propId], [], bid, t(min), outcome));
+
+  // X: director no-answer then interested (called AND reached; deduped to one unit).
+  await callBy('u-director', X.id, 0, CallOutcome.noAnswer);
+  await callBy('u-director', X.id, 1, CallOutcome.interestedSell);
+  // Y: director no-answer only (called, NOT reached).
+  await callBy('u-director', Y.id, 0, CallOutcome.noAnswer);
+  // Z: b2 interested (called AND reached).
+  await callBy(b2, Z.id, 1, CallOutcome.interestedSell);
+
+  assert.equal(await distinctUnitsCount(), 3, 'X, Y, Z each had a call');
+  assert.equal(await distinctUnitsCount(undefined, undefined, { connectedOnly: true }), 2, 'only X and Z were reached');
+  assert.equal(await distinctUnitsCount(undefined, undefined, { brokerId: 'u-director' }), 2, 'director called X and Y');
+  assert.equal(await distinctUnitsCount(undefined, undefined, { brokerId: 'u-director', connectedOnly: true }), 1, 'director reached only X');
+
+  const called = await distinctUnitsByBroker();
+  const reached = await distinctUnitsByBroker(undefined, undefined, true);
+  assert.equal(called.get('u-director'), 2);
+  assert.equal(called.get(b2), 1);
+  assert.equal(reached.get('u-director'), 1);
+  assert.equal(reached.get(b2), 1);
+
+  // Window excludes the min-0 no-answers; only the min-1 connected calls remain.
+  const from = new Date(Date.UTC(2026, 2, 1, 10, 1, 0));
+  const to = new Date(Date.UTC(2026, 2, 1, 10, 2, 0));
+  assert.equal(await distinctUnitsCount(from, to), 2, 'X and Z had a call at min 1');
+  assert.equal(await distinctUnitsCount(from, to, { connectedOnly: true }), 2, 'both were interested (reached)');
 });
 
 test.after(async () => {

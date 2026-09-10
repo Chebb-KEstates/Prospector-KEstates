@@ -14,6 +14,8 @@ import {
   newInterestedUnitsByBroker,
   newInterestedUnitsByArea,
   newInterestedUnitsCount,
+  distinctUnitsCount,
+  distinctUnitsByBroker,
 } from '../repositories/callRepo';
 import { countPending } from '../repositories/requestRepo';
 import { listUsers } from '../repositories/userRepo';
@@ -114,12 +116,30 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       newInterestedUnitsByBroker(today.from, today.to),
     ]);
 
-    // The calling funnel per period — calls → reached → interested, plus the
-    // no-answer count (from each window's outcome breakdown). `interested` is the
-    // distinct units that became interested in the window (a transition), passed
-    // in separately, so it means the same as everywhere else — not a call count.
-    const funnelOf = (w: { calls: number; reached: number; outcomes: Record<string, number> }, interestedUnits: number) => ({
-      calls: w.calls, reached: w.reached, interested: interestedUnits, noAnswer: w.outcomes['noAnswer'] ?? 0,
+    // All-units funnel: distinct owner-property units called → reached →
+    // interested in each period. Every stage is DISTINCT UNITS (not call events),
+    // so the funnel always narrows and the interest rate is a true "of the owners
+    // reached, how many turned interested". `reachedUnitsRolling` is the momentum
+    // card's interest-rate denominator (its answer rate still uses call counts).
+    const [
+      calledToday, reachedUnitsToday,
+      calledWeek, reachedUnitsWeek,
+      calledMonth, reachedUnitsMonth,
+      reachedUnitsRolling,
+    ] = await Promise.all([
+      distinctUnitsCount(today.from, today.to),
+      distinctUnitsCount(today.from, today.to, { connectedOnly: true }),
+      distinctUnitsCount(last7d, soon),
+      distinctUnitsCount(last7d, soon, { connectedOnly: true }),
+      distinctUnitsCount(last30d, soon),
+      distinctUnitsCount(last30d, soon, { connectedOnly: true }),
+      distinctUnitsCount(since, soon, { connectedOnly: true }),
+    ]);
+
+    // One funnel stage set — all units. `noAnswer` becomes "owners called but not
+    // reached", keeping the shape the client already reads.
+    const unitFunnel = (called: number, reached: number, interested: number) => ({
+      calls: called, reached, interested, noAnswer: Math.max(0, called - reached),
     });
 
     const brokers = users.filter(u => !u.isManager && u.active);
@@ -157,14 +177,17 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       })),
       today: { ...todayStats, interested: todayUnits },
       funnel: {
-        today: funnelOf(todayStats, todayUnits),
-        week: funnelOf(weekStats, weekUnits),
-        month: funnelOf(monthStats, monthUnits),
+        today: unitFunnel(calledToday, reachedUnitsToday, todayUnits),
+        week: unitFunnel(calledWeek, reachedUnitsWeek, weekUnits),
+        month: unitFunnel(calledMonth, reachedUnitsMonth, monthUnits),
       },
       rolling: {
         days,
+        // calls + reached are call EVENTS (the answer rate = reached ÷ calls);
+        // reachedUnits is distinct owners reached (the interest-rate denominator).
         calls: rolling.calls,
         reached: rolling.reached,
+        reachedUnits: reachedUnitsRolling,
         interested: rollingUnits,
         momentum,
       },
@@ -209,7 +232,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     const [
       users, stats, held, datasets, totalProperties, callable, callableWorked, lifetime,
       windowStats, coverage, followUps, matrix, areaStats, areaMatrix, interestedUnits,
-      areaInterested, roiInterestedUnits,
+      areaInterested, roiInterestedUnits, brokerReachedUnits, roiReachedUnits,
     ] = await Promise.all([
       listUsers(),
       brokerCallStats(),
@@ -236,6 +259,11 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       // ROI is all-time and org-wide: distinct units the vault ever turned
       // interested, so "cost per interested" is cost per interested PROPERTY.
       newInterestedUnitsCount(),
+      // Owners reached per broker — the interest-rate denominator (interested
+      // units ÷ owners reached), so the rate compares like with like.
+      ranged ? distinctUnitsByBroker(from!, to!, true) : distinctUnitsByBroker(undefined, undefined, true),
+      // Owners reached all-time org-wide — the ROI interest-rate denominator.
+      distinctUnitsCount(undefined, undefined, { connectedOnly: true }),
     ]);
 
     const statsById = new Map(stats.map(s => [s.brokerId, s]));
@@ -306,6 +334,11 @@ export default async function dashboardRoutes(app: FastifyInstance) {
           calls,
           reached,
           interested,
+          // Distinct owners this broker reached in the range — the denominator for
+          // "Interested rate" (interested owners ÷ owners reached), so numerator
+          // and denominator are both units. `reached` above stays call events, for
+          // the call-effort columns and the Answer rate.
+          reachedUnits: brokerReachedUnits.get(b.id) ?? 0,
           // No answer = attempts that didn't connect (no-answer + unreachable),
           // so Answered + No answer always reconciles to attempts.
           noAnswer: Math.max(0, calls - reached),
@@ -343,6 +376,8 @@ export default async function dashboardRoutes(app: FastifyInstance) {
         callableWorked,
         calls: lifetime.calls,
         reached: lifetime.reached,
+        // Owners reached all-time — the interest-rate denominator (units ÷ units).
+        reachedUnits: roiReachedUnits,
         // Interested = distinct units the vault ever turned interested (counted
         // once each), not interested call events — so it matches the report
         // tables and never double-counts a re-called unit.
@@ -369,26 +404,37 @@ export default async function dashboardRoutes(app: FastifyInstance) {
 
     const [
       propertyStates, allStats, assignedCounts, pending, myExpiringSoon,
-      todayFunnel, weekFunnel, monthFunnel,
+      todayFunnel,
     ] = await Promise.all([
       countByState(),
       brokerCallStats(),
       assignedCountByBroker(),
       countPending(),
       countExpiringSoon(settings.expiringSoonHours, me.id),
+      // Today's call counts (events) for the answer-rate-today line.
       brokerFunnelWindow(me.id, today.from, today.to),
-      brokerFunnelWindow(me.id, last7d, soon),
-      brokerFunnelWindow(me.id, last30d, soon),
     ]);
 
-    // Interested = distinct units this broker turned interested (once each), for
-    // each window and all-time — the same meaning as the manager report.
-    const [myTodayUnits, myWeekUnits, myMonthUnits, myAllTimeUnits] = await Promise.all([
+    // The broker's own all-units funnel: distinct units they called → reached →
+    // turned interested, per period. Interested is all-time too, for the tile.
+    const [
+      myTodayUnits, myWeekUnits, myMonthUnits, myAllTimeUnits,
+      calledToday, reachedToday, calledWeek, reachedWeek, calledMonth, reachedMonth,
+    ] = await Promise.all([
       newInterestedUnitsCount(today.from, today.to, me.id),
       newInterestedUnitsCount(last7d, soon, me.id),
       newInterestedUnitsCount(last30d, soon, me.id),
       newInterestedUnitsCount(undefined, undefined, me.id),
+      distinctUnitsCount(today.from, today.to, { brokerId: me.id }),
+      distinctUnitsCount(today.from, today.to, { brokerId: me.id, connectedOnly: true }),
+      distinctUnitsCount(last7d, soon, { brokerId: me.id }),
+      distinctUnitsCount(last7d, soon, { brokerId: me.id, connectedOnly: true }),
+      distinctUnitsCount(last30d, soon, { brokerId: me.id }),
+      distinctUnitsCount(last30d, soon, { brokerId: me.id, connectedOnly: true }),
     ]);
+    const unitFunnel = (called: number, reached: number, interested: number) => ({
+      calls: called, reached, interested, noAnswer: Math.max(0, called - reached),
+    });
 
     const mine = allStats.find(s => s.brokerId === me.id);
     const others = allStats.filter(s => s.brokerId !== me.id);
@@ -400,8 +446,11 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       myCalls: mine?.calls ?? 0,
       myInterested: myAllTimeUnits,
       myLastAt: mine?.lastAt,
+      // Today's CALL counts stay for the "answer rate today" line (reached ÷ calls
+      // over call events); reachedUnitsToday is the interest-rate denominator.
       myCallsToday: todayFunnel.calls,
       myReachedToday: todayFunnel.reached,
+      myReachedUnitsToday: reachedToday,
       myInterestedToday: myTodayUnits,
       myOnList: assignedCounts.get(me.id) ?? 0,
       myExpiringSoon,
@@ -410,9 +459,9 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       myPendingRequests: pending,
       byState: propertyStates,
       funnel: {
-        today: { ...todayFunnel, interested: myTodayUnits },
-        week: { ...weekFunnel, interested: myWeekUnits },
-        month: { ...monthFunnel, interested: myMonthUnits },
+        today: unitFunnel(calledToday, reachedToday, myTodayUnits),
+        week: unitFunnel(calledWeek, reachedWeek, myWeekUnits),
+        month: unitFunnel(calledMonth, reachedMonth, myMonthUnits),
       },
     };
   });

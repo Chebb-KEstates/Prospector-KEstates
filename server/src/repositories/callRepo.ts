@@ -357,6 +357,59 @@ export async function newInterestedUnitsCount(from?: Date, to?: Date, brokerId?:
   return Number(rows[0]?.n ?? 0);
 }
 
+/**
+ * Distinct UNITS touched in a window — the building blocks of the all-units
+ * funnel. `connectedOnly` counts only units that were actually reached (a
+ * connected call); otherwise every unit that got any call. Joins call_properties,
+ * so this is owner-property calls only (buyer-lead calls never count). Optional
+ * [from, to) window (omit for all-time) and optional broker.
+ *
+ *   • connectedOnly = false → "units called"  (distinct units with ≥1 call)
+ *   • connectedOnly = true  → "units reached" (distinct units with ≥1 connected call)
+ */
+export async function distinctUnitsCount(
+  from?: Date, to?: Date, opts?: { brokerId?: string; connectedOnly?: boolean },
+): Promise<number> {
+  const params: unknown[] = [kOrgId];
+  let brokerClause = '';
+  if (opts?.brokerId) { brokerClause = 'AND c.broker_id = ?'; params.push(opts.brokerId); }
+  const connectedClause = opts?.connectedOnly ? `AND c.${CONNECTED_SQL}` : '';
+  let windowClause = '';
+  if (from && to) { windowClause = 'AND c.at >= ? AND c.at < ?'; params.push(from, to); }
+  const [rows] = await pool.query<Row[]>(
+    `SELECT COUNT(DISTINCT cp.property_id) AS n
+       FROM calls c
+       JOIN call_properties cp ON cp.call_id = c.id
+      WHERE c.org_id = ?
+        ${brokerClause}
+        ${connectedClause}
+        ${windowClause}`,
+    params,
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
+/** Distinct units called (or reached) per broker in a window — for the tables/board. */
+export async function distinctUnitsByBroker(
+  from?: Date, to?: Date, connectedOnly = false,
+): Promise<Map<string, number>> {
+  const params: unknown[] = [kOrgId];
+  const connectedClause = connectedOnly ? `AND c.${CONNECTED_SQL}` : '';
+  let windowClause = '';
+  if (from && to) { windowClause = 'AND c.at >= ? AND c.at < ?'; params.push(from, to); }
+  const [rows] = await pool.query<Row[]>(
+    `SELECT c.broker_id, COUNT(DISTINCT cp.property_id) AS n
+       FROM calls c
+       JOIN call_properties cp ON cp.call_id = c.id
+      WHERE c.org_id = ?
+        ${connectedClause}
+        ${windowClause}
+      GROUP BY c.broker_id`,
+    params,
+  );
+  return new Map(rows.map(r => [r.broker_id as string, Number(r.n ?? 0)]));
+}
+
 /** One area's new-interested tally — matches statsRepo's (community, cluster) grouping. */
 export interface AreaInterested {
   community: string;

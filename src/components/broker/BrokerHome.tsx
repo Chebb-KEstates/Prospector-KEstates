@@ -124,7 +124,8 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
   if (freshOwners > 0) {
     tips.push(`${freshOwners} owner${freshOwners === 1 ? '' : 's'} have never been called — fresh data converts best.`);
   }
-  if (callsToday > 0 && reachedToday > 0 && (dash?.myInterestedToday ?? 0) / reachedToday < 0.15) {
+  const reachedUnitsToday = dash?.myReachedUnitsToday ?? 0;
+  if (callsToday > 0 && reachedUnitsToday > 0 && (dash?.myInterestedToday ?? 0) / reachedUnitsToday < 0.15) {
     tips.push('Your interest rate is low — try leading with the recent transaction on their unit.');
   }
   if (tips.length === 0) tips.push('You are on top of your list. Keep the momentum going.');
@@ -157,7 +158,7 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
         }>
         <Funnel stages={funnelStages} />
         <StatRow tiles={[
-          { value: fmtInt(f.noAnswer), label: `no answer (${short})`, color: f.noAnswer ? 'var(--warning)' : undefined },
+          { value: fmtInt(f.noAnswer), label: `not reached (${short})`, color: f.noAnswer ? 'var(--warning)' : undefined },
           { value: fmtInt(callable.length), label: 'callable' },
           { value: `${groups.length}`, label: 'owners', icon: 'user' },
           { value: `${dueNext.length}`, label: 'due follow-ups', color: dueNext.length ? 'var(--info)' : undefined },

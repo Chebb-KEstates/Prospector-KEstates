@@ -18,6 +18,28 @@ for what each part means for Prospector.
 
 ---
 
+## [3.20.0] — 2026-09-10
+
+### Changed
+- **The prospecting funnels are now measured in owners/units end-to-end, so they
+  always narrow and read true.** Previously the funnel mixed *call counts*
+  (Called, Reached) with *property counts* (Interested), so it could widen — e.g.
+  "Called" (every attempt) showing bigger than "Assigned" (units) — and the
+  interest rate divided properties by calls. Now every stage is **distinct
+  owner-property units**: Assigned → Units called → Units reached → Interested,
+  on both the manager and broker home. Only owner-property calls count (buyer-lead
+  calls never leak in). The "no answer" tile is now "not reached" (owners called
+  but not connected).
+- **"Interested rate" now compares like with like — interested owners ÷ owners
+  reached** (both distinct units), on the Report broker table, the daily board,
+  the Data-ROI panel and the manager momentum card. A new optional **Owners
+  reached** column exposes the denominator. Answer rate is unchanged (reached ÷
+  calls, both call events) — it measures call quality, which is a call metric.
+
+No schema change / no migration — pull + rebuild (server + client) + restart.
+
+---
+
 ## [3.19.1] — 2026-09-10
 
 ### Changed

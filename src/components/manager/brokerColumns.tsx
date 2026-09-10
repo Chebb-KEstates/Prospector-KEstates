@@ -32,8 +32,11 @@ export function brokerBoardColumns(days?: number): Col<TeamBrokerRow>[] {
       key: 'interested', label: 'New interested', align: 'right', sortValue: b => b.interested,
       render: b => <span title="Units that newly became interested in the selected period" style={{ color: b.interested > 0 ? 'var(--success)' : undefined, fontWeight: b.interested > 0 ? 700 : undefined }}>{fmtInt(b.interested)}</span>,
     },
-    { key: 'answerRate', label: 'Answer rate', align: 'right', render: b => pct(b.reached, b.calls), sortValue: b => (b.calls ? b.reached / b.calls : undefined) },
-    { key: 'interestRate', label: 'Interested rate', align: 'right', render: b => pct(b.interested, b.reached), sortValue: b => (b.reached ? b.interested / b.reached : undefined) },
+    { key: 'ownersReached', label: 'Owners reached', align: 'right', render: b => fmtInt(b.reachedUnits), sortValue: b => b.reachedUnits },
+    { key: 'answerRate', label: 'Answer rate', align: 'right', render: b => <span title={`${b.reached} of ${b.calls} calls connected`}>{pct(b.reached, b.calls)}</span>, sortValue: b => (b.calls ? b.reached / b.calls : undefined) },
+    // Interested owners ÷ owners reached — both distinct units, so the % compares
+    // like with like (not interested-units over reached-calls).
+    { key: 'interestRate', label: 'Interested rate', align: 'right', render: b => <span title={`${b.interested} interested of ${b.reachedUnits} owners reached`}>{pct(b.interested, b.reachedUnits)}</span>, sortValue: b => (b.reachedUnits ? b.interested / b.reachedUnits : undefined) },
     { key: 'lastAt', label: 'Last call', align: 'right', render: b => (b.lastAt ? timeAgo(b.lastAt) : '—'), sortValue: b => ts(b.lastAt) },
     { key: 'team', label: 'Team', render: b => b.team || '—', sortValue: b => b.team },
     {

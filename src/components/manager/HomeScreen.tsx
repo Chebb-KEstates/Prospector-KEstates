@@ -187,7 +187,7 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
         }>
         <Funnel stages={funnelStages} />
         <StatRow tiles={[
-          { value: fmtInt(f.noAnswer), label: `no answer (${short})`, color: 'var(--warning)' },
+          { value: fmtInt(f.noAnswer), label: `not reached (${short})`, color: 'var(--warning)' },
           { value: `${data.board.length}`, label: 'active brokers', icon: 'team' },
           { value: fmtInt(data.properties.byState[PropertyState.pool]), label: 'in pool' },
           { value: fmtInt(data.properties.callable), label: 'callable' },
@@ -209,8 +209,8 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
           <div style={{ height: 6 }} />
           <ProgressLine label="Answer rate" fraction={rolled.calls ? rolled.reached / rolled.calls : 0}
             trailing={rolled.calls ? `${Math.round(rolled.reached / rolled.calls * 100)}%` : '—'} color="var(--info)" />
-          <ProgressLine label="Interest rate (of reached)" fraction={rolled.reached ? rolled.interested / rolled.reached : 0}
-            trailing={rolled.reached ? `${Math.round(rolled.interested / rolled.reached * 100)}%` : '—'} color="var(--success)" />
+          <ProgressLine label="Interest rate (of owners reached)" fraction={rolled.reachedUnits ? rolled.interested / rolled.reachedUnits : 0}
+            trailing={rolled.reachedUnits ? `${Math.round(rolled.interested / rolled.reachedUnits * 100)}%` : '—'} color="var(--success)" />
         </DashCard>
 
         <DashCard title="Needs attention" icon="alert" flush height={CARD_H}>
