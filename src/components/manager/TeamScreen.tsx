@@ -97,8 +97,13 @@ export function TeamScreen() {
     { key: 'pool', label: 'In pool', align: 'right', render: a => fmtInt(a.pool), sortValue: a => a.pool },
     { key: 'untouched', label: 'Untouched', align: 'right', render: a => <span style={{ color: a.untouched > 0 ? 'var(--warning)' : undefined }}>{fmtInt(a.untouched)}</span>, sortValue: a => a.untouched },
     {
-      key: 'interested', label: 'Interested', align: 'right', sortValue: a => a.interested,
-      render: a => <span style={{ color: a.interested > 0 ? 'var(--success)' : undefined, fontWeight: a.interested > 0 ? 700 : undefined }}>{fmtInt(a.interested)}</span>,
+      key: 'interested', label: 'New interested', align: 'right', sortValue: a => a.interested,
+      render: a => (
+        <span title="Units in this area that newly became interested in the selected period"
+          style={{ color: a.interested > 0 ? 'var(--success)' : undefined, fontWeight: a.interested > 0 ? 700 : undefined }}>
+          {fmtInt(a.interested)}
+        </span>
+      ),
     },
   ];
 
@@ -144,7 +149,7 @@ export function TeamScreen() {
           <SectionTitle>
             Area breakdown
             <span style={{ fontWeight: 400, fontSize: '0.8125rem', color: 'var(--text-secondary)', marginLeft: 8 }}>
-              community · sub-community — who holds what
+              community · sub-community — who holds what · new interested: {rangeLabel.toLowerCase()}
             </span>
           </SectionTitle>
           <AnalyticsTable

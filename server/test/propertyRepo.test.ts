@@ -7,7 +7,7 @@ import {
   callableCoverageByBroker, followUpsDueByBroker,
 } from '../src/repositories/propertyRepo';
 import { areaBreakdown, areaAssignmentMatrix } from '../src/repositories/statsRepo';
-import { insertCall, newInterestedUnitsByBroker } from '../src/repositories/callRepo';
+import { insertCall, newInterestedUnitsByBroker, newInterestedUnitsByArea } from '../src/repositories/callRepo';
 import { CallLog, CallOutcome } from '../../src/types/models';
 import { newCallId } from '../src/domain/ids';
 import { Property, OwnerInfo, PropertyState, kOrgId } from '../../src/types/models';
@@ -402,6 +402,46 @@ test('new-interested counts transitions INTO interested, deduped per unit', asyn
   const to = new Date(Date.UTC(2026, 2, 1, 10, 5, 0));
   const win = await newInterestedUnitsByBroker(from, to);
   assert.equal(win.get('u-director'), 1, 'only C re-transitioned in the window; B merely stayed interested');
+});
+
+test('new-interested per AREA groups transitions by community + sub-community', async () => {
+  await wipe();
+  // Two areas; distinct building+unit per row so unit identity never collapses.
+  const m1 = makeProperty({ community: 'Marina', cluster: 'North', building: 'Tower M', unitNumber: '101', phone: '971500000051' });
+  const m2 = makeProperty({ community: 'Marina', cluster: 'North', building: 'Tower M', unitNumber: '102', phone: '971500000052' });
+  const d1 = makeProperty({ community: 'Downtown', cluster: undefined, building: 'Tower D', unitNumber: '201', phone: '971500000053' });
+  await saveProperties([m1, m2, d1]);
+  await pool.query("UPDATE properties SET assigned_to = 'u-director', state = 'assigned' WHERE id IN (?, ?, ?)", [m1.id, m2.id, d1.id]);
+
+  const t = (min: number) => new Date(Date.UTC(2026, 2, 1, 10, min, 0)).toISOString();
+  const call = (propId: string, min: number, outcome: CallOutcome) =>
+    insertCall(new CallLog(newCallId(), kOrgId, [propId], [], 'u-director', t(min), outcome));
+
+  // Marina/North: M1 no-answer→sell→rent (one transition, deduped); M2 sell then
+  // follow-up sell (one transition, at min 1). → area all-time = 2.
+  await call(m1.id, 0, CallOutcome.noAnswer);
+  await call(m1.id, 1, CallOutcome.interestedSell);
+  await call(m1.id, 2, CallOutcome.interestedRent);
+  await call(m2.id, 1, CallOutcome.interestedSell);
+  await call(m2.id, 3, CallOutcome.interestedSell);
+  // Downtown (no cluster): D1 sell→not-interested→sell (one re-interest). → 1.
+  await call(d1.id, 0, CallOutcome.interestedSell);
+  await call(d1.id, 2, CallOutcome.notInterested);
+  await call(d1.id, 4, CallOutcome.interestedSell);
+
+  const all = await newInterestedUnitsByArea();
+  const marina = all.find(a => a.community === 'Marina' && a.cluster === 'North');
+  const downtown = all.find(a => a.community === 'Downtown' && a.cluster === '');
+  assert.equal(marina?.n, 2, 'M1 and M2 each became interested');
+  assert.equal(downtown?.n, 1, 'D1 became interested (re-interest counts once)');
+
+  // Window [min 3, min 5): M2 follow-up (min 3) stays interested → excluded;
+  // Marina drops to 0 (absent). D1 re-interest (min 4) counts → Downtown = 1.
+  const from = new Date(Date.UTC(2026, 2, 1, 10, 3, 0));
+  const to = new Date(Date.UTC(2026, 2, 1, 10, 5, 0));
+  const win = await newInterestedUnitsByArea(from, to);
+  assert.equal(win.find(a => a.community === 'Marina')?.n, undefined, 'no fresh Marina transition in window');
+  assert.equal(win.find(a => a.community === 'Downtown' && a.cluster === '')?.n, 1, 'only D1 re-transitioned in the window');
 });
 
 test.after(async () => {

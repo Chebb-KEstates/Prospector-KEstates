@@ -18,6 +18,24 @@ for what each part means for Prospector.
 
 ---
 
+## [3.17.3] — 2026-09-10
+
+### Changed
+- **Report → Area breakdown: "Interested" is now "New interested", and follows
+  the date range.** The area table's interested figure was a lifetime snapshot of
+  units whose last outcome is currently interested; it now counts the **distinct
+  units in each area that newly *became* interested in the selected period**,
+  using the same transition rule as the broker table (a fresh interest counts, a
+  follow-up that stays interested does not, a re-interest after any non-interested
+  outcome counts, and sell + rent on one unit counts once). So the two tables now
+  answer the same question — "how much new interest was generated" — for brokers
+  and for areas over the same window. The Database's Interested filter is
+  unchanged (it stays a live snapshot of units interested right now).
+
+No schema change / no migration — pull + rebuild (server) + restart.
+
+---
+
 ## [3.17.2] — 2026-09-10
 
 ### Changed

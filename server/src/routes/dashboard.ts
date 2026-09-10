@@ -12,6 +12,7 @@ import {
   brokerCallStats, brokerStatsBetween, statsBetween, rollingStats,
   callsPerDay, countCallsTotal, lifetimeStats, brokerFunnelWindow,
   newInterestedUnitsByBroker,
+  newInterestedUnitsByArea,
 } from '../repositories/callRepo';
 import { countPending } from '../repositories/requestRepo';
 import { listUsers } from '../repositories/userRepo';
@@ -195,6 +196,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     const [
       users, stats, held, datasets, totalProperties, callable, callableWorked, lifetime,
       windowStats, coverage, followUps, matrix, areaStats, areaMatrix, interestedUnits,
+      areaInterested,
     ] = await Promise.all([
       listUsers(),
       brokerCallStats(),
@@ -215,6 +217,9 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       // Interested = distinct NEW interested units generated in the range — units
       // that transitioned into interested (not just any interested call).
       ranged ? newInterestedUnitsByBroker(from!, to!) : newInterestedUnitsByBroker(),
+      // Per-AREA new interested units — same transition rule, grouped by area,
+      // driven by the same range as the broker columns.
+      ranged ? newInterestedUnitsByArea(from!, to!) : newInterestedUnitsByArea(),
     ]);
 
     const statsById = new Map(stats.map(s => [s.brokerId, s]));
@@ -242,6 +247,10 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       const c = community || '(no community)';
       return cluster ? `${c} · ${cluster}` : c;
     };
+    // New-interested-units-in-range per area, keyed the same way as the rows.
+    const areaInterestedByKey = new Map(
+      areaInterested.map(a => [areaKey(a.community, a.cluster), a.n]),
+    );
     const areaBrokers = new Map<string, { name: string; units: number }[]>();
     // Which areas each broker holds — the broker table's "Areas held" column.
     const brokerAreas = new Map<string, { name: string; units: number }[]>();
@@ -304,7 +313,10 @@ export default async function dashboardRoutes(app: FastifyInstance) {
         assigned: a.assigned,
         pool: a.pool,
         untouched: a.untouched,
-        interested: a.interested,
+        // Interested = distinct NEW interested units generated in the range for
+        // this area (a transition into interested), not a snapshot of units whose
+        // last outcome is currently interested. Mirrors the broker table.
+        interested: areaInterestedByKey.get(areaKey(a.community, a.cluster)) ?? 0,
         brokers: (areaBrokers.get(areaKey(a.community, a.cluster)) ?? []).slice().sort(byUnits),
       })),
       roi: {

@@ -323,6 +323,56 @@ export async function newInterestedUnitsByBroker(from?: Date, to?: Date): Promis
   return new Map(rows.map(r => [r.broker_id as string, Number(r.n ?? 0)]));
 }
 
+/** One area's new-interested tally — matches statsRepo's (community, cluster) grouping. */
+export interface AreaInterested {
+  community: string;
+  /** '' when the area has no sub-community. */
+  cluster: string;
+  n: number;
+}
+
+/**
+ * NEW interested units per AREA — the area counterpart of
+ * `newInterestedUnitsByBroker`. Same transition rule (a unit counts when a call
+ * moves it INTO interested from a non-interested state; follow-ups that stay
+ * interested don't; a re-interest after any non-interested outcome does; sell +
+ * rent on one unit in the window counts once), but grouped by the unit's
+ * (community, sub-community) instead of the calling broker. Attributed to the
+ * area the unit sits in now. Returns the raw (community, cluster) parts so the
+ * route builds the same area key it uses everywhere else. See
+ * [[project_prospector_unit_identity]] — the count dedups by unit (property_id).
+ */
+export async function newInterestedUnitsByArea(from?: Date, to?: Date): Promise<AreaInterested[]> {
+  const params: unknown[] = [kOrgId];
+  let windowClause = '';
+  if (from && to) { windowClause = 'AND uc.at >= ? AND uc.at < ?'; params.push(from, to); }
+  const [rows] = await pool.query<Row[]>(
+    `WITH uc AS (
+       SELECT cp.property_id AS unit_id,
+              p.community AS community,
+              COALESCE(p.cluster, '') AS cluster,
+              c.at, c.outcome,
+              LAG(c.outcome) OVER (PARTITION BY cp.property_id ORDER BY c.at, c.id) AS prev_outcome
+         FROM calls c
+         JOIN call_properties cp ON cp.call_id = c.id
+         JOIN properties p ON p.id = cp.property_id
+        WHERE c.org_id = ?
+     )
+     SELECT community, cluster, COUNT(DISTINCT unit_id) AS n
+       FROM uc
+      WHERE outcome IN ('interestedSell', 'interestedRent')
+        AND (prev_outcome IS NULL OR prev_outcome NOT IN ('interestedSell', 'interestedRent'))
+        ${windowClause}
+      GROUP BY community, cluster`,
+    params,
+  );
+  return rows.map(r => ({
+    community: String(r.community ?? ''),
+    cluster: String(r.cluster ?? ''),
+    n: Number(r.n ?? 0),
+  }));
+}
+
 export interface BrokerFunnelWindow {
   calls: number;
   reached: number;

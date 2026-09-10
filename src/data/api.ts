@@ -548,7 +548,11 @@ export interface TeamAreaRow {
   pool: number;
   /** Callable units never called yet. */
   untouched: number;
-  /** Units whose last outcome was "interested". */
+  /**
+   * Distinct units in this area that NEWLY became interested in the selected
+   * period (a transition into interested), matching the broker table — not a
+   * snapshot of units whose last outcome is currently interested.
+   */
   interested: number;
   /** Brokers currently holding units in this area (biggest first). */
   brokers: Holding[];
