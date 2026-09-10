@@ -882,9 +882,13 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
                   <div style={{ ...sectionLabel, marginBottom: 0, flex: 1 }}>History journal{multiUnit ? ` — ${focusedUnit?.label ?? ''}` : ''}</div>
                   {!addingUpdate && (
-                    <button className="btn btn-sm btn-ghost" onClick={() => { setAddingUpdate(true); setUpdateErr(null); }}
-                      style={{ flexShrink: 0 }} title="Add a note to the journal without logging a call">
-                      <Icon name="plus" size={13} /> Add update
+                    <button className="btn btn-sm" onClick={() => { setAddingUpdate(true); setUpdateErr(null); }}
+                      style={{
+                        flexShrink: 0, fontWeight: 600, borderColor: 'var(--gold)', borderWidth: 1.5,
+                        color: 'var(--gold-dark)', background: 'color-mix(in srgb, var(--gold) 14%, transparent)',
+                      }}
+                      title="Add a note to the journal without logging a call">
+                      <Icon name="plus" size={14} /> Add update
                     </button>
                   )}
                 </div>

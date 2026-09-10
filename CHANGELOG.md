@@ -18,6 +18,17 @@ for what each part means for Prospector.
 
 ---
 
+## [3.19.1] — 2026-09-10
+
+### Changed
+- **The "Add update" button on the history journal now reads clearly as a
+  button** — a gold-outlined, tinted control instead of the faint ghost style, so
+  it's obvious you can add a journal update without logging a call.
+
+No schema change / no migration — pull + rebuild (client) + restart.
+
+---
+
 ## [3.19.0] — 2026-09-10
 
 ### Added
