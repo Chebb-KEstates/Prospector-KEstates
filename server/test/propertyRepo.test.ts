@@ -7,6 +7,9 @@ import {
   callableCoverageByBroker, followUpsDueByBroker,
 } from '../src/repositories/propertyRepo';
 import { areaBreakdown, areaAssignmentMatrix } from '../src/repositories/statsRepo';
+import { insertCall, interestedUnitsByBroker } from '../src/repositories/callRepo';
+import { CallLog, CallOutcome } from '../../src/types/models';
+import { newCallId } from '../src/domain/ids';
 import { Property, OwnerInfo, PropertyState, kOrgId } from '../../src/types/models';
 import { ownerKeyOf } from '../../src/logic/ownerGrouping';
 import { ImportPipeline } from '../../src/logic/importPipeline';
@@ -361,6 +364,30 @@ test('area breakdown groups by community + sub-community with per-broker holding
   const matrix = await areaAssignmentMatrix();
   assert.equal(matrix.find(c => c.cluster === 'Frond A' && c.brokerId === 'u-director')?.units, 1);
   assert.equal(matrix.find(c => c.cluster === 'Frond B' && c.brokerId === 'u-director')?.units, 1);
+});
+
+test('interested count is DISTINCT units, not call events (repeat calls dedupe)', async () => {
+  await wipe();
+  const a = makeProperty({ unitNumber: '1201', phone: '971500000031' });
+  const b = makeProperty({ unitNumber: '1202', phone: '971500000032' });
+  await saveProperties([a, b]);
+  await pool.query("UPDATE properties SET assigned_to = 'u-director', state = 'assigned' WHERE id IN (?, ?)", [a.id, b.id]);
+
+  const call = (propId: string, at: Date) =>
+    insertCall(new CallLog(newCallId(), kOrgId, [propId], [], 'u-director', at.toISOString(), CallOutcome.interestedSell));
+  const now = new Date();
+  await call(a.id, now);                                   // unit a — interested
+  await call(a.id, new Date(now.getTime() - 3600_000));    // unit a again — a REPEAT, must not double-count
+  await call(b.id, now);                                   // unit b — interested
+
+  const all = await interestedUnitsByBroker();
+  assert.equal(all.get('u-director'), 2, 'three interested calls on two units → 2 distinct units');
+
+  // Windowed: only the last hour excludes the older repeat, still 2 distinct units.
+  const from = new Date(now.getTime() - 30 * 60_000);
+  const to = new Date(now.getTime() + 60_000);
+  const windowed = await interestedUnitsByBroker(from, to);
+  assert.equal(windowed.get('u-director'), 2, 'both units still have an interested call inside the window');
 });
 
 test.after(async () => {

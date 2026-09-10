@@ -18,6 +18,21 @@ for what each part means for Prospector.
 
 ---
 
+## [3.17.1] — 2026-09-10
+
+### Fixed
+- **The Report's "Interested" now counts interested UNITS, not interested calls.**
+  It was counting every interested *call* a broker logged, so re-calling the same
+  unit (or a unit whose outcome later changed) inflated the number and it didn't
+  match the Database's Interested filter. It now counts the **distinct units** a
+  broker got an interested outcome on, scoped to the selected date range. The
+  dashboard's daily broker board uses the same corrected count. (The prospecting
+  funnel stays a call-conversion measure by design.)
+
+No schema change / no migration — pull + rebuild (server) + restart.
+
+---
+
 ## [3.17.0] — 2026-09-10
 
 ### Added

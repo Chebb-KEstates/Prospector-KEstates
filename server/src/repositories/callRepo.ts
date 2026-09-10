@@ -284,6 +284,28 @@ export async function brokerStatsBetween(from: Date, to: Date): Promise<Map<stri
   }]));
 }
 
+/**
+ * Distinct interested UNITS per broker (optionally within a window). Unlike the
+ * `interested` in the stats above — which counts interested CALL events — this
+ * counts each unit that got an interested outcome once, so repeat interested
+ * calls on the same unit don't inflate it. Attributed to the broker who made the
+ * interested call. Every popup call links exactly one unit, so this stays ≤ the
+ * interested-call count (the interest rate can't exceed 100%).
+ */
+export async function interestedUnitsByBroker(from?: Date, to?: Date): Promise<Map<string, number>> {
+  const clauses = ['c.org_id = ?', `c.${INTERESTED_SQL}`];
+  const params: unknown[] = [kOrgId];
+  if (from && to) { clauses.push('c.at >= ? AND c.at < ?'); params.push(from, to); }
+  const [rows] = await pool.query<Row[]>(
+    `SELECT c.broker_id AS broker_id, COUNT(DISTINCT cp.property_id) AS n
+       FROM calls c JOIN call_properties cp ON cp.call_id = c.id
+      WHERE ${clauses.join(' AND ')}
+      GROUP BY c.broker_id`,
+    params,
+  );
+  return new Map(rows.map(r => [r.broker_id as string, Number(r.n ?? 0)]));
+}
+
 export interface BrokerFunnelWindow {
   calls: number;
   reached: number;

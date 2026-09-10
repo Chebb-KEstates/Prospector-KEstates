@@ -11,6 +11,7 @@ import { countLeadsByState, countLeadsTotal } from '../repositories/leadRepo';
 import {
   brokerCallStats, brokerStatsBetween, statsBetween, rollingStats,
   callsPerDay, countCallsTotal, lifetimeStats, brokerFunnelWindow,
+  interestedUnitsByBroker,
 } from '../repositories/callRepo';
 import { countPending } from '../repositories/requestRepo';
 import { listUsers } from '../repositories/userRepo';
@@ -193,7 +194,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
 
     const [
       users, stats, held, datasets, totalProperties, callable, callableWorked, lifetime,
-      windowStats, coverage, followUps, matrix, areaStats, areaMatrix,
+      windowStats, coverage, followUps, matrix, areaStats, areaMatrix, interestedUnits,
     ] = await Promise.all([
       listUsers(),
       brokerCallStats(),
@@ -211,6 +212,9 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       assignmentMatrix(),
       areaBreakdown(),
       areaAssignmentMatrix(),
+      // Interested = distinct UNITS with an interested outcome (deduped), scoped
+      // to the range when set — not interested CALL events.
+      ranged ? interestedUnitsByBroker(from!, to!) : interestedUnitsByBroker(),
     ]);
 
     const statsById = new Map(stats.map(s => [s.brokerId, s]));
@@ -264,7 +268,9 @@ export default async function dashboardRoutes(app: FastifyInstance) {
         const w = ranged ? windowStats.get(b.id) : undefined;
         const calls = ranged ? (w?.calls ?? 0) : (s?.calls ?? 0);
         const reached = ranged ? (w?.reached ?? 0) : (s?.reached ?? 0);
-        const interested = ranged ? (w?.interested ?? 0) : (s?.interested ?? 0);
+        // Interested = distinct interested UNITS (deduped), not interested calls —
+        // so it counts units the way the Database "Interested" filter does.
+        const interested = interestedUnits.get(b.id) ?? 0;
         const cov = coverage.get(b.id) ?? { callable: 0, worked: 0 };
         return {
           id: b.id,
