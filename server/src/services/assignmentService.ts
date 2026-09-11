@@ -46,6 +46,37 @@ const ASSIGNABLE_COLS = `
 export interface AssignResult {
   assigned: number;
   ownerLinkedExtra: number;
+  /** Owners left untouched because they're being worked in another broker's portfolio. */
+  skippedOwners: number;
+  skippedUnits: number;
+}
+
+/**
+ * The units that make a reassignment a CONFLICT: owners in the selection who
+ * currently have a unit in `portfolio` (interested, being worked) held by a
+ * broker OTHER than the target. Reassigning would either move that live deal or
+ * split the owner, so the manager is warned first. Read-only (no lock) — the
+ * actual assign re-checks under a lock.
+ */
+export async function previewAssignConflicts(
+  propertyIds: string[], brokerId: string,
+): Promise<{ conflictUnits: Property[]; conflictOwners: number }> {
+  if (propertyIds.length === 0) return { conflictUnits: [], conflictOwners: 0 };
+  const [chosenRows] = await pool.query<Row[]>(
+    `SELECT ${ASSIGNABLE_COLS} FROM properties WHERE id IN (${propertyIds.map(() => '?').join(', ')})`,
+    propertyIds,
+  );
+  const ownerKeys = Array.from(new Set(chosenRows.map(toProperty).map(ownerKeyOf)));
+  if (ownerKeys.length === 0) return { conflictUnits: [], conflictOwners: 0 };
+  const [rows] = await pool.query<Row[]>(
+    `SELECT ${ASSIGNABLE_COLS} FROM properties
+      WHERE org_id = ? AND state = 'portfolio' AND assigned_to IS NOT NULL AND assigned_to <> ?
+        AND owner_key IN (${ownerKeys.map(() => '?').join(', ')})`,
+    [kOrgId, brokerId, ...ownerKeys],
+  );
+  const conflictUnits = rows.map(toProperty);
+  const conflictOwners = new Set(conflictUnits.map(ownerKeyOf)).size;
+  return { conflictUnits, conflictOwners };
 }
 
 /**
@@ -63,8 +94,9 @@ export async function assignProperties(
   brokerId: string,
   actorId: string,
   note?: string,
+  skipConflictOwners = false,
 ): Promise<AssignResult> {
-  if (propertyIds.length === 0) return { assigned: 0, ownerLinkedExtra: 0 };
+  if (propertyIds.length === 0) return { assigned: 0, ownerLinkedExtra: 0, skippedOwners: 0, skippedUnits: 0 };
 
   const broker = await findUserById(brokerId);
   if (!broker || !broker.active) {
@@ -101,7 +133,29 @@ export async function assignProperties(
       .map(toProperty)
       .filter(p => !chosenIds.has(p.id) && ownerCommunity.has(`${ownerKeyOf(p)}|${p.community}`));
 
-    const expanded = [...chosen, ...linked];
+    let expanded = [...chosen, ...linked];
+
+    // 2b. Conflict owners: those with a unit in another broker's portfolio (a live
+    //     deal being worked). Re-checked here under the lock, not trusted from the
+    //     client. When `skipConflictOwners`, drop every unit of those owners so the
+    //     other broker keeps the whole owner untouched.
+    const [portRows] = await cx.query<Row[]>(
+      `SELECT owner_key FROM properties
+        WHERE org_id = ? AND state = 'portfolio' AND assigned_to IS NOT NULL AND assigned_to <> ?
+          AND owner_key IN (${ownerKeys.map(() => '?').join(', ')})`,
+      [kOrgId, brokerId, ...ownerKeys],
+    );
+    const conflictOwnerKeys = new Set(portRows.map(r => r.owner_key as string));
+    let skippedOwners = 0, skippedUnits = 0;
+    if (skipConflictOwners && conflictOwnerKeys.size > 0) {
+      const before = expanded.length;
+      expanded = expanded.filter(p => !conflictOwnerKeys.has(ownerKeyOf(p)));
+      skippedOwners = conflictOwnerKeys.size;
+      skippedUnits = before - expanded.length;
+    }
+    if (expanded.length === 0) {
+      return { assigned: 0, ownerLinkedExtra: 0, skippedOwners, skippedUnits };
+    }
 
     // 3. Mutate + persist — a fresh assignment of the whole group to this broker.
     const now = new Date().toISOString();
@@ -120,17 +174,18 @@ export async function assignProperties(
     }
     await saveProperties(expanded, cx);
 
-    const extra = expanded.length - chosen.length;
+    const extra = Math.max(0, expanded.length - chosen.length);
     await writeAudit({
       actorId,
       action: 'assign',
       detail: `Assigned to ${broker.name}` +
         (extra > 0 ? ` (incl. ${extra} owner-linked)` : '') +
+        (skippedUnits > 0 ? ` — skipped ${skippedUnits} unit(s) for ${skippedOwners} owner(s) held in another portfolio` : '') +
         (movedFromAnother ? ' — owner group reassigned' : ''),
       propertyIds: expanded.map(p => p.id),
     }, cx);
 
-    return { assigned: expanded.length, ownerLinkedExtra: extra };
+    return { assigned: expanded.length, ownerLinkedExtra: extra, skippedOwners, skippedUnits };
   });
 }
 

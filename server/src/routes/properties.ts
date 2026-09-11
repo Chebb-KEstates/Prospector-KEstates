@@ -11,7 +11,7 @@ import { listAuditForProperty, writeAudit } from '../repositories/auditRepo';
 import { findDatasetById } from '../repositories/datasetRepo';
 import { loadSettings } from '../repositories/settingsRepo';
 import {
-  assignProperties, reclaimProperties,
+  assignProperties, reclaimProperties, previewAssignConflicts,
 } from '../services/assignmentService';
 import { undoDnc } from '../services/callService';
 import { revealOwnerPhone, recordView, ownerUnitsFor } from '../services/revealService';
@@ -553,12 +553,40 @@ export default async function propertyRoutes(app: FastifyInstance) {
           },
           brokerId: { type: 'string', maxLength: 64 },
           note: { type: 'string', maxLength: 500 },
+          // When true, owners already worked in another broker's portfolio are left
+          // untouched (the manager chose "skip those owners" in the conflict prompt).
+          skipConflictOwners: { type: 'boolean' },
         },
       },
     },
   }, async (req) => {
-    const body = req.body as { propertyIds: string[]; brokerId: string; note?: string };
-    return assignProperties(body.propertyIds, body.brokerId, req.currentUser!.id, body.note);
+    const body = req.body as { propertyIds: string[]; brokerId: string; note?: string; skipConflictOwners?: boolean };
+    return assignProperties(body.propertyIds, body.brokerId, req.currentUser!.id, body.note, body.skipConflictOwners);
+  });
+
+  /**
+   * Conflict pre-check for a reassignment — the units belonging to owners already
+   * being worked in another broker's portfolio. The manager sees these before
+   * choosing to reassign everyone or skip those owners. Numbers are masked.
+   */
+  app.post('/api/properties/assign/preview', {
+    preHandler: [app.authenticate, app.requirePermission(Permission.assignData)],
+    schema: {
+      body: {
+        type: 'object', required: ['propertyIds', 'brokerId'], additionalProperties: false,
+        properties: {
+          propertyIds: {
+            type: 'array', minItems: 1, maxItems: 5000,
+            items: { type: 'string', maxLength: 64 },
+          },
+          brokerId: { type: 'string', maxLength: 64 },
+        },
+      },
+    },
+  }, async (req) => {
+    const body = req.body as { propertyIds: string[]; brokerId: string };
+    const { conflictUnits, conflictOwners } = await previewAssignConflicts(body.propertyIds, body.brokerId);
+    return { conflictOwners, units: conflictUnits.map(serializeProperty) };
   });
 
   app.post('/api/properties/reclaim', {

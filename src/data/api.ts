@@ -241,10 +241,16 @@ export const properties = {
   recordView: (id: string, what: string) =>
     post<{ ok: true }>(`/api/properties/${id}/view`, { what }),
 
-  assign: (propertyIds: string[], brokerId: string, note?: string) =>
-    post<{ assigned: number; ownerLinkedExtra: number }>('/api/properties/assign', {
-      propertyIds, brokerId, note,
+  assign: (propertyIds: string[], brokerId: string, note?: string, skipConflictOwners?: boolean) =>
+    post<{ assigned: number; ownerLinkedExtra: number; skippedOwners: number; skippedUnits: number }>('/api/properties/assign', {
+      propertyIds, brokerId, note, skipConflictOwners,
     }),
+
+  /** Owners already worked in another broker's portfolio that this reassign would hit. */
+  async assignPreview(propertyIds: string[], brokerId: string): Promise<{ conflictOwners: number; units: Property[] }> {
+    const r = await post<{ conflictOwners: number; units: Record<string, unknown>[] }>('/api/properties/assign/preview', { propertyIds, brokerId });
+    return { conflictOwners: r.conflictOwners, units: r.units.map(Property.fromJson) };
+  },
 
   reclaim: (propertyIds: string[]) =>
     post<{ reclaimed: number }>('/api/properties/reclaim', { propertyIds }),

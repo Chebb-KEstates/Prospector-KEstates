@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { useAuth } from '../../state/AuthContext';
 import { CallStop, CallUnit, CallHistoryEntry, OwnerNumbers } from '../../state/callTypes';
-import { CallOutcome, PropertyState } from '../../types/models';
+import { CallOutcome, PropertyState, Property } from '../../types/models';
+import { AssignConflictDialog } from './AssignConflictDialog';
 import type { PhoneEntry } from '../../types/models';
 import { StateChip, CountdownBadge, OutcomeChip } from '../common/StateChip';
 import { Icon } from '../common/Icon';
@@ -158,6 +159,13 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   const [noteOverrides, setNoteOverrides] = useState<Record<string, string>>({});
   const [notesDirty, setNotesDirty] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
+
+  // Manager actions on the record (reclaim / reassign) — shown instead of the
+  // dialer progress when a manager opens a record.
+  const [mgrBroker, setMgrBroker] = useState('');
+  const [mgrBusy, setMgrBusy] = useState(false);
+  const [mgrMsg, setMgrMsg] = useState<string | null>(null);
+  const [mgrConflict, setMgrConflict] = useState<{ conflictOwners: number; units: Property[] } | null>(null);
 
   // "Next property": next in the table order, or a random one when ticked.
   const [randomize, setRandomize] = useState(() => localStorage.getItem('prospector.popup.randomizeNext') === '1');
@@ -384,6 +392,52 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     }
   };
 
+  // Reflect a state change (reclaim / reassign) on the focused unit's chip + journal.
+  const refreshFocused = async () => {
+    try {
+      const p2 = await api.properties.byId(focusedId);
+      setRefresh(r => ({ ...r, [focusedId]: { state: p2.state, expiresAt: p2.assignmentExpiresAt } }));
+    } catch { /* keep the old chip */ }
+    setEventsKey(k => k + 1);
+  };
+  const reclaimNow = async () => {
+    if (mgrBusy) return;
+    setMgrBusy(true); setMgrMsg(null);
+    try {
+      const n = await vault.reclaim([focusedId]);
+      await refreshFocused();
+      setMgrMsg(`Reclaimed ${n} unit${n === 1 ? '' : 's'} to the pool.`);
+    } catch (e) {
+      setMgrMsg(e instanceof ApiError ? e.message : 'Could not reclaim that.');
+    } finally { setMgrBusy(false); }
+  };
+  const assignNow = async (skip: boolean) => {
+    setMgrBusy(true); setMgrMsg(null);
+    try {
+      const r = await vault.assign([focusedId], mgrBroker, undefined, skip);
+      setMgrConflict(null);
+      await refreshFocused();
+      const bName = vault.userById(mgrBroker)?.name ?? 'broker';
+      const parts = [`Reassigned to ${bName} (${r.assigned} unit${r.assigned === 1 ? '' : 's'})`];
+      if (r.skippedUnits > 0) parts.push(`skipped ${r.skippedUnits} for ${r.skippedOwners} owner${r.skippedOwners === 1 ? '' : 's'} worked elsewhere`);
+      setMgrMsg(parts.join(' — ') + '.');
+      setMgrBroker('');
+    } catch (e) {
+      setMgrMsg(e instanceof ApiError ? e.message : 'Could not reassign that.');
+    } finally { setMgrBusy(false); }
+  };
+  const startReassign = async () => {
+    if (!mgrBroker || mgrBusy) return;
+    setMgrBusy(true); setMgrMsg(null);
+    try {
+      const preview = await api.properties.assignPreview([focusedId], mgrBroker);
+      if (preview.conflictOwners > 0) setMgrConflict(preview);
+      else await assignNow(false);
+    } catch (e) {
+      setMgrMsg(e instanceof ApiError ? e.message : 'Could not check that reassignment.');
+    } finally { setMgrBusy(false); }
+  };
+
   const tryClose = async () => { if (locked) return; await flushNotes(); onClose(); };
   const tryNext = async () => {
     if (locked || navBusy.current || !onNavigate) return;
@@ -535,8 +589,9 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     <div className="modal-overlay" onClick={() => void tryClose()}
       style={total > 1 ? { flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', paddingTop: 12, gap: 12 } : undefined}>
       {/* Session progress — a rounded floating panel above the popup, matching the
-          app's toolbar style. Stacked (not fixed) so it never overlaps the box. */}
-      {stop && total > 1 && (
+          app's toolbar style. Stacked (not fixed) so it never overlaps the box.
+          Brokers only: a manager gets record actions inside the box instead. */}
+      {stop && total > 1 && !isManager && (
         <div onClick={e => e.stopPropagation()} style={{
           width: 'min(94vw, 1240px)', boxSizing: 'border-box', flexShrink: 0,
           display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
@@ -584,6 +639,32 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
               <CountdownBadge deadline={curExpires} soonHours={vault.settings.expiringSoonHours} />
               <button className="btn btn-icon btn-sm" onClick={() => void tryClose()} aria-label="Close"><Icon name="x" size={16} /></button>
             </div>
+
+            {/* Manager actions — reclaim / reassign this record's owner group. Shown
+                in place of the dialer progress bar a broker would see. */}
+            {isManager && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flexShrink: 0,
+                padding: '9px 12px', borderRadius: 12, background: 'var(--surface-2)', border: '1px solid var(--border-light)',
+              }}>
+                <span style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)', fontWeight: 600 }}>Manager actions</span>
+                <button className="btn btn-sm" disabled={mgrBusy} onClick={() => void reclaimNow()}
+                  title="Return this owner's units in this area to the pool">
+                  <Icon name="refresh" size={13} /> Reclaim to pool
+                </button>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <select className="input" value={mgrBroker} disabled={mgrBusy}
+                    onChange={e => setMgrBroker(e.target.value)} style={{ width: 'auto', minWidth: 150, padding: '5px 8px' }}>
+                    <option value="">Reassign to…</option>
+                    {vault.brokers.filter(b => b.active).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                  <button className="btn btn-sm btn-primary" disabled={!mgrBroker || mgrBusy} onClick={() => void startReassign()}>
+                    {mgrBusy ? 'Working…' : 'Reassign'}
+                  </button>
+                </div>
+                {mgrMsg && <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>{mgrMsg}</span>}
+              </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))', gap: 14, flex: 1, minHeight: 0 }}>
               {/* ── LEFT: the record + persistent notes ─────────────────────── */}
@@ -948,6 +1029,17 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
             </div>
           </div>
         </div>
+      )}
+
+      {mgrConflict && (
+        <AssignConflictDialog
+          brokerName={vault.userById(mgrBroker)?.name ?? 'this broker'}
+          conflictOwners={mgrConflict.conflictOwners}
+          conflictUnits={mgrConflict.units}
+          busy={mgrBusy}
+          onProceedAll={() => void assignNow(false)}
+          onSkip={() => void assignNow(true)}
+          onCancel={() => setMgrConflict(null)} />
       )}
     </div>
   );

@@ -18,6 +18,26 @@ for what each part means for Prospector.
 
 ---
 
+## [3.23.0] — 2026-09-11
+
+### Added
+- **Reassigning warns you before disrupting a live deal.** When assigning units to
+  a broker would touch an owner already being worked in **another broker's
+  portfolio** (an interested unit), a prompt appears first: it names how many
+  owners/units conflict, and you choose **Reassign all** or **Skip those owners**
+  (leave them with the broker working them). The conflicting count is clickable →
+  a table of those units → each opens the full record; closing a layer returns to
+  the one beneath, so the prompt waits until you decide. Works from the Database's
+  Assign button and from the new manager bar in the record popup.
+- **Manager actions on the record popup.** When a manager opens a unit, the top of
+  the popup now shows manager controls — **Reclaim to pool** and **Reassign to a
+  broker** — instead of the broker's dialing-progress bar. Reassigning from here
+  runs the same conflict check.
+
+No schema change / no migration — pull + rebuild (server + client) + restart.
+
+---
+
 ## [3.22.0] — 2026-09-11
 
 ### Added

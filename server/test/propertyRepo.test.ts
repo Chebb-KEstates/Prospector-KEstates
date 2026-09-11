@@ -7,6 +7,7 @@ import {
   callableCoverageByBroker, followUpsDueByBroker, findMetricUnits,
 } from '../src/repositories/propertyRepo';
 import { areaBreakdown, areaAssignmentMatrix } from '../src/repositories/statsRepo';
+import { assignProperties, previewAssignConflicts } from '../src/services/assignmentService';
 import { insertCall, newInterestedUnitsByBroker, newInterestedUnitsByArea, newInterestedUnitsCount, distinctUnitsCount, distinctUnitsByBroker, metricUnitIds } from '../src/repositories/callRepo';
 import { CallLog, CallOutcome } from '../../src/types/models';
 import { newCallId } from '../src/domain/ids';
@@ -572,6 +573,43 @@ test('findMetricUnits: snapshot drill-downs by broker and area', async () => {
 
   const noSub = await findMetricUnits('properties', { community: 'Marina', cluster: '' });
   assert.deepEqual(noSub.map(p => p.id), [C.id], 'empty cluster matches the no-sub-community area, not all of Marina');
+});
+
+test('assign conflict: preview flags owners in another broker\'s portfolio; skip leaves them, proceed reassigns', async () => {
+  await wipe();
+  const [bkrs] = await pool.query<any[]>("SELECT id FROM users WHERE role = 'broker' AND active = 1 LIMIT 2");
+  const A = bkrs[0]?.id as string;
+  const B = (bkrs[1]?.id as string) ?? 'u-director';
+  assert.ok(A && B && A !== B, 'need two distinct brokers');
+
+  // One owner (same phone = same owner_key) with a unit in two communities.
+  const u1 = makeProperty({ unitNumber: '1', community: 'C1', phone: '971500000101', ownerName: 'Owner O' });
+  const u2 = makeProperty({ unitNumber: '2', community: 'C2', phone: '971500000101', ownerName: 'Owner O' });
+  await saveProperties([u1, u2]);
+  // U1 is interested and held by broker A (portfolio); U2 sits in the pool.
+  await pool.query("UPDATE properties SET assigned_to = ?, state = 'portfolio', last_outcome = 'interestedSell' WHERE id = ?", [A, u1.id]);
+
+  // Reassigning U2 to B hits owner O, who is already worked by A.
+  const preview = await previewAssignConflicts([u2.id], B);
+  assert.equal(preview.conflictOwners, 1, 'owner O is being worked by another broker');
+  assert.deepEqual(preview.conflictUnits.map(p => p.id), [u1.id], 'the conflict is U1 in A\'s portfolio');
+
+  // Skip → owner O untouched: nothing assigned, U1 still A/portfolio, U2 still pool.
+  const skip = await assignProperties([u2.id], B, 'u-director', undefined, true);
+  assert.equal(skip.assigned, 0);
+  assert.equal(skip.skippedOwners, 1);
+  const [after] = await pool.query<any[]>('SELECT id, assigned_to, state FROM properties WHERE id IN (?, ?)', [u1.id, u2.id]);
+  const byId = new Map(after.map((r: any) => [r.id, r]));
+  assert.equal(byId.get(u1.id).assigned_to, A, 'U1 stays with A');
+  assert.equal(byId.get(u2.id).state, 'pool', 'U2 stays in the pool');
+
+  // Proceed → U2 goes to B; U1 (different community) stays with A (owner split, by design).
+  const all = await assignProperties([u2.id], B, 'u-director', undefined, false);
+  assert.ok(all.assigned >= 1, 'U2 assigned to B');
+  const [after2] = await pool.query<any[]>('SELECT id, assigned_to FROM properties WHERE id IN (?, ?)', [u1.id, u2.id]);
+  const byId2 = new Map(after2.map((r: any) => [r.id, r]));
+  assert.equal(byId2.get(u2.id).assigned_to, B, 'U2 now with B');
+  assert.equal(byId2.get(u1.id).assigned_to, A, 'U1 still with A');
 });
 
 test.after(async () => {

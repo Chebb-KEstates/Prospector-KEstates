@@ -68,8 +68,8 @@ interface VaultContextValue {
   resetUserPassword: (userId: string, newPassword: string) => Promise<void>;
   saveSettings: (s: VaultSettings) => Promise<void>;
 
-  assign: (propertyIds: string[], brokerId: string, note?: string) =>
-    Promise<{ assigned: number; ownerLinkedExtra: number }>;
+  assign: (propertyIds: string[], brokerId: string, note?: string, skipConflictOwners?: boolean) =>
+    Promise<{ assigned: number; ownerLinkedExtra: number; skippedOwners: number; skippedUnits: number }>;
   reclaim: (propertyIds: string[]) => Promise<number>;
   assignLeads: (leadIds: string[], brokerId: string, note?: string) => Promise<number>;
   reclaimLeads: (leadIds: string[]) => Promise<number>;
@@ -250,8 +250,8 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
 
   // ── Assignment ───────────────────────────────────────────────────────────
 
-  const assign = useCallback(async (propertyIds: string[], brokerId: string, note?: string) => {
-    const r = await api.properties.assign(propertyIds, brokerId, note);
+  const assign = useCallback(async (propertyIds: string[], brokerId: string, note?: string, skipConflictOwners?: boolean) => {
+    const r = await api.properties.assign(propertyIds, brokerId, note, skipConflictOwners);
     bump();
     return r;
   }, [bump]);

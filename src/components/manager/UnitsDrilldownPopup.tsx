@@ -24,25 +24,30 @@ export interface DrillParams {
  * original figure, so a call-count metric ("8 no-answer calls") reading as fewer
  * units is self-explanatory.
  */
-export function UnitsDrilldownPopup({ title, subtitle, params, onClose }: {
+export function UnitsDrilldownPopup({ title, subtitle, params, units: given, onClose }: {
   title: string;
   /** e.g. "Sara · Last 30 days" or "8 no-answer calls" — the number's context. */
   subtitle?: string;
-  params: DrillParams;
+  /** Fetch the list by metric+scope… */
+  params?: DrillParams;
+  /** …or pass an already-loaded list (e.g. the reassign conflict units). */
+  units?: Property[];
   onClose: () => void;
 }) {
-  const [units, setUnits] = useState<Property[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [fetched, setFetched] = useState<Property[]>([]);
+  const [loading, setLoading] = useState(!!params);
   const [error, setError] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const units = given ?? fetched;
 
   useEffect(() => {
+    if (!params) return;
     let cancelled = false;
     setLoading(true); setError(null);
     void (async () => {
       try {
         const u = await api.dashboard.units(params);
-        if (!cancelled) setUnits(u);
+        if (!cancelled) setFetched(u);
       } catch (e) {
         if (!cancelled) setError(e instanceof ApiError ? e.message : 'Could not load those units.');
       } finally {
@@ -51,7 +56,7 @@ export function UnitsDrilldownPopup({ title, subtitle, params, onClose }: {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.metric, params.brokerId, params.from, params.to, params.community, params.cluster]);
+  }, [params?.metric, params?.brokerId, params?.from, params?.to, params?.community, params?.cluster]);
 
   const ids = units.map(u => u.id);
 

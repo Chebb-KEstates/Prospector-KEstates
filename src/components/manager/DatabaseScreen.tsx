@@ -1,7 +1,9 @@
 import React, { useState, useCallback } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { useAuth } from '../../state/AuthContext';
-import { DataModule, DataModuleLabel, CallOutcome } from '../../types/models';
+import { DataModule, DataModuleLabel, CallOutcome, Property } from '../../types/models';
+import * as api from '../../data/api';
+import { AssignConflictDialog } from './AssignConflictDialog';
 import { Permission } from '../../types/user';
 import { PropertyTable } from './PropertyTable';
 import { LeadTable } from './LeadTable';
@@ -78,6 +80,8 @@ export function DatabaseScreen() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [confirmAssign, setConfirmAssign] = useState(false);
+  // The reassign conflict prompt: owners already worked in another broker's portfolio.
+  const [conflict, setConflict] = useState<{ conflictOwners: number; units: Property[] } | null>(null);
   // Stable so it can sit in PropertyTable's effect deps without re-firing.
   const clearSelection = useCallback(() => setSelected(new Set()), []);
   const { ref: headerRef, height: headerH } = useStickyHeader();
@@ -94,17 +98,33 @@ export function DatabaseScreen() {
     }
   };
 
-  const doAssign = async () => {
+  // Step 1: check for conflicts (owners in another broker's portfolio). If any,
+  // open the conflict prompt; otherwise fall through to the plain confirmation.
+  const startAssign = async () => {
     if (!assignBroker || selected.size === 0 || busy) return;
     setBusy(true); setMessage(null);
     try {
-      const r = await assign(Array.from(selected), assignBroker);
+      const preview = await api.properties.assignPreview(Array.from(selected), assignBroker);
+      if (preview.conflictOwners > 0) setConflict(preview);
+      else setConfirmAssign(true);
+    } catch (err) {
+      setMessage({ kind: 'error', text: err instanceof ApiError ? err.message : 'Could not check that assignment.' });
+    } finally { setBusy(false); }
+  };
+
+  const doAssign = async (skipConflictOwners = false) => {
+    if (!assignBroker || selected.size === 0 || busy) return;
+    setBusy(true); setMessage(null);
+    try {
+      const r = await assign(Array.from(selected), assignBroker, undefined, skipConflictOwners);
       setSelected(new Set());
-      // Surface the owner-group expansion — assigning one unit can move a whole
-      // owner, and silently doing so is how a manager loses track of who has what.
-      setMessage({ kind: 'ok', text: r.ownerLinkedExtra > 0
-        ? `Assigned ${r.assigned} units — including ${r.ownerLinkedExtra} more held by the same owners.`
-        : `Assigned ${r.assigned} unit${r.assigned === 1 ? '' : 's'}.` });
+      setConfirmAssign(false); setConflict(null);
+      // Surface the owner-group expansion and any skipped owners — silently moving
+      // (or not moving) a whole owner is how a manager loses track of who has what.
+      const parts = [`Assigned ${r.assigned} unit${r.assigned === 1 ? '' : 's'}`];
+      if (r.ownerLinkedExtra > 0) parts.push(`incl. ${r.ownerLinkedExtra} more held by the same owners`);
+      if (r.skippedUnits > 0) parts.push(`skipped ${r.skippedUnits} unit${r.skippedUnits === 1 ? '' : 's'} for ${r.skippedOwners} owner${r.skippedOwners === 1 ? '' : 's'} being worked elsewhere`);
+      setMessage({ kind: 'ok', text: parts.join(' — ') + '.' });
     } catch (err) {
       setMessage({ kind: 'error', text: err instanceof ApiError ? err.message : 'Could not assign those units.' });
     } finally { setBusy(false); }
@@ -155,7 +175,7 @@ export function DatabaseScreen() {
               <option value="">Select broker…</option>
               {brokers.filter(b => b.active).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
-            <button className="btn btn-primary btn-sm" disabled={selected.size === 0 || !assignBroker || busy} onClick={() => setConfirmAssign(true)}>
+            <button className="btn btn-primary btn-sm" disabled={selected.size === 0 || !assignBroker || busy} onClick={() => void startAssign()}>
               {busy ? 'Assigning…' : 'Assign'}
             </button>
             <button className="btn btn-sm" disabled={selected.size === 0 || busy} onClick={handleReclaim}>
@@ -219,12 +239,23 @@ export function DatabaseScreen() {
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button className="btn btn-sm btn-ghost" onClick={() => setConfirmAssign(false)}>Cancel</button>
               <button className="btn btn-sm btn-primary" disabled={busy}
-                onClick={() => { setConfirmAssign(false); void doAssign(); }}>
+                onClick={() => void doAssign(false)}>
                 {busy ? 'Assigning…' : 'Assign'}
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {conflict && (
+        <AssignConflictDialog
+          brokerName={brokers.find(b => b.id === assignBroker)?.name ?? 'this broker'}
+          conflictOwners={conflict.conflictOwners}
+          conflictUnits={conflict.units}
+          busy={busy}
+          onProceedAll={() => void doAssign(false)}
+          onSkip={() => void doAssign(true)}
+          onCancel={() => setConflict(null)} />
       )}
     </div>
   );
