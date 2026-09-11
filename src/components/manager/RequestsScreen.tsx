@@ -178,9 +178,6 @@ function AreaSummary({ areas, onClick }: { areas: RequestArea[]; onClick?: () =>
     <button type="button" onClick={onClick} title="View the requested units"
       style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', font: 'inherit', color: 'var(--primary)' }}>
       {body}
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.6875rem', marginTop: 3 }}>
-        <Icon name="eye" size={12} /> View units
-      </span>
     </button>
   );
 }

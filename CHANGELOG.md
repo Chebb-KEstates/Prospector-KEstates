@@ -18,6 +18,31 @@ for what each part means for Prospector.
 
 ---
 
+## [3.22.0] — 2026-09-11
+
+### Added
+- **Click any report number to see the units behind it.** The figures on the
+  Dashboard and Report are now drill-downs: click a number and a table pops up
+  listing exactly those units, scoped to the same broker, period and area the
+  number came from.
+  - **Dashboard funnel** (manager and each broker's own): click Assigned, Called,
+    Reached or Interested to see those owners/units for the selected period.
+  - **Daily broker board** and **Report broker table**: click a broker's Assigned,
+    Total attempts, No answer, Answered, New interested, Owners reached or
+    Follow-ups due.
+  - **Report area table**: click an area's Units, Callable, Assigned, In pool,
+    Untouched or New interested.
+  - Each unit row opens the full record (history, notes, Add update).
+  - Columns that count *calls* (attempts / answered / no answer) show the distinct
+    units with a header like "6 units · 8 no-answer calls", since one owner can be
+    called more than once. Rate columns aren't clickable.
+- The Requests page no longer shows a "View units" label — the area summary itself
+  is the click target, matching the new drill-downs.
+
+No schema change / no migration — pull + rebuild (server + client) + restart.
+
+---
+
 ## [3.21.0] — 2026-09-11
 
 ### Changed

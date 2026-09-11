@@ -6,6 +6,7 @@ import { AnalyticsTable, Col } from '../common/AnalyticsTable';
 import { brokerBoardColumns, HoldingList } from './brokerColumns';
 import { useTeamDashboard } from '../../data/hooks';
 import type { TeamAreaRow } from '../../data/api';
+import { UnitsDrilldownPopup, DrillParams } from './UnitsDrilldownPopup';
 
 /**
  * Team & Data — the manager Report.
@@ -75,12 +76,20 @@ export function TeamScreen() {
   const rangeLabel = RANGES.find(r => r.key === rangeKey)?.label ?? '';
   const days = range.days;
 
+  // Click a number → the units behind it, scoped to the same broker/area/range.
+  const [drill, setDrill] = useState<{ title: string; subtitle?: string; params: DrillParams } | null>(null);
+  const brokerName = (id: string) => (data?.brokers ?? []).find(b => b.id === id)?.name ?? 'Broker';
+
   // ── Broker breakdown columns ────────────────────────────────────────────────
   // Shared with the dashboard's broker board so both offer the same columns.
   // Default view = the nine below (in this order); the rest are available but
   // hidden until toggled on. Call columns follow the selected range.
   const brokerDefault = ['areas', 'assigned', 'attempts', 'noAnswer', 'answered', 'interested', 'answerRate', 'interestRate', 'lastAt'];
-  const brokerCols = brokerBoardColumns(days);
+  const brokerCols = brokerBoardColumns(days, (brokerId, metric, label) => setDrill({
+    title: `${label} — ${brokerName(brokerId)}`,
+    subtitle: rangeLabel,
+    params: { metric, brokerId, from: range.from, to: range.to },
+  }));
 
   // ── Area breakdown columns ──────────────────────────────────────────────────
   // One row per area (community + sub-community), with the brokers holding units
@@ -89,21 +98,28 @@ export function TeamScreen() {
     const community = a.community || '(no community)';
     return a.cluster ? `${community} · ${a.cluster}` : community;
   };
+  // A clickable area number → the units behind it, filtered to that area.
+  const areaNum = (a: TeamAreaRow, value: number, metric: string, label: string, color?: string) => (
+    <button type="button" title="View these units"
+      onClick={() => setDrill({
+        title: `${label} — ${areaLabel(a)}`,
+        subtitle: metric === 'interested' ? rangeLabel : 'current status',
+        params: { metric, community: a.community, cluster: a.cluster, from: range.from, to: range.to },
+      })}
+      style={{ color, fontWeight: color ? 700 : undefined, background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer', textDecoration: 'underline dotted var(--border)', textUnderlineOffset: 3 }}>
+      {fmtInt(value)}
+    </button>
+  );
   const areaCols: Col<TeamAreaRow>[] = [
     { key: 'brokers', label: 'Assigned brokers', render: a => <HoldingList items={a.brokers} /> },
-    { key: 'properties', label: 'Units', align: 'right', render: a => fmtInt(a.properties), sortValue: a => a.properties },
-    { key: 'callable', label: 'Callable', align: 'right', render: a => fmtInt(a.callable), sortValue: a => a.callable },
-    { key: 'assigned', label: 'Assigned', align: 'right', render: a => fmtInt(a.assigned), sortValue: a => a.assigned },
-    { key: 'pool', label: 'In pool', align: 'right', render: a => fmtInt(a.pool), sortValue: a => a.pool },
-    { key: 'untouched', label: 'Untouched', align: 'right', render: a => <span style={{ color: a.untouched > 0 ? 'var(--warning)' : undefined }}>{fmtInt(a.untouched)}</span>, sortValue: a => a.untouched },
+    { key: 'properties', label: 'Units', align: 'right', render: a => areaNum(a, a.properties, 'properties', 'Units'), sortValue: a => a.properties },
+    { key: 'callable', label: 'Callable', align: 'right', render: a => areaNum(a, a.callable, 'callable', 'Callable'), sortValue: a => a.callable },
+    { key: 'assigned', label: 'Assigned', align: 'right', render: a => areaNum(a, a.assigned, 'held', 'Assigned'), sortValue: a => a.assigned },
+    { key: 'pool', label: 'In pool', align: 'right', render: a => areaNum(a, a.pool, 'pool', 'In pool'), sortValue: a => a.pool },
+    { key: 'untouched', label: 'Untouched', align: 'right', render: a => areaNum(a, a.untouched, 'untouched', 'Untouched', a.untouched > 0 ? 'var(--warning)' : undefined), sortValue: a => a.untouched },
     {
       key: 'interested', label: 'New interested', align: 'right', sortValue: a => a.interested,
-      render: a => (
-        <span title="Units in this area that newly became interested in the selected period"
-          style={{ color: a.interested > 0 ? 'var(--success)' : undefined, fontWeight: a.interested > 0 ? 700 : undefined }}>
-          {fmtInt(a.interested)}
-        </span>
-      ),
+      render: a => areaNum(a, a.interested, 'interested', 'New interested', a.interested > 0 ? 'var(--success)' : undefined),
     },
   ];
 
@@ -171,6 +187,10 @@ export function TeamScreen() {
             </div>
           </div>
         </>
+      )}
+
+      {drill && (
+        <UnitsDrilldownPopup title={drill.title} subtitle={drill.subtitle} params={drill.params} onClose={() => setDrill(null)} />
       )}
     </div>
   );

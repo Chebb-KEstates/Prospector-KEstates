@@ -4,10 +4,10 @@ import { pool, closePool } from '../src/db/pool';
 import {
   saveProperties, queryProperties, findByUnitKeys, findByOwnerKey,
   countByState, countCallable, propertyFacets, toProperty, countStalePortfolio,
-  callableCoverageByBroker, followUpsDueByBroker,
+  callableCoverageByBroker, followUpsDueByBroker, findMetricUnits,
 } from '../src/repositories/propertyRepo';
 import { areaBreakdown, areaAssignmentMatrix } from '../src/repositories/statsRepo';
-import { insertCall, newInterestedUnitsByBroker, newInterestedUnitsByArea, newInterestedUnitsCount, distinctUnitsCount, distinctUnitsByBroker } from '../src/repositories/callRepo';
+import { insertCall, newInterestedUnitsByBroker, newInterestedUnitsByArea, newInterestedUnitsCount, distinctUnitsCount, distinctUnitsByBroker, metricUnitIds } from '../src/repositories/callRepo';
 import { CallLog, CallOutcome } from '../../src/types/models';
 import { newCallId } from '../src/domain/ids';
 import { Property, OwnerInfo, PropertyState, kOrgId } from '../../src/types/models';
@@ -525,6 +525,53 @@ test('distinctUnitsCount: units called vs reached, deduped, by broker + window',
   const to = new Date(Date.UTC(2026, 2, 1, 10, 2, 0));
   assert.equal(await distinctUnitsCount(from, to), 2, 'X and Z had a call at min 1');
   assert.equal(await distinctUnitsCount(from, to, { connectedOnly: true }), 2, 'both were interested (reached)');
+});
+
+test('metricUnitIds: drill-down lists match the counts (called/reached/interested/notReached)', async () => {
+  await wipe();
+  const X = makeProperty({ unitNumber: '1601', phone: '971500000081' });
+  const Y = makeProperty({ unitNumber: '1602', phone: '971500000082' });
+  const Z = makeProperty({ unitNumber: '1603', phone: '971500000083' });
+  await saveProperties([X, Y, Z]);
+
+  const t = (min: number) => new Date(Date.UTC(2026, 2, 1, 10, min, 0)).toISOString();
+  const call = (propId: string, min: number, outcome: CallOutcome) =>
+    insertCall(new CallLog(newCallId(), kOrgId, [propId], [], 'u-director', t(min), outcome));
+  await call(X.id, 0, CallOutcome.noAnswer);
+  await call(X.id, 1, CallOutcome.interestedSell);
+  await call(Y.id, 0, CallOutcome.noAnswer);
+  await call(Z.id, 1, CallOutcome.interestedSell);
+
+  const set = async (m: any, opts?: any) => (await metricUnitIds(m, opts)).sort();
+  assert.deepEqual(await set('called'), [X.id, Y.id, Z.id].sort(), 'all three were called');
+  assert.deepEqual(await set('reached'), [X.id, Z.id].sort(), 'X and Z connected');
+  assert.deepEqual(await set('interested'), [X.id, Z.id].sort(), 'X and Z became interested');
+  assert.deepEqual(await set('notReached'), [Y.id], 'Y was called but never reached');
+
+  // Counts and id-lists must agree.
+  assert.equal((await metricUnitIds('reached')).length, await distinctUnitsCount(undefined, undefined, { connectedOnly: true }));
+  assert.equal((await metricUnitIds('interested')).length, await newInterestedUnitsCount());
+});
+
+test('findMetricUnits: snapshot drill-downs by broker and area', async () => {
+  await wipe();
+  const A = makeProperty({ unitNumber: '1701', phone: '971500000091', community: 'Marina', cluster: 'North' });
+  const B = makeProperty({ unitNumber: '1702', phone: '971500000092', community: 'Marina', cluster: 'North' });
+  const C = makeProperty({ unitNumber: '1703', community: 'Marina', cluster: '' }); // no phone, no sub-community
+  await saveProperties([A, B, C]);
+  await pool.query("UPDATE properties SET assigned_to = 'u-director', state = 'assigned' WHERE id IN (?, ?)", [A.id, B.id]);
+
+  const held = await findMetricUnits('held', { brokerId: 'u-director' });
+  assert.deepEqual(held.map(p => p.id).sort(), [A.id, B.id].sort(), 'director holds A and B');
+
+  const pool_ = await findMetricUnits('pool', {});
+  assert.deepEqual(pool_.map(p => p.id), [C.id], 'C is still in the pool');
+
+  const marinaNorth = await findMetricUnits('properties', { community: 'Marina', cluster: 'North' });
+  assert.deepEqual(marinaNorth.map(p => p.id).sort(), [A.id, B.id].sort(), 'A and B are in Marina · North');
+
+  const noSub = await findMetricUnits('properties', { community: 'Marina', cluster: '' });
+  assert.deepEqual(noSub.map(p => p.id), [C.id], 'empty cluster matches the no-sub-community area, not all of Marina');
 });
 
 test.after(async () => {

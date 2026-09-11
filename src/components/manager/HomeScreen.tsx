@@ -13,6 +13,7 @@ import { Icon, IconName } from '../common/Icon';
 import { AnalyticsTable } from '../common/AnalyticsTable';
 import { brokerBoardColumns } from './brokerColumns';
 import { LEADS_ENABLED } from '../../config';
+import { UnitsDrilldownPopup, DrillParams } from './UnitsDrilldownPopup';
 
 /**
  * Manager mission control — one screen, funnel-led.
@@ -76,6 +77,17 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
   const { data: teamData } = useTeamDashboard(todayWindow, 30_000);
   const [period, setPeriod] = useState<Period>('today');
 
+  // Click a number → its units. The funnel drill window matches the funnel period.
+  const [drill, setDrill] = useState<{ title: string; subtitle?: string; params: DrillParams } | null>(null);
+  const funnelWin = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const end = new Date(start); end.setDate(end.getDate() + 1);
+    if (period === 'today') return { from: start.toISOString(), to: end.toISOString() };
+    const days = period === 'week' ? 7 : 30;
+    return { from: new Date(now.getTime() - days * 86_400_000).toISOString(), to: new Date(now.getTime() + 60_000).toISOString() };
+  }, [period]);
+
   if (!me) return null;
   if (loading && !data) {
     return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>Loading…</div>;
@@ -92,12 +104,18 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
   const assigned = data.properties.byState[PropertyState.assigned] + data.properties.byState[PropertyState.portfolio];
 
   // The prospecting funnel: raw data → assigned → the period's calling stages.
+  // Every stage but "Total units" opens the units behind it (Assigned is a current
+  // snapshot; Called/Reached/Interested follow the selected period).
+  const openFunnel = (metric: string, label: string, windowed: boolean) => setDrill({
+    title: label, subtitle: windowed ? short : 'current status',
+    params: windowed ? { metric, from: funnelWin.from, to: funnelWin.to } : { metric },
+  });
   const funnelStages: FunnelStage[] = [
     { label: 'Total units', value: data.properties.total, color: 'var(--primary)' },
-    { label: 'Assigned', value: assigned, color: 'var(--info)' },
-    { label: `Called (${short})`, value: f.calls, color: STEEL },
-    { label: 'Reached', value: f.reached, color: 'var(--info)' },
-    { label: 'Interested', value: f.interested, color: 'var(--success)' },
+    { label: 'Assigned', value: assigned, color: 'var(--info)', onClick: () => openFunnel('held', 'Assigned units', false) },
+    { label: `Called (${short})`, value: f.calls, color: STEEL, onClick: () => openFunnel('called', 'Owners called', true) },
+    { label: 'Reached', value: f.reached, color: 'var(--info)', onClick: () => openFunnel('reached', 'Owners reached', true) },
+    { label: 'Interested', value: f.interested, color: 'var(--success)', onClick: () => openFunnel('interested', 'New interested', true) },
   ];
 
   const stateSegments: Segment[] = [
@@ -147,7 +165,12 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
 
   // Broker board columns — the SAME set as the Report broker table (shared),
   // scoped to today (days = 1). Default view keeps the board's familiar five.
-  const boardCols = brokerBoardColumns(1);
+  const teamBrokerName = (id: string) => (teamData?.brokers ?? []).find(b => b.id === id)?.name ?? 'Broker';
+  const boardCols = brokerBoardColumns(1, (brokerId, metric, label) => setDrill({
+    title: `${label} — ${teamBrokerName(brokerId)}`,
+    subtitle: 'Today',
+    params: { metric, brokerId, from: todayWindow.from, to: todayWindow.to },
+  }));
   const boardDefault = ['areas', 'assigned', 'attempts', 'answered', 'interested', 'lastAt'];
 
   // Areas (community · sub-community) for the coverage card, biggest stock first.
@@ -285,6 +308,10 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
           }}
           columns={boardCols} defaultVisible={boardDefault} empty="No active brokers." />
       </div>
+
+      {drill && (
+        <UnitsDrilldownPopup title={drill.title} subtitle={drill.subtitle} params={drill.params} onClose={() => setDrill(null)} />
+      )}
     </div>
   );
 }

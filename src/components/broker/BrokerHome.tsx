@@ -5,6 +5,7 @@ import { PropertyState, Property } from '../../types/models';
 import { groupByOwner } from '../../logic/ownerGrouping';
 import { ownerStopForProperty, stopDeps } from './callStops';
 import { CallDialog } from './CallDialog';
+import { UnitsDrilldownPopup, DrillParams } from '../manager/UnitsDrilldownPopup';
 import { CallStop } from '../../state/callTypes';
 import { fmtInt, fmtDate, greetingName } from '../../utils/format';
 import {
@@ -81,6 +82,17 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
       .sort((a, b) => a.ms - b.ms);
   }, [mine, vault.settings.expiringSoonHours, nowMs]);
 
+  // Click a funnel number → my units behind it (server pins the scope to me).
+  const [drill, setDrill] = useState<{ title: string; subtitle?: string; params: DrillParams } | null>(null);
+  const funnelWin = useMemo(() => {
+    const d = new Date();
+    const start = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const end = new Date(start); end.setDate(end.getDate() + 1);
+    if (period === 'today') return { from: start.toISOString(), to: end.toISOString() };
+    const days = period === 'week' ? 7 : 30;
+    return { from: new Date(d.getTime() - days * 86_400_000).toISOString(), to: new Date(d.getTime() + 60_000).toISOString() };
+  }, [period]);
+
   if (!user) return null;
 
   const short = PERIODS.find(p => p.k === period)!.short;
@@ -91,12 +103,17 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
   const interestedTotal = dash?.myInterested ?? 0;
   const myCallsTotal = dash?.myCalls ?? 0;
 
-  // The broker's own funnel: their list → the period's calling stages.
+  // The broker's own funnel: their list → the period's calling stages. Each stage
+  // opens the units behind it (My list is a snapshot; the rest follow the period).
+  const openFunnel = (metric: string, label: string, windowed: boolean) => setDrill({
+    title: label, subtitle: windowed ? short : 'current status',
+    params: windowed ? { metric, from: funnelWin.from, to: funnelWin.to } : { metric },
+  });
   const funnelStages: FunnelStage[] = [
-    { label: 'My list', value: mine.length, color: 'var(--primary)' },
-    { label: `Called (${short})`, value: f.calls, color: STEEL },
-    { label: 'Reached', value: f.reached, color: 'var(--info)' },
-    { label: 'Interested', value: f.interested, color: 'var(--success)' },
+    { label: 'My list', value: mine.length, color: 'var(--primary)', onClick: () => openFunnel('held', 'My list', false) },
+    { label: `Called (${short})`, value: f.calls, color: STEEL, onClick: () => openFunnel('called', 'Owners I called', true) },
+    { label: 'Reached', value: f.reached, color: 'var(--info)', onClick: () => openFunnel('reached', 'Owners I reached', true) },
+    { label: 'Interested', value: f.interested, color: 'var(--success)', onClick: () => openFunnel('interested', 'New interested', true) },
   ];
 
   const mineIn = (s: PropertyState) => mine.filter(p => p.state === s).length;
@@ -253,6 +270,10 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
           </div>
         </DashCard>
       </DashColumns>
+
+      {drill && (
+        <UnitsDrilldownPopup title={drill.title} subtitle={drill.subtitle} params={drill.params} onClose={() => setDrill(null)} />
+      )}
     </div>
   );
 }

@@ -606,6 +606,19 @@ export const dashboard = {
   /** `range` scopes the per-broker call columns; omit for all-time. */
   team: (range?: { from?: string; to?: string }) =>
     get<TeamDashboard>('/api/dashboard/team', { from: range?.from, to: range?.to }),
+  /**
+   * The units behind a clickable report/dashboard number. `metric` is one of the
+   * window metrics (interested / reached / called / notReached) or a snapshot
+   * (held / pool / callable / untouched / properties / followUpsDue / coverageBook),
+   * with the same scope the number carried — broker, period (from/to), and area.
+   */
+  units: async (params: {
+    metric: string; brokerId?: string; from?: string; to?: string;
+    community?: string; cluster?: string;
+  }): Promise<Property[]> => {
+    const rows = await get<Record<string, unknown>[]>('/api/dashboard/units', params as Record<string, unknown>);
+    return rows.map(Property.fromJson);
+  },
 };
 
 // ── Imports ────────────────────────────────────────────────────────────────

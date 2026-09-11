@@ -407,6 +407,83 @@ export async function distinctUnitsByBroker(
   return new Map(rows.map(r => [r.broker_id as string, Number(r.n ?? 0)]));
 }
 
+/**
+ * The actual UNIT IDS behind a windowed call metric — the drill-down lists that
+ * back the clickable numbers on the dashboards. Same definitions as the counts:
+ *   • interested → units that TRANSITIONED into interested in the window
+ *   • reached    → units with a connected call in the window
+ *   • called     → units with any call in the window
+ *   • notReached → units called in the window but never connected (called ∖ reached)
+ * Owner-property calls only (joins call_properties). Optional broker and area
+ * (community + sub-community) scope, matching the row the number sits on.
+ */
+export type WindowUnitMetric = 'interested' | 'reached' | 'called' | 'notReached';
+
+export async function metricUnitIds(
+  metric: WindowUnitMetric,
+  opts: { from?: Date; to?: Date; brokerId?: string; community?: string; cluster?: string } = {},
+): Promise<string[]> {
+  const { from, to, brokerId, community, cluster } = opts;
+
+  if (metric === 'notReached') {
+    const [called, reached] = await Promise.all([
+      metricUnitIds('called', opts),
+      metricUnitIds('reached', opts),
+    ]);
+    const r = new Set(reached);
+    return called.filter(id => !r.has(id));
+  }
+
+  // Build the broker/window/area scope with a given column prefix (`c`/`p` for the
+  // plain join; `uc`/`uc` inside the interested CTE where both are flattened).
+  const scopeFor = (callAlias: string, communityCol: string, clusterCol: string) => {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (brokerId) { clauses.push(`${callAlias}.broker_id = ?`); params.push(brokerId); }
+    if (from && to) { clauses.push(`${callAlias}.at >= ? AND ${callAlias}.at < ?`); params.push(from, to); }
+    if (community !== undefined) { clauses.push(`${communityCol} = ?`); params.push(community); }
+    if (cluster !== undefined) { clauses.push(`${clusterCol} = ?`); params.push(cluster); }
+    return { sql: clauses.length ? `AND ${clauses.join(' AND ')}` : '', params };
+  };
+
+  if (metric === 'interested') {
+    // LAG over each unit's full history; the transition call must fall in scope.
+    const s = scopeFor('uc', 'uc.community', 'uc.cluster');
+    const [rows] = await pool.query<Row[]>(
+      `WITH uc AS (
+         SELECT cp.property_id AS unit_id, c.broker_id, c.at, c.outcome,
+                p.community AS community, COALESCE(p.cluster, '') AS cluster,
+                LAG(c.outcome) OVER (PARTITION BY cp.property_id ORDER BY c.at, c.id) AS prev_outcome
+           FROM calls c
+           JOIN call_properties cp ON cp.call_id = c.id
+           JOIN properties p ON p.id = cp.property_id
+          WHERE c.org_id = ?
+       )
+       SELECT DISTINCT uc.unit_id
+         FROM uc
+        WHERE uc.outcome IN ('interestedSell', 'interestedRent')
+          AND (uc.prev_outcome IS NULL OR uc.prev_outcome NOT IN ('interestedSell', 'interestedRent'))
+          ${s.sql}`,
+      [kOrgId, ...s.params],
+    );
+    return rows.map(r => r.unit_id as string);
+  }
+
+  const connectedClause = metric === 'reached' ? `AND c.${CONNECTED_SQL}` : '';
+  const s = scopeFor('c', 'p.community', "COALESCE(p.cluster, '')");
+  const [rows] = await pool.query<Row[]>(
+    `SELECT DISTINCT cp.property_id AS unit_id
+       FROM calls c
+       JOIN call_properties cp ON cp.call_id = c.id
+       JOIN properties p ON p.id = cp.property_id
+      WHERE c.org_id = ?
+        ${connectedClause}
+        ${s.sql}`,
+    [kOrgId, ...s.params],
+  );
+  return rows.map(r => r.unit_id as string);
+}
+
 /** One area's new-interested tally — matches statsRepo's (community, cluster) grouping. */
 export interface AreaInterested {
   community: string;

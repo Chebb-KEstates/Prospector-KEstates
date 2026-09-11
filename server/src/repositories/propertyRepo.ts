@@ -241,6 +241,48 @@ export async function findPropertiesByIds(ids: string[], cx?: PoolConnection): P
   return rows.map(toProperty);
 }
 
+/**
+ * Units behind a SNAPSHOT dashboard metric — the current-state drill-downs
+ * (Assigned/held, In pool, Callable, Untouched, Follow-ups due, the callable
+ * book, or all units in an area). Scoped by broker (`assigned_to`) and/or area
+ * (community + sub-community). Empty `cluster` ('') correctly matches the
+ * no-sub-community area, which the generic filter's truthy check would skip.
+ * Window metrics (called/reached/interested) come from callRepo instead.
+ */
+export type SnapshotUnitMetric =
+  | 'held' | 'pool' | 'callable' | 'untouched' | 'properties' | 'followUpsDue' | 'coverageBook';
+
+export async function findMetricUnits(
+  metric: SnapshotUnitMetric,
+  opts: { brokerId?: string; community?: string; cluster?: string; limit?: number } = {},
+): Promise<Property[]> {
+  const where = ['org_id = ?'];
+  const params: unknown[] = [kOrgId];
+  if (opts.brokerId) { where.push('assigned_to = ?'); params.push(opts.brokerId); }
+  if (opts.community !== undefined) { where.push('community = ?'); params.push(opts.community); }
+  if (opts.cluster !== undefined) { where.push("COALESCE(cluster, '') = ?"); params.push(opts.cluster); }
+
+  const HELD = "state IN ('assigned', 'portfolio')";
+  switch (metric) {
+    case 'held': where.push(HELD); break;
+    case 'coverageBook': where.push(`${HELD} AND callable = 1`); break;
+    case 'followUpsDue':
+      where.push(`${HELD} AND next_follow_up_at IS NOT NULL AND next_follow_up_at <= UTC_TIMESTAMP(3)`);
+      break;
+    case 'callable': where.push('callable = 1'); break;
+    case 'pool': where.push("state = 'pool'"); break;
+    case 'untouched': where.push('callable = 1 AND last_called_at IS NULL'); break;
+    case 'properties': break; // every unit in scope
+  }
+
+  const [rows] = await pool.query<Row[]>(
+    `SELECT ${COLS} FROM properties WHERE ${where.join(' AND ')}
+     ORDER BY ${unitSort()} LIMIT ?`,
+    [...params, opts.limit ?? 2000],
+  );
+  return rows.map(toProperty);
+}
+
 /** Every unit belonging to one owner — powers the dialer's grouped card. */
 export async function findByOwnerKey(ownerKey: string): Promise<Property[]> {
   const [rows] = await pool.query<Row[]>(

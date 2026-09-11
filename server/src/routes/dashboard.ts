@@ -6,7 +6,9 @@ import {
   countDistinctOwners, countStalePortfolio, countExpiringSoon,
   assignedCountByBroker, workedByDataset, heldByBrokerAndState, countCallableWorked,
   callableCoverageByBroker, followUpsDueByBroker,
+  findPropertiesByIds, findMetricUnits,
 } from '../repositories/propertyRepo';
+import type { SnapshotUnitMetric } from '../repositories/propertyRepo';
 import { countLeadsByState, countLeadsTotal } from '../repositories/leadRepo';
 import {
   brokerCallStats, brokerStatsBetween, statsBetween, rollingStats,
@@ -16,14 +18,16 @@ import {
   newInterestedUnitsCount,
   distinctUnitsCount,
   distinctUnitsByBroker,
+  metricUnitIds,
 } from '../repositories/callRepo';
+import type { WindowUnitMetric } from '../repositories/callRepo';
 import { countPending } from '../repositories/requestRepo';
 import { listUsers } from '../repositories/userRepo';
 import { listAudit } from '../repositories/auditRepo';
 import { listDatasets } from '../repositories/datasetRepo';
 import { assignmentMatrix, areaBreakdown, areaAssignmentMatrix } from '../repositories/statsRepo';
 import { loadSettings } from '../repositories/settingsRepo';
-import { serializeAudit } from '../http/serializers';
+import { serializeAudit, serializeProperty } from '../http/serializers';
 
 /**
  * Dashboard aggregates.
@@ -461,5 +465,61 @@ export default async function dashboardRoutes(app: FastifyInstance) {
         month: unitFunnel(calledMonth, reachedMonth, myMonthUnits),
       },
     };
+  });
+
+  /**
+   * Drill-down: the actual UNITS behind a clickable dashboard/report number.
+   * `metric` picks the set; the same scope the number was computed with is passed
+   * back — `brokerId`, the report/period window (`from`/`to`), and the area
+   * (`community` + `cluster`). Window metrics (interested/reached/called/notReached)
+   * come from the call history; the rest are current-state snapshots. Managers see
+   * any scope; a broker is pinned to their own units. Numbers are masked exactly
+   * like every other list response.
+   */
+  const WINDOW_METRICS = ['interested', 'reached', 'called', 'notReached'] as const;
+  app.get('/api/dashboard/units', {
+    preHandler: [app.authenticate],
+    schema: {
+      querystring: {
+        type: 'object', additionalProperties: false, required: ['metric'],
+        properties: {
+          metric: { type: 'string', maxLength: 32 },
+          brokerId: { type: 'string', maxLength: 64 },
+          from: { type: 'string', maxLength: 40 },
+          to: { type: 'string', maxLength: 40 },
+          community: { type: 'string', maxLength: 200 },
+          cluster: { type: 'string', maxLength: 200 },
+        },
+      },
+    },
+  }, async (req) => {
+    const q = req.query as {
+      metric: string; brokerId?: string; from?: string; to?: string;
+      community?: string; cluster?: string;
+    };
+    const me = req.currentUser!;
+    // A broker only ever drills into their OWN units; a manager (viewReports) may
+    // scope to any broker or the whole team.
+    const isManager = me.can(Permission.viewReports);
+    const brokerId = isManager ? q.brokerId : me.id;
+
+    const from = q.from ? new Date(q.from) : undefined;
+    const to = q.to ? new Date(q.to) : undefined;
+    const window = from && !isNaN(from.getTime()) && to && !isNaN(to.getTime())
+      ? { from, to } : {};
+    const area = {
+      community: q.community,
+      // A supplied-but-empty cluster is the no-sub-community area; keep it.
+      cluster: q.cluster,
+    };
+
+    let props;
+    if ((WINDOW_METRICS as readonly string[]).includes(q.metric)) {
+      const ids = await metricUnitIds(q.metric as WindowUnitMetric, { ...window, brokerId, ...area });
+      props = await findPropertiesByIds(ids);
+    } else {
+      props = await findMetricUnits(q.metric as SnapshotUnitMetric, { brokerId, ...area });
+    }
+    return props.slice(0, 2000).map(serializeProperty);
   });
 }

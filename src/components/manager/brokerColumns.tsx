@@ -3,6 +3,21 @@ import { fmtInt, timeAgo } from '../../utils/format';
 import type { TeamBrokerRow, Holding } from '../../data/api';
 import { Col } from '../common/AnalyticsTable';
 
+/** A number cell that opens its units drill-down when `onClick` is given. */
+function DrillNum({ value, color, weight, onClick }: {
+  value: number; color?: string; weight?: number; onClick?: () => void;
+}) {
+  const style: React.CSSProperties = { color, fontWeight: weight };
+  if (!onClick) return <span style={style}>{fmtInt(value)}</span>;
+  return (
+    <button type="button" onClick={onClick} title="View these units"
+      style={{ ...style, background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer',
+        textDecoration: 'underline dotted var(--border)', textUnderlineOffset: 3 }}>
+      {fmtInt(value)}
+    </button>
+  );
+}
+
 /**
  * The one broker-breakdown column set, shared by the manager Report table and the
  * dashboard's broker board so both offer exactly the same columns to choose from.
@@ -11,9 +26,17 @@ import { Col } from '../common/AnalyticsTable';
  *
  * `days` is the number of days the fetched window spans, used only by the
  * Calls/day column (undefined ⇒ Calls/day shows —).
+ *
+ * `onDrill(brokerId, metric, label)` — when given, the count cells become buttons
+ * that open the units behind the number (the caller supplies the window/scope).
  */
-export function brokerBoardColumns(days?: number): Col<TeamBrokerRow>[] {
+export function brokerBoardColumns(
+  days?: number,
+  onDrill?: (brokerId: string, metric: string, label: string) => void,
+): Col<TeamBrokerRow>[] {
   const pct = (num: number, den: number) => (den ? `${Math.round((num / den) * 100)}%` : '—');
+  const drill = (b: TeamBrokerRow, metric: string, label: string) =>
+    onDrill ? () => onDrill(b.id, metric, label) : undefined;
   const ts = (iso?: string) => (iso ? new Date(iso).getTime() : undefined);
   const idleDays = (lastAt?: string) => {
     if (!lastAt) return '—';
@@ -24,15 +47,15 @@ export function brokerBoardColumns(days?: number): Col<TeamBrokerRow>[] {
     { key: 'areas', label: 'Areas held', render: b => <HoldingList items={b.areas} /> },
     { key: 'sets', label: 'Data assigned', render: b => <HoldingList items={b.datasets} /> },
     // Portfolio is hidden for now — kept units fold into the Assigned figure.
-    { key: 'assigned', label: 'Assigned', align: 'right', render: b => fmtInt(b.assigned + b.portfolio), sortValue: b => b.assigned + b.portfolio },
-    { key: 'attempts', label: 'Total call attempts', align: 'right', render: b => fmtInt(b.calls), sortValue: b => b.calls },
-    { key: 'noAnswer', label: 'No answer', align: 'right', render: b => fmtInt(b.noAnswer), sortValue: b => b.noAnswer },
-    { key: 'answered', label: 'Answered', align: 'right', render: b => fmtInt(b.reached), sortValue: b => b.reached },
+    { key: 'assigned', label: 'Assigned', align: 'right', render: b => <DrillNum value={b.assigned + b.portfolio} onClick={drill(b, 'held', 'Assigned')} />, sortValue: b => b.assigned + b.portfolio },
+    { key: 'attempts', label: 'Total call attempts', align: 'right', render: b => <DrillNum value={b.calls} onClick={drill(b, 'called', 'Owners called')} />, sortValue: b => b.calls },
+    { key: 'noAnswer', label: 'No answer', align: 'right', render: b => <DrillNum value={b.noAnswer} onClick={drill(b, 'notReached', 'Not reached')} />, sortValue: b => b.noAnswer },
+    { key: 'answered', label: 'Answered', align: 'right', render: b => <DrillNum value={b.reached} onClick={drill(b, 'reached', 'Owners reached')} />, sortValue: b => b.reached },
     {
       key: 'interested', label: 'New interested', align: 'right', sortValue: b => b.interested,
-      render: b => <span title="Units that newly became interested in the selected period" style={{ color: b.interested > 0 ? 'var(--success)' : undefined, fontWeight: b.interested > 0 ? 700 : undefined }}>{fmtInt(b.interested)}</span>,
+      render: b => <DrillNum value={b.interested} color={b.interested > 0 ? 'var(--success)' : undefined} weight={b.interested > 0 ? 700 : undefined} onClick={drill(b, 'interested', 'New interested')} />,
     },
-    { key: 'ownersReached', label: 'Owners reached', align: 'right', render: b => fmtInt(b.reachedUnits), sortValue: b => b.reachedUnits },
+    { key: 'ownersReached', label: 'Owners reached', align: 'right', render: b => <DrillNum value={b.reachedUnits} onClick={drill(b, 'reached', 'Owners reached')} />, sortValue: b => b.reachedUnits },
     { key: 'answerRate', label: 'Answer rate', align: 'right', render: b => <span title={`${b.reached} of ${b.calls} calls connected`}>{pct(b.reached, b.calls)}</span>, sortValue: b => (b.calls ? b.reached / b.calls : undefined) },
     // Interested owners ÷ owners reached — both distinct units, so the % compares
     // like with like (not interested-units over reached-calls).
@@ -45,7 +68,7 @@ export function brokerBoardColumns(days?: number): Col<TeamBrokerRow>[] {
     },
     {
       key: 'followUps', label: 'Follow-ups due', align: 'right', sortValue: b => b.followUpsDue,
-      render: b => <span style={{ color: b.followUpsDue > 0 ? 'var(--info)' : undefined, fontWeight: b.followUpsDue > 0 ? 700 : undefined }}>{fmtInt(b.followUpsDue)}</span>,
+      render: b => <DrillNum value={b.followUpsDue} color={b.followUpsDue > 0 ? 'var(--info)' : undefined} weight={b.followUpsDue > 0 ? 700 : undefined} onClick={drill(b, 'followUpsDue', 'Follow-ups due')} />,
     },
     { key: 'idle', label: 'Days since last call', align: 'right', render: b => idleDays(b.lastAt), sortValue: b => (b.lastAt ? Date.now() - new Date(b.lastAt).getTime() : undefined) },
     {

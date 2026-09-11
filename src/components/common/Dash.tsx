@@ -206,11 +206,12 @@ export function DashColumns({ children }: { children: React.ReactNode }) {
   return <div className="dash-grid">{children}</div>;
 }
 
-export type FunnelStage = { label: string; value: number; color: string };
+export type FunnelStage = { label: string; value: number; color: string; onClick?: () => void };
 
 /**
  * A horizontal conversion funnel: each stage's number and label, with the
  * drop-off % shown between stages. No bars — just the figures stepping across.
+ * A stage with `onClick` becomes a button that opens its units drill-down.
  */
 export function Funnel({ stages }: { stages: FunnelStage[] }) {
   return (
@@ -218,6 +219,12 @@ export function Funnel({ stages }: { stages: FunnelStage[] }) {
       {stages.map((s, i) => {
         const prev = i > 0 ? stages[i - 1].value : null;
         const conv = prev != null && prev > 0 ? Math.round((s.value / prev) * 100) : null;
+        const inner = (
+          <>
+            <div className="tabular-nums" style={{ fontSize: '1.6rem', fontWeight: 800, color: s.color, lineHeight: 1.1, textDecoration: s.onClick ? 'underline dotted var(--border)' : undefined, textUnderlineOffset: 4 }}>{fmtInt(s.value)}</div>
+            <div className="truncate" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4, maxWidth: '100%' }}>{s.label}</div>
+          </>
+        );
         return (
           <React.Fragment key={i}>
             {i > 0 && (
@@ -226,10 +233,18 @@ export function Funnel({ stages }: { stages: FunnelStage[] }) {
                 {conv != null && <span className="tabular-nums" style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-tertiary)' }}>{conv}%</span>}
               </div>
             )}
-            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-              <div className="tabular-nums" style={{ fontSize: '1.6rem', fontWeight: 800, color: s.color, lineHeight: 1.1 }}>{fmtInt(s.value)}</div>
-              <div className="truncate" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4, maxWidth: '100%' }}>{s.label}</div>
-            </div>
+            {s.onClick
+              ? (
+                <button type="button" onClick={s.onClick} title="View these units"
+                  style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', background: 'none', border: 'none', padding: '4px 2px', cursor: 'pointer', font: 'inherit', borderRadius: 8 }}>
+                  {inner}
+                </button>
+              )
+              : (
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+                  {inner}
+                </div>
+              )}
           </React.Fragment>
         );
       })}
