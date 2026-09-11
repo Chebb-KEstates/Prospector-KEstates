@@ -18,6 +18,21 @@ for what each part means for Prospector.
 
 ---
 
+## [3.21.0] — 2026-09-11
+
+### Changed
+- **The Buyer Leads section is hidden for now — Prospector is a property-owner
+  calling tool.** Removed the leads entry points from the UI: the Database "Buyer
+  leads" tab, the broker's Owners/Buyer-leads switch, the import wizard's Leads
+  module, and the home "buyer leads" tile. One flag (`src/config.ts`
+  `LEADS_ENABLED`) gates all of it — the leads code and any imported lead data are
+  untouched, so flipping it back to `true` restores the section with no other
+  change. (All reporting is owner-only regardless, so numbers are unaffected.)
+
+No schema change / no migration — pull + rebuild (client) + restart.
+
+---
+
 ## [3.20.1] — 2026-09-10
 
 ### Fixed

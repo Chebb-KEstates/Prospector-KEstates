@@ -12,6 +12,7 @@ import {
 import { Icon, IconName } from '../common/Icon';
 import { AnalyticsTable } from '../common/AnalyticsTable';
 import { brokerBoardColumns } from './brokerColumns';
+import { LEADS_ENABLED } from '../../config';
 
 /**
  * Manager mission control — one screen, funnel-led.
@@ -192,7 +193,7 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
           { value: fmtInt(data.properties.byState[PropertyState.pool]), label: 'in pool' },
           { value: fmtInt(data.properties.callable), label: 'callable' },
           { value: fmtInt(data.properties.owners), label: 'owners' },
-          { value: fmtInt(data.leads.total), label: 'buyer leads', color: data.leads.total ? 'var(--info)' : undefined },
+          ...(LEADS_ENABLED ? [{ value: fmtInt(data.leads.total), label: 'buyer leads', color: data.leads.total ? 'var(--info)' : undefined }] : []),
           { value: `${data.communities.length}`, label: 'communities' },
           { value: `${data.datasets.length}`, label: 'data sets' },
         ]} />

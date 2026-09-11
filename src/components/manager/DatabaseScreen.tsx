@@ -11,6 +11,7 @@ import { RequestsScreen } from './RequestsScreen';
 import { ApiError } from '../../data/apiClient';
 import { Icon } from '../common/Icon';
 import { useStickyHeader, stickyHeaderStyle } from '../common/useStickyHeader';
+import { LEADS_ENABLED } from '../../config';
 
 /**
  * Database — the manager's single data surface.
@@ -143,7 +144,7 @@ export function DatabaseScreen() {
         <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0 }}>Database</h2>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {tab('owners', DataModuleLabel[DataModule.owners])}
-          {tab('leads', DataModuleLabel[DataModule.leads])}
+          {LEADS_ENABLED && tab('leads', DataModuleLabel[DataModule.leads])}
           {canAssign && tab('requests', 'Requests', pendingRequests.length)}
         </div>
         {view === 'owners' && canAssign && (

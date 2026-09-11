@@ -5,6 +5,7 @@ import { Permission } from '../../types/user';
 import { DataModule, DataModuleLabel, DataSet } from '../../types/models';
 import { ImportWizard } from './ImportWizard';
 import { LeadImportWizard } from './LeadImportWizard';
+import { LEADS_ENABLED } from '../../config';
 import { UsersScreen } from './UsersScreen';
 import { AuditScreen } from './AuditScreen';
 import { SettingsScreen } from './SettingsScreen';
@@ -60,17 +61,19 @@ function ImportAndFiles() {
 
   return (
     <div>
-      <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 20 }}>
-        {[DataModule.owners, DataModule.leads].map(m => (
-          <button key={m} className="btn" style={{
-            borderRadius: 0, border: 'none',
-            background: module === m ? 'var(--primary)' : 'transparent',
-            color: module === m ? '#fff' : 'var(--text-secondary)',
-          }} onClick={() => setModule(m)}>{DataModuleLabel[m]}</button>
-        ))}
-      </div>
+      {LEADS_ENABLED && (
+        <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 20 }}>
+          {[DataModule.owners, DataModule.leads].map(m => (
+            <button key={m} className="btn" style={{
+              borderRadius: 0, border: 'none',
+              background: module === m ? 'var(--primary)' : 'transparent',
+              color: module === m ? '#fff' : 'var(--text-secondary)',
+            }} onClick={() => setModule(m)}>{DataModuleLabel[m]}</button>
+          ))}
+        </div>
+      )}
 
-      {module === DataModule.owners
+      {!LEADS_ENABLED || module === DataModule.owners
         ? <ImportWizard remapRequest={remapReq} restageRequest={restageReq} />
         : <LeadImportWizard />}
 

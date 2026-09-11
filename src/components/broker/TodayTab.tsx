@@ -12,6 +12,7 @@ import { CallStop } from '../../state/callTypes';
 import { PropertyPopup } from '../manager/PropertyPopup';
 import { ApiError } from '../../data/apiClient';
 import { useMyLeads } from '../../data/hooks';
+import { LEADS_ENABLED } from '../../config';
 import { useStickyHeader, stickyHeaderStyle } from '../common/useStickyHeader';
 
 /**
@@ -94,13 +95,15 @@ export function TodayTab() {
           onNavigate={(id) => void openDetail(id, pageIds)}
           onClose={() => setDetailId(null)} />
       )}
-      {/* Sticky page header: title + Owners | Buyer leads switch. */}
+      {/* Sticky page header: title + (when leads are enabled) Owners | Buyer leads switch. */}
       <div ref={headerRef} style={stickyHeaderStyle}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0 }}>Database</h2>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <button className={`btn btn-sm ${!buyers ? 'btn-primary' : ''}`} onClick={() => setBuyers(false)}>Property owners</button>
-          <button className={`btn btn-sm ${buyers ? 'btn-primary' : ''}`} onClick={() => setBuyers(true)}>Buyer leads</button>
-        </div>
+        {LEADS_ENABLED && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button className={`btn btn-sm ${!buyers ? 'btn-primary' : ''}`} onClick={() => setBuyers(false)}>Property owners</button>
+            <button className={`btn btn-sm ${buyers ? 'btn-primary' : ''}`} onClick={() => setBuyers(true)}>Buyer leads</button>
+          </div>
+        )}
       </div>
 
       {capError && (
