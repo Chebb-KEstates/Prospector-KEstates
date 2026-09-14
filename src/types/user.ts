@@ -54,6 +54,10 @@ export class AppUser {
     public createdAt?: string,
     /** When true, this user can only use the app from the office IP (see settings). */
     public ipLocked = false,
+    /** Units currently held by this user (assigned + interested). Server-computed,
+     *  read-only on the client — drives whether a deactivated broker still shows
+     *  in the agent filter / reports. */
+    public heldUnits = 0,
   ) {
     this._permissions = permissions;
   }
@@ -83,6 +87,7 @@ export class AppUser {
       fields.permissions !== undefined ? (fields.permissions ?? undefined) : this._permissions,
       this.createdAt,
       fields.ipLocked ?? this.ipLocked,
+      this.heldUnits,
     );
   }
 
@@ -93,6 +98,7 @@ export class AppUser {
       permissions: Array.from(this.permissions).map(p => p),
       createdAt: this.createdAt,
       ipLocked: this.ipLocked,
+      heldUnits: this.heldUnits,
     };
   }
 
@@ -109,6 +115,7 @@ export class AppUser {
       perms ? new Set(perms) : undefined,
       j.createdAt as string | undefined,
       (j.ipLocked as boolean) ?? false,
+      (j.heldUnits as number) ?? 0,
     );
   }
 }

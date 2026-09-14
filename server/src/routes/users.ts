@@ -7,7 +7,9 @@ import {
 import { hashPassword, validatePassword } from '../auth/password';
 import { revokeAllFor } from '../auth/sessions';
 import { writeAudit } from '../repositories/auditRepo';
-import { publicUser } from '../http/serializers';
+import { publicUser, serializeProperty } from '../http/serializers';
+import { assignedCountByBroker, findMetricUnits } from '../repositories/propertyRepo';
+import { reclaimProperties, assignProperties } from '../services/assignmentService';
 import { newUserId } from '../domain/ids';
 import { badRequest, notFound, conflict, forbidden } from '../http/errors';
 
@@ -34,7 +36,9 @@ export default async function userRoutes(app: FastifyInstance) {
     if (!me.isManager) {
       return users.map(u => ({ id: u.id, name: u.name, role: u.role, active: u.active }));
     }
-    return users.map(publicUser);
+    // Held-unit counts so the UI can hide a deactivated broker once they hold none.
+    const held = await assignedCountByBroker();
+    return users.map(u => ({ ...publicUser(u), heldUnits: held.get(u.id) ?? 0 }));
   });
 
   app.post('/api/users', {
@@ -181,6 +185,69 @@ export default async function userRoutes(app: FastifyInstance) {
     });
 
     return publicUser(updated);
+  });
+
+  /** A broker's currently-held units (assigned + interested) — for the deactivate
+   *  prompt's count and its "view units" list. Manager-only; numbers masked. */
+  app.get('/api/users/:id/units', {
+    preHandler: [app.authenticate, app.requirePermission(Permission.manageUsers)],
+    schema: { params: { type: 'object', required: ['id'], properties: { id: { type: 'string', maxLength: 64 } } } },
+  }, async (req) => {
+    const { id } = req.params as { id: string };
+    const held = await findMetricUnits('held', { brokerId: id });
+    return held.map(serializeProperty);
+  });
+
+  /**
+   * Deactivate a broker and decide what happens to any units they still hold:
+   * reclaim them to the pool, reassign them all to another agent, or keep them on
+   * the (now-deactivated) broker. One manager action so units are never silently
+   * stranded. Reuses the assignment services for owner-group cohesion.
+   */
+  app.post('/api/users/:id/deactivate', {
+    preHandler: [app.authenticate, app.requirePermission(Permission.manageUsers)],
+    schema: {
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'string', maxLength: 64 } } },
+      body: {
+        type: 'object', required: ['mode'], additionalProperties: false,
+        properties: {
+          mode: { type: 'string', enum: ['reclaim', 'reassign', 'keep'] },
+          targetBrokerId: { type: 'string', maxLength: 64 },
+        },
+      },
+    },
+  }, async (req) => {
+    const { id } = req.params as { id: string };
+    const { mode, targetBrokerId } = req.body as { mode: 'reclaim' | 'reassign' | 'keep'; targetBrokerId?: string };
+    const me = req.currentUser!;
+
+    const target = await findUserById(id);
+    if (!target) throw notFound('That account no longer exists.');
+    if (id === me.id) throw badRequest('You cannot deactivate your own account.');
+    if (target.isManager && (await countManagers()) <= 1) {
+      throw badRequest('This is the last active manager. Promote someone else first.');
+    }
+
+    const held = await findMetricUnits('held', { brokerId: id });
+    const ids = held.map(p => p.id);
+    let handled = 0;
+    if (mode === 'reclaim' && ids.length > 0) {
+      handled = await reclaimProperties(ids, me.id);
+    } else if (mode === 'reassign') {
+      if (!targetBrokerId) throw badRequest('Choose an agent to reassign the units to.');
+      if (targetBrokerId === id) throw badRequest('Reassign to a different agent.');
+      const r = await assignProperties(ids, targetBrokerId, me.id, `Reassigned on deactivating ${target.name}`);
+      handled = r.assigned;
+    }
+
+    const updated = target.copyWith({ active: false });
+    await updateUser(updated);
+    await revokeAllFor(id);
+    await writeAudit({
+      actorId: me.id, action: 'user',
+      detail: `Deactivated — ${target.name}: ${mode}${ids.length ? ` ${ids.length} held unit(s)` : ''}`,
+    });
+    return { ...publicUser(updated), heldUnits: mode === 'keep' ? ids.length : 0, handled };
   });
 
   /** A manager resetting a colleague's password; forces a change on next sign-in. */

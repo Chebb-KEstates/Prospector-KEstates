@@ -36,6 +36,8 @@ export interface UserPayload {
   permissions: Permission[];
   ipLocked?: boolean;
   createdAt?: string;
+  /** Units currently held (assigned + interested) — manager list only. */
+  heldUnits?: number;
 }
 
 export interface SessionResponse {
@@ -48,7 +50,7 @@ function toUser(j: UserPayload): AppUser {
   return new AppUser(
     j.id, j.name, j.email, j.role, j.active, j.team,
     j.permissions ? new Set(j.permissions) : undefined,
-    j.createdAt, j.ipLocked ?? false,
+    j.createdAt, j.ipLocked ?? false, j.heldUnits ?? 0,
   );
 }
 
@@ -116,6 +118,17 @@ export const users = {
 
   resetPassword: (id: string, newPassword: string) =>
     post<{ ok: true }>(`/api/users/${id}/password`, { newPassword }),
+
+  /** The units a broker currently holds — for the deactivate prompt + view list. */
+  async heldUnits(id: string): Promise<Property[]> {
+    const rows = await get<Record<string, unknown>[]>(`/api/users/${id}/units`);
+    return rows.map(Property.fromJson);
+  },
+
+  /** Deactivate a broker, deciding what happens to their held units. */
+  async deactivate(id: string, mode: 'reclaim' | 'reassign' | 'keep', targetBrokerId?: string): Promise<AppUser> {
+    return toUser(await post(`/api/users/${id}/deactivate`, { mode, targetBrokerId }));
+  },
 };
 
 // ── Properties ─────────────────────────────────────────────────────────────

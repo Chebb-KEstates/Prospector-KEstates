@@ -143,7 +143,9 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       calls: called, reached, interested, noAnswer: Math.max(0, called - reached),
     });
 
-    const brokers = users.filter(u => !u.isManager && u.active);
+    // Active brokers always; a deactivated broker only while they still hold units
+    // (so their held units stay attributed, and they vanish once emptied).
+    const brokers = users.filter(u => !u.isManager && (u.active || (assignedCounts.get(u.id) ?? 0) > 0));
     const lifetimeById = new Map(allBrokerStats.map(s => [s.brokerId, s]));
 
     const board = brokers.map(b => {
@@ -312,8 +314,10 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       brokerAreas.set(c.brokerId, bList);
     }
 
+    // Active brokers always; a deactivated broker only while they still hold units.
+    const heldCount = (id: string) => { const h = held.get(id); return h ? h.assigned + h.portfolio : 0; };
     return {
-      brokers: users.filter(u => !u.isManager && u.active).map(b => {
+      brokers: users.filter(u => !u.isManager && (u.active || heldCount(u.id) > 0)).map(b => {
         const s = statsById.get(b.id);
         const h = held.get(b.id) ?? { assigned: 0, portfolio: 0 };
         // Call columns follow the selected range when one is given; otherwise

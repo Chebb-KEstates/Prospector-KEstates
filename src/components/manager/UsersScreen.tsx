@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { useAuth } from '../../state/AuthContext';
 import { AppUser, UserRole, Permission, PermissionLabel, UserRoleLabel } from '../../types/user';
+import { Property } from '../../types/models';
 import { fmtInt, timeAgo } from '../../utils/format';
 import { ApiError } from '../../data/apiClient';
 import * as api from '../../data/api';
+import { DeactivateBrokerDialog } from './DeactivateBrokerDialog';
 
 /**
  * User administration.
@@ -70,13 +72,17 @@ function ActivitySummary({ target }: { target: AppUser }) {
 }
 
 export function UsersScreen() {
-  const { users, saveUser, setUserActive, resetUserPassword } = useVault();
+  const { users, brokers, saveUser, setUserActive, deactivateBroker, resetUserPassword } = useVault();
   const { user } = useAuth();
   const [editing, setEditing] = useState<AppUser | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetFor, setResetFor] = useState<AppUser | null>(null);
+  // Deactivating a broker who still holds units → decide what happens to them.
+  const [deac, setDeac] = useState<{ broker: AppUser; units: Property[] } | null>(null);
+  const [deacBusy, setDeacBusy] = useState(false);
+  const [deacError, setDeacError] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     name: '', email: '', role: UserRole.broker as UserRole,
@@ -134,13 +140,32 @@ export function UsersScreen() {
    */
   const setActive = async (u: AppUser, active: boolean) => {
     if (!user) return;
-    if (!active && !window.confirm(`Deactivate ${u.name}? They keep their history, are signed out immediately, and can no longer sign in.`)) return;
     setError(null);
+    if (active) {
+      try { await setUserActive(u, true); }
+      catch (err) { setError(err instanceof ApiError ? err.message : 'Could not change that account.'); }
+      return;
+    }
+    // Deactivating: if they still hold units, ask what to do with them first.
     try {
-      await setUserActive(u, active);
+      const units = await api.users.heldUnits(u.id);
+      if (units.length > 0) { setDeacError(null); setDeac({ broker: u, units }); return; }
+      if (!window.confirm(`Deactivate ${u.name}? They keep their history, are signed out immediately, and can no longer sign in.`)) return;
+      await setUserActive(u, false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not change that account.');
     }
+  };
+
+  const runDeactivate = async (mode: 'reclaim' | 'reassign' | 'keep', targetBrokerId?: string) => {
+    if (!deac) return;
+    setDeacBusy(true); setDeacError(null);
+    try {
+      await deactivateBroker(deac.broker.id, mode, targetBrokerId);
+      setDeac(null);
+    } catch (err) {
+      setDeacError(err instanceof ApiError ? err.message : 'Could not deactivate that broker.');
+    } finally { setDeacBusy(false); }
   };
 
   const togglePermission = (p: Permission) => {
@@ -308,6 +333,19 @@ export function UsersScreen() {
           </tbody>
         </table>
       </div>
+
+      {deac && (
+        <DeactivateBrokerDialog
+          broker={deac.broker}
+          units={deac.units}
+          targets={brokers.filter(b => b.active && b.id !== deac.broker.id)}
+          busy={deacBusy}
+          error={deacError}
+          onReclaim={() => void runDeactivate('reclaim')}
+          onReassign={t => void runDeactivate('reassign', t)}
+          onKeep={() => void runDeactivate('keep')}
+          onCancel={() => setDeac(null)} />
+      )}
     </div>
   );
 }

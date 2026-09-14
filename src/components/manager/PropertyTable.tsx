@@ -594,7 +594,8 @@ export function PropertyTable({
                 {showAssignee && brokers.length > 0 && (
                   <FilterField label="Assigned to">
                     <select className="input" style={selFull} value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}>
-                      <option value="">All brokers</option>{brokers.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      {/* Active brokers always; a deactivated broker only while they still hold units. */}
+                      <option value="">All brokers</option>{brokers.filter(b => b.active || b.heldUnits > 0).map(b => <option key={b.id} value={b.id}>{b.name}{b.active ? '' : ' (inactive)'}</option>)}
                     </select>
                   </FilterField>
                 )}

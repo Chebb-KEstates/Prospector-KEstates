@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import * as api from '../../data/api';
 import { Property } from '../../types/models';
 import { Icon } from '../common/Icon';
 import { StateChip, OutcomeChip } from '../common/StateChip';
-import { fmtInt, fmtArea } from '../../utils/format';
+import { AnalyticsTable, Col } from '../common/AnalyticsTable';
+import { fmtInt, fmtArea, timeAgo } from '../../utils/format';
 import { ApiError } from '../../data/apiClient';
 import { PropertyPopup } from './PropertyPopup';
 
@@ -18,11 +19,10 @@ export interface DrillParams {
 }
 
 /**
- * The units behind a clicked report/dashboard number. Fetches the drill-down
- * list for `params`, shows it as a quick table, and (like the Activity Log) lets
- * a row open the unit's full record. The header shows the unit count next to the
- * original figure, so a call-count metric ("8 no-answer calls") reading as fewer
- * units is self-explanatory.
+ * The units behind a clicked report/dashboard number (or a supplied list). Shows
+ * them in a quick table with the main tables' feel — sortable headers, show/hide
+ * columns (remembered), and a quick filter (search + State + Community). A row
+ * opens the unit's full record, layered above this popup.
  */
 export function UnitsDrilldownPopup({ title, subtitle, params, units: given, onClose }: {
   title: string;
@@ -38,7 +38,12 @@ export function UnitsDrilldownPopup({ title, subtitle, params, units: given, onC
   const [loading, setLoading] = useState(!!params);
   const [error, setError] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
-  const units = given ?? fetched;
+  const all = given ?? fetched;
+
+  // Quick filter
+  const [search, setSearch] = useState('');
+  const [stateF, setStateF] = useState('');
+  const [communityF, setCommunityF] = useState('');
 
   useEffect(() => {
     if (!params) return;
@@ -58,61 +63,79 @@ export function UnitsDrilldownPopup({ title, subtitle, params, units: given, onC
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params?.metric, params?.brokerId, params?.from, params?.to, params?.community, params?.cluster]);
 
-  const ids = units.map(u => u.id);
+  const states = useMemo(() => Array.from(new Set(all.map(p => p.state))).sort(), [all]);
+  const communities = useMemo(() => Array.from(new Set(all.map(p => p.community).filter(Boolean))).sort(), [all]);
+
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return all.filter(p =>
+      (!stateF || p.state === stateF) &&
+      (!communityF || p.community === communityF) &&
+      (!q || [p.unitLabel, p.community, p.cluster, p.owner.name].some(v => (v ?? '').toLowerCase().includes(q))),
+    );
+  }, [all, search, stateF, communityF]);
+
+  const columns: Col<Property>[] = [
+    { key: 'community', label: 'Community', render: p => p.community || '—', sortValue: p => p.community },
+    { key: 'cluster', label: 'Sub-community', render: p => p.cluster || '—', sortValue: p => p.cluster },
+    { key: 'beds', label: 'Beds', align: 'right', render: p => p.beds ?? '—', sortValue: p => p.beds },
+    { key: 'size', label: 'Size', align: 'right', render: p => fmtArea(p.sizeSqft), sortValue: p => p.sizeSqft },
+    { key: 'state', label: 'State', render: p => <StateChip state={p.state} />, sortValue: p => p.state },
+    { key: 'outcome', label: 'Last outcome', render: p => p.lastOutcome ? <OutcomeChip outcome={p.lastOutcome} /> : <span style={{ color: 'var(--text-tertiary)' }}>—</span>, sortValue: p => p.lastOutcome ?? '' },
+    { key: 'owner', label: 'Owner', render: p => p.owner.name || '—', sortValue: p => p.owner.name },
+    { key: 'lastCall', label: 'Last call', align: 'right', render: p => p.lastCalledAt ? timeAgo(p.lastCalledAt) : '—', sortValue: p => (p.lastCalledAt ? new Date(p.lastCalledAt).getTime() : undefined) },
+  ];
+  const defaultVisible = ['community', 'cluster', 'beds', 'size', 'state', 'outcome', 'owner'];
+
+  const filtered = rows.length !== all.length;
+  const selInput = { padding: '5px 8px', width: 'auto' } as React.CSSProperties;
 
   return (
     <>
       <div className="modal-overlay" onClick={onClose}>
-        <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 960, width: '92vw', maxHeight: '86vh', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 1040, width: '94vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
             <h3 style={{ fontWeight: 600, margin: 0 }}>{title}</h3>
             <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
-              {loading ? 'Loading…' : `${fmtInt(units.length)} unit${units.length === 1 ? '' : 's'}`}{subtitle ? ` · ${subtitle}` : ''}
+              {loading ? 'Loading…' : filtered ? `${fmtInt(rows.length)} of ${fmtInt(all.length)} units` : `${fmtInt(all.length)} unit${all.length === 1 ? '' : 's'}`}{subtitle ? ` · ${subtitle}` : ''}
             </span>
             <div style={{ flex: 1 }} />
             <button className="btn btn-sm btn-ghost" onClick={onClose}><Icon name="x" size={14} /> Close</button>
           </div>
 
-          <div className="card" style={{ padding: 0, overflow: 'hidden', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ overflow: 'auto' }}>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Unit</th><th>Community</th><th>Sub-community</th>
-                    <th style={{ textAlign: 'right' }}>Beds</th>
-                    <th style={{ textAlign: 'right' }}>Size</th>
-                    <th>State</th><th>Last outcome</th><th>Owner</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {error ? (
-                    <tr><td colSpan={8} style={{ textAlign: 'center', padding: 28, color: 'var(--error)' }}>{error}</td></tr>
-                  ) : loading ? (
-                    <tr><td colSpan={8} style={{ textAlign: 'center', padding: 28, color: 'var(--text-secondary)' }}>Loading…</td></tr>
-                  ) : units.length === 0 ? (
-                    <tr><td colSpan={8} style={{ textAlign: 'center', padding: 28, color: 'var(--text-tertiary)' }}>No units to show.</td></tr>
-                  ) : units.map(p => (
-                    <tr key={p.id} onClick={() => setDetailId(p.id)} style={{ cursor: 'pointer' }} title="Open this unit's record">
-                      <td style={{ fontWeight: 500 }}>{p.unitLabel}</td>
-                      <td>{p.community || '—'}</td>
-                      <td style={{ color: 'var(--text-secondary)' }}>{p.cluster || '—'}</td>
-                      <td className="tabular-nums" style={{ textAlign: 'right' }}>{p.beds ?? '—'}</td>
-                      <td className="tabular-nums" style={{ textAlign: 'right' }}>{fmtArea(p.sizeSqft)}</td>
-                      <td><StateChip state={p.state} /></td>
-                      <td>{p.lastOutcome ? <OutcomeChip outcome={p.lastOutcome} /> : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}</td>
-                      <td style={{ color: 'var(--text-secondary)' }}>{p.owner.name || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {/* Quick filter */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+            <input className="input" placeholder="Search unit, community, owner…" value={search} onChange={e => setSearch(e.target.value)} style={{ flex: 1, minWidth: 200, padding: '5px 10px' }} />
+            <select className="input" value={stateF} onChange={e => setStateF(e.target.value)} style={selInput}>
+              <option value="">Any state</option>
+              {states.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select className="input" value={communityF} onChange={e => setCommunityF(e.target.value)} style={selInput}>
+              <option value="">Any community</option>
+              {communities.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+            {error ? (
+              <div style={{ padding: 28, textAlign: 'center', color: 'var(--error)' }}>{error}</div>
+            ) : loading ? (
+              <div style={{ padding: 28, textAlign: 'center', color: 'var(--text-secondary)' }}>Loading…</div>
+            ) : (
+              <AnalyticsTable
+                rows={rows} prefsKey="units.popup.v1"
+                pinned={{ label: 'Unit', render: p => p.unitLabel, sortValue: p => p.unitLabel }}
+                columns={columns} defaultVisible={defaultVisible}
+                onRowClick={p => setDetailId(p.id)}
+                empty={all.length === 0 ? 'No units to show.' : 'No units match the filter.'} />
+            )}
           </div>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: 8 }}>Tip: click a unit to open its full record.</div>
         </div>
       </div>
 
       {detailId && (
-        <PropertyPopup propertyId={detailId} ids={ids}
+        <PropertyPopup propertyId={detailId} ids={rows.map(p => p.id)}
           onNavigate={id => setDetailId(id)} onClose={() => setDetailId(null)} />
       )}
     </>

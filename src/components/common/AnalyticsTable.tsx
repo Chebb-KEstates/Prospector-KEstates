@@ -35,7 +35,7 @@ function compare(a: number | string | null | undefined, b: number | string | nul
 }
 
 export function AnalyticsTable<T extends { id: string }>({
-  rows, pinned, columns, prefsKey, empty, defaultVisible,
+  rows, pinned, columns, prefsKey, empty, defaultVisible, onRowClick,
 }: {
   rows: T[];
   pinned: { label: string; render: (row: T) => React.ReactNode; sortValue?: (row: T) => number | string | null | undefined };
@@ -44,6 +44,8 @@ export function AnalyticsTable<T extends { id: string }>({
   empty: string;
   /** Which columns show before the user customises (defaults to all). */
   defaultVisible?: string[];
+  /** When set, each row is clickable (e.g. to open the record). */
+  onRowClick?: (row: T) => void;
 }) {
   const available = columns.map(c => c.key);
   const layout = useTableLayout(available, defaultVisible ?? available, prefsKey);
@@ -127,7 +129,9 @@ export function AnalyticsTable<T extends { id: string }>({
               {sortedRows.length === 0 ? (
                 <tr><td colSpan={visible.length + 1} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 24 }}>{empty}</td></tr>
               ) : sortedRows.map(r => (
-                <tr key={r.id}>
+                <tr key={r.id}
+                  onClick={onRowClick ? () => onRowClick(r) : undefined}
+                  style={onRowClick ? { cursor: 'pointer' } : undefined}>
                   <td style={{ fontWeight: 500 }}>{pinned.render(r)}</td>
                   {visible.map(c => (
                     <td key={c.key} className={c.align === 'right' ? 'tabular-nums' : undefined}

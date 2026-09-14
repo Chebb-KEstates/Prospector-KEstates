@@ -65,6 +65,8 @@ interface VaultContextValue {
     ipLocked?: boolean; initialPassword?: string;
   }) => Promise<AppUser>;
   setUserActive: (user: AppUser, active: boolean) => Promise<void>;
+  /** Deactivate a broker, deciding what happens to their held units. */
+  deactivateBroker: (id: string, mode: 'reclaim' | 'reassign' | 'keep', targetBrokerId?: string) => Promise<void>;
   resetUserPassword: (userId: string, newPassword: string) => Promise<void>;
   saveSettings: (s: VaultSettings) => Promise<void>;
 
@@ -238,6 +240,12 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
     bump();
   }, [bump]);
 
+  const deactivateBroker = useCallback(async (id: string, mode: 'reclaim' | 'reassign' | 'keep', targetBrokerId?: string) => {
+    const saved = await api.users.deactivate(id, mode, targetBrokerId);
+    setUsers(prev => prev.map(u => (u.id === saved.id ? saved : u)));
+    bump(); // units moved → refresh brokers/held counts everywhere
+  }, [bump]);
+
   const resetUserPassword = useCallback(async (userId: string, newPassword: string) => {
     await api.users.resetPassword(userId, newPassword);
   }, []);
@@ -361,7 +369,7 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
     users, settings, datasets, requests,
     userById, brokers, pendingRequests,
     reload, reloadRequests, reloadDatasets,
-    saveUser, setUserActive, resetUserPassword, saveSettings,
+    saveUser, setUserActive, deactivateBroker, resetUserPassword, saveSettings,
     assign, reclaim, assignLeads, reclaimLeads,
     submitRequest, approveRequest, denyRequest,
     deleteDataset, updateDataset,

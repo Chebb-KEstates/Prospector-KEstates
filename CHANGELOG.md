@@ -18,6 +18,30 @@ for what each part means for Prospector.
 
 ---
 
+## [3.24.0] — 2026-09-14
+
+### Added
+- **Deactivating a broker who still holds units now asks what to do with them.**
+  Instead of a plain confirm, a prompt offers: **Reclaim all to pool**, **Reassign
+  all to another agent**, or **Deactivate & keep the units on them** — plus **View
+  units** (the quick list, each row opens the full record). Units are never
+  silently stranded on a deactivated broker.
+- **Quick units popups now have table controls** — click headers to sort, choose
+  which columns show (remembered), and a quick filter (search + State + Community).
+  Applies to every drill-down list, the reassign-conflict list, and the deactivate
+  view.
+
+### Changed
+- **Deactivated brokers drop out of the agent filter and reports once they hold no
+  units.** A broker who is deactivated but still holds units keeps showing (so
+  their units stay attributed and reachable); once their units are reclaimed or
+  reassigned, their name no longer clutters the agent filter or the reports.
+  (Assign-target pickers still list active brokers only.)
+
+No schema change / no migration — pull + rebuild (server + client) + restart.
+
+---
+
 ## [3.23.0] — 2026-09-11
 
 ### Added
