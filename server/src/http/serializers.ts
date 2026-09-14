@@ -95,6 +95,9 @@ export function serializeProperty(p: Property) {
     dncAt: p.dncAt,
     assignmentExpiresAt: p.assignmentExpiresAt,
     notes: p.notes,
+    askingPrice: p.askingPrice,
+    askingRent: p.askingRent,
+    listingNote: p.listingNote,
     extra: p.extra,
   };
 }

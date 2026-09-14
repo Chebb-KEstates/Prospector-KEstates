@@ -64,6 +64,9 @@ export function toProperty(r: Row): Property {
   p.dncAt = fromDb(r.dnc_at);
   p.assignmentExpiresAt = fromDb(r.assignment_expires_at);
   p.notes = (r.notes as string) ?? undefined;
+  p.askingPrice = r.asking_price != null ? Number(r.asking_price) : undefined;
+  p.askingRent = r.asking_rent != null ? Number(r.asking_rent) : undefined;
+  p.listingNote = (r.listing_note as string) ?? undefined;
   p.extra = parseExtra(r.extra);
   p.owner.phones = parsePhones(r.owner_phones);
   p.owners = parseOwners(r.owners);
@@ -131,7 +134,8 @@ const COLS = `
   owner_name, owner_phone, owner_phones, owners, owner_nationality, extra,
   created_at, updated_at, assigned_to, assigned_at, assignment_note,
   cooldown_until, portfolio_since, last_outcome, last_called_at,
-  call_attempts, next_follow_up_at, dnc_at, assignment_expires_at, notes`;
+  call_attempts, next_follow_up_at, dnc_at, assignment_expires_at, notes,
+  asking_price, asking_rent, listing_note`;
 
 /** Params for an INSERT/REPLACE of one property. Keep in sync with `PLACEHOLDERS`. */
 function writeParams(p: Property): unknown[] {
@@ -919,6 +923,30 @@ export async function countByDataset(datasetId: string, cx?: PoolConnection): Pr
 }
 
 /** Set the free-text notes on one property (empty string clears them). */
+/**
+ * Save the listing "Information" (asking price / asking rent / listing notes) for
+ * a unit — the fields captured when it's interested. Written on its own (like
+ * notes), so call-logging, assignment and import never clobber it. Only the
+ * fields provided are changed; `null` clears one. No timer change — an interested
+ * call already renews the hold.
+ */
+export async function updateListingInfo(
+  id: string,
+  fields: { askingPrice?: number | null; askingRent?: number | null; listingNote?: string | null },
+  cx?: PoolConnection,
+): Promise<void> {
+  const db = cx ?? pool;
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  if (fields.askingPrice !== undefined) { sets.push('asking_price = ?'); params.push(fields.askingPrice); }
+  if (fields.askingRent !== undefined) { sets.push('asking_rent = ?'); params.push(fields.askingRent); }
+  if (fields.listingNote !== undefined) { sets.push('listing_note = ?'); params.push(fields.listingNote && fields.listingNote.length > 0 ? fields.listingNote : null); }
+  if (sets.length === 0) return;
+  sets.push('updated_at = ?'); params.push(toDb(new Date().toISOString()));
+  params.push(id);
+  await db.query(`UPDATE properties SET ${sets.join(', ')} WHERE id = ?`, params);
+}
+
 /**
  * Save notes, and — because "updating a unit" is how a broker renews it —
  * push the assignment deadline out for a held unit: a portfolio unit gets a

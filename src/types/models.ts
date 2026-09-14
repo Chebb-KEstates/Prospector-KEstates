@@ -155,6 +155,12 @@ export class Property implements ProspectFields {
   owners: OwnerInfo[] = [];
   /** Free-text notes on the record, edited from the per-unit detail popup. */
   notes?: string;
+  /** Listing info captured when a unit is interested (the "Information" section):
+   *  asking price when interested to sell, asking rent when interested to lease,
+   *  and free-text listing notes. Independent of the general `notes`. */
+  askingPrice?: number;
+  askingRent?: number;
+  listingNote?: string;
   /** Any unmapped columns from the upload, kept verbatim so the table can show them. */
   extra: Record<string, string> = {};
 
@@ -235,7 +241,9 @@ export class Property implements ProspectFields {
       nextFollowUpAt: this.nextFollowUpAt, dncAt: this.dncAt,
       assignmentExpiresAt: this.assignmentExpiresAt,
       owners: this.owners.map(o => o.toJson()),
-      notes: this.notes, extra: this.extra,
+      notes: this.notes,
+      askingPrice: this.askingPrice, askingRent: this.askingRent, listingNote: this.listingNote,
+      extra: this.extra,
     };
   }
 
@@ -275,6 +283,9 @@ export class Property implements ProspectFields {
     p.assignmentExpiresAt = j.assignmentExpiresAt as string | undefined;
     p.owners = ((j.owners as Record<string, unknown>[]) ?? []).map(OwnerInfo.fromJson);
     p.notes = j.notes as string | undefined;
+    p.askingPrice = j.askingPrice != null ? (j.askingPrice as number) : undefined;
+    p.askingRent = j.askingRent != null ? (j.askingRent as number) : undefined;
+    p.listingNote = j.listingNote as string | undefined;
     p.extra = Object.fromEntries(
       Object.entries((j.extra as Record<string, unknown>) ?? {}).map(([k, v]) => [k, String(v)]));
     return p;

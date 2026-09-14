@@ -18,6 +18,25 @@ for what each part means for Prospector.
 
 ---
 
+## [3.26.0] — 2026-09-14
+
+### Added
+- **"Information" section on the record popup — asking price / rent + listing
+  notes.** When a unit is interested, a new section under the call outcome and
+  Save captures the **asking price** (interested to sell), **asking rent**
+  (interested to lease) and free-text **listing notes**. It's kept on the unit's
+  record (shown whenever the unit has listing info), saved on its own — and
+  preserved through call-logging, assignment and re-imports.
+
+### Data
+- Migration **013_listing_info** adds nullable `asking_price`, `asking_rent`,
+  `listing_note` columns to `properties`. Additive; never written by import, so
+  existing data and re-imports are unaffected. **Run `npm run migrate` on deploy.**
+
+Server + client rebuild + `npm run migrate` on deploy.
+
+---
+
 ## [3.25.0] — 2026-09-14
 
 ### Changed

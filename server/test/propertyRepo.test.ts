@@ -5,6 +5,7 @@ import {
   saveProperties, queryProperties, findByUnitKeys, findByOwnerKey,
   countByState, countCallable, propertyFacets, toProperty, countStalePortfolio,
   callableCoverageByBroker, followUpsDueByBroker, findMetricUnits,
+  updateListingInfo, findPropertyById,
 } from '../src/repositories/propertyRepo';
 import { areaBreakdown, areaAssignmentMatrix } from '../src/repositories/statsRepo';
 import { assignProperties, previewAssignConflicts } from '../src/services/assignmentService';
@@ -610,6 +611,32 @@ test('assign conflict: preview flags owners in another broker\'s portfolio; skip
   const byId2 = new Map(after2.map((r: any) => [r.id, r]));
   assert.equal(byId2.get(u2.id).assigned_to, B, 'U2 now with B');
   assert.equal(byId2.get(u1.id).assigned_to, A, 'U1 still with A');
+});
+
+test('listing info round-trips and is not clobbered by a saveProperties upsert', async () => {
+  await wipe();
+  const p = makeProperty({ unitNumber: '1801', phone: '971500000201' });
+  await saveProperties([p]);
+
+  await updateListingInfo(p.id, { askingPrice: 3_500_000, askingRent: 180_000, listingNote: 'Vacant, motivated seller' });
+  const got = await findPropertyById(p.id);
+  assert.equal(got?.askingPrice, 3_500_000);
+  assert.equal(got?.askingRent, 180_000);
+  assert.equal(got?.listingNote, 'Vacant, motivated seller');
+
+  // saveProperties (the path used by call-logging / assignment / import) does NOT
+  // write the listing columns, so re-saving the original (no listing fields) must
+  // leave the stored listing info intact.
+  await saveProperties([p]);
+  const after = await findPropertyById(p.id);
+  assert.equal(after?.askingPrice, 3_500_000, 'a plain upsert must not wipe the asking price');
+  assert.equal(after?.listingNote, 'Vacant, motivated seller');
+
+  // Partial update: change only the note, leave the prices.
+  await updateListingInfo(p.id, { listingNote: 'Now listed elsewhere' });
+  const upd = await findPropertyById(p.id);
+  assert.equal(upd?.askingPrice, 3_500_000, 'unspecified fields are untouched');
+  assert.equal(upd?.listingNote, 'Now listed elsewhere');
 });
 
 test.after(async () => {

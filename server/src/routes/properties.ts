@@ -3,7 +3,7 @@ import { Permission } from '../../../src/types/user';
 import { PropertyState } from '../../../src/types/models';
 import {
   queryProperties, propertyFacets, findPropertyById, findAssignedTo,
-  updatePropertyNotes, findByOwnerKey,
+  updatePropertyNotes, updateListingInfo, findByOwnerKey,
 } from '../repositories/propertyRepo';
 import { ownerKeyOf } from '../../../src/logic/ownerGrouping';
 import { callsForProperties } from '../repositories/callRepo';
@@ -498,6 +498,43 @@ export default async function propertyRoutes(app: FastifyInstance) {
     // Saving notes is "working" a unit, so it renews the assignment timer —
     // updatePropertyNotes needs the windows to know how far to push the deadline.
     await updatePropertyNotes(id, notes.trim(), await loadSettings());
+    const updated = await findPropertyById(id);
+    return serializeProperty(updated!);
+  });
+
+  /**
+   * Save the listing "Information" for a unit — asking price (sale), asking rent
+   * (lease) and listing notes, captured when the unit is interested. Only the
+   * fields sent are changed; send null to clear one. Broker (own unit) or manager.
+   */
+  app.patch('/api/properties/:id/listing', {
+    preHandler: [app.authenticate],
+    schema: {
+      params: {
+        type: 'object', required: ['id'],
+        properties: { id: { type: 'string', maxLength: 64 } },
+      },
+      body: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          askingPrice: { type: ['number', 'null'], minimum: 0, maximum: 1e12 },
+          askingRent: { type: ['number', 'null'], minimum: 0, maximum: 1e12 },
+          listingNote: { type: ['string', 'null'], maxLength: 4000 },
+        },
+      },
+    },
+  }, async (req) => {
+    const { id } = req.params as { id: string };
+    const body = req.body as { askingPrice?: number | null; askingRent?: number | null; listingNote?: string | null };
+    const me = req.currentUser!;
+
+    const p = await findPropertyById(id);
+    if (!p) throw notFound('That unit no longer exists.');
+    if (!me.isManager && p.assignedTo !== me.id) {
+      throw forbidden('You can only edit a unit assigned to you.');
+    }
+
+    await updateListingInfo(id, body);
     const updated = await findPropertyById(id);
     return serializeProperty(updated!);
   });

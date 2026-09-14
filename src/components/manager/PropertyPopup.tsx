@@ -152,6 +152,14 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   const [notesDirty, setNotesDirty] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
 
+  // Listing "Information" (asking price/rent + listing notes) for the focused unit
+  // — shown when it's interested. Loaded per unit, saved on its own like notes.
+  const [askingPrice, setAskingPrice] = useState('');
+  const [askingRent, setAskingRent] = useState('');
+  const [listingNote, setListingNote] = useState('');
+  const [listingDirty, setListingDirty] = useState(false);
+  const [listingSaved, setListingSaved] = useState(false);
+
   // Manager actions on the record (reclaim / reassign) — shown instead of the
   // dialer progress when a manager opens a record.
   const [mgrBroker, setMgrBroker] = useState('');
@@ -247,6 +255,24 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
       } finally {
         if (!cancelled) setEventsLoading(false);
       }
+    })();
+    return () => { cancelled = true; };
+  }, [focusedId, eventsKey]);
+
+  // The focused unit's listing Information — loaded per unit (and after a save).
+  useEffect(() => {
+    let cancelled = false;
+    setListingDirty(false); setListingSaved(false);
+    setAskingPrice(''); setAskingRent(''); setListingNote('');
+    void (async () => {
+      try {
+        const p = await api.properties.byId(focusedId);
+        if (!cancelled) {
+          setAskingPrice(p.askingPrice != null ? String(p.askingPrice) : '');
+          setAskingRent(p.askingRent != null ? String(p.askingRent) : '');
+          setListingNote(p.listingNote ?? '');
+        }
+      } catch { /* leave blank */ }
     })();
     return () => { cancelled = true; };
   }, [focusedId, eventsKey]);
@@ -357,6 +383,22 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     } catch { /* keep the text; a later close retries */ }
   };
 
+  // Save the listing Information (asking price / rent / notes) — like notes, it
+  // persists on its own and flushes on close/next/after a call save.
+  const flushListing = async (): Promise<boolean> => {
+    if (!listingDirty) return true;
+    const num = (s: string) => { const n = Number(s.trim()); return s.trim() && !isNaN(n) ? n : null; };
+    try {
+      await api.properties.saveListing(focusedId, {
+        askingPrice: num(askingPrice),
+        askingRent: num(askingRent),
+        listingNote: listingNote.trim() ? listingNote.trim() : null,
+      });
+      setListingDirty(false); setListingSaved(true);
+      return true;
+    } catch { return false; }
+  };
+
   // Add a journal update without logging a call. Renews the hold server-side.
   const submitUpdate = async () => {
     const text = updateText.trim();
@@ -423,13 +465,13 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     } finally { setMgrBusy(false); }
   };
 
-  const tryClose = async () => { if (locked) return; await flushNotes(); onClose(); };
+  const tryClose = async () => { if (locked) return; await flushNotes(); await flushListing(); onClose(); };
   const tryNext = async () => {
     if (locked || navBusy.current || !onNavigate) return;
     const target = forwardTarget();
     if (!target) return;
     navBusy.current = true;
-    await flushNotes();
+    await flushNotes(); await flushListing();
     // Extend or retrace the breadcrumb, and remember we've seen this unit.
     if (hpos < history.length - 1 && history[hpos + 1] === target) setHpos(hpos + 1);
     else { setHistory(h => [...h.slice(0, hpos + 1), target]); setHpos(hpos + 1); }
@@ -440,7 +482,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     if (locked || navBusy.current || hpos <= 0 || !onNavigate) return;
     const target = history[hpos - 1]; // the unit we actually came from
     navBusy.current = true;
-    await flushNotes();
+    await flushNotes(); await flushListing();
     setHpos(hpos - 1);
     onNavigate(target);
   };
@@ -554,8 +596,9 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
         const p2 = await api.properties.byId(focusedId);
         setRefresh(r => ({ ...r, [focusedId]: { state: p2.state, expiresAt: p2.assignmentExpiresAt } }));
       } catch { /* keep the old chip */ }
-      setEventsKey(k => k + 1);
       await flushNotes(); // logging a call also persists any pending notes
+      await flushListing(); // …and any asking price / listing info entered
+      setEventsKey(k => k + 1);
     } catch (e) {
       setSaveError(e instanceof ApiError ? e.message : 'Could not save that. Try again.');
     } finally {
@@ -905,6 +948,44 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                 )}
                 {justSaved && <div style={{ color: 'var(--success)', fontSize: '0.8rem', marginTop: 6, fontWeight: 600 }}>✓ Call logged to the record.</div>}
                 {saveError && <ErrorBox>{saveError}</ErrorBox>}
+
+                {/* Information — asking price / rent + listing notes, shown when the
+                    unit is interested (or already has listing info on record). */}
+                {(() => {
+                  const wantSell = selectedResults.some(r => r.key === 'sell');
+                  const wantRent = selectedResults.some(r => r.key === 'rent');
+                  const showSale = wantSell || !!askingPrice.trim();
+                  const showRent = wantRent || !!askingRent.trim();
+                  if (!showSale && !showRent && !wantSell && !wantRent && !listingNote.trim()) return null;
+                  const onPrice = (set: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => { set(e.target.value); setListingDirty(true); setListingSaved(false); };
+                  return (
+                    <div style={{ marginTop: 12, borderTop: '1px solid var(--border-light)', paddingTop: 12 }}>
+                      <div style={sectionLabel}>Information</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 8 }}>Interest details kept on this unit's record.</div>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        {showSale && (
+                          <label style={{ flex: 1, minWidth: 150, fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                            Asking price (AED — sale)
+                            <input className="input" type="number" min={0} value={askingPrice} onChange={onPrice(setAskingPrice)} style={{ marginTop: 4 }} placeholder="e.g. 3500000" />
+                          </label>
+                        )}
+                        {showRent && (
+                          <label style={{ flex: 1, minWidth: 150, fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                            Asking rent (AED / year)
+                            <input className="input" type="number" min={0} value={askingRent} onChange={onPrice(setAskingRent)} style={{ marginTop: 4 }} placeholder="e.g. 180000" />
+                          </label>
+                        )}
+                      </div>
+                      <textarea className="input" value={listingNote} rows={3} style={{ resize: 'vertical', marginTop: 10 }}
+                        placeholder="Listing notes — condition, availability, vendor expectations…"
+                        onChange={e => { setListingNote(e.target.value); setListingDirty(true); setListingSaved(false); }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+                        <button className="btn btn-sm" disabled={!listingDirty} onClick={() => void flushListing()}>Save information</button>
+                        {listingSaved && !listingDirty && <span style={{ color: 'var(--success)', fontSize: '0.78rem', fontWeight: 600 }}>Saved ✓</span>}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div style={{ marginTop: 'auto', paddingTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button className="btn" onClick={() => void tryClose()} disabled={locked} style={{ opacity: locked ? 0.5 : 1 }}>Close</button>

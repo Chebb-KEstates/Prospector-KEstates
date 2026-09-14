@@ -280,6 +280,11 @@ export const properties = {
   async addUpdate(id: string, note: string): Promise<void> {
     await post(`/api/properties/${id}/note`, { note });
   },
+
+  /** Save the listing Information (asking price / rent / notes) on a unit. */
+  async saveListing(id: string, fields: { askingPrice?: number | null; askingRent?: number | null; listingNote?: string | null }): Promise<Property> {
+    return Property.fromJson(await patch(`/api/properties/${id}/listing`, fields));
+  },
 };
 
 // ── Leads ──────────────────────────────────────────────────────────────────
