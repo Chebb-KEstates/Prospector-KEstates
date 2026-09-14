@@ -18,6 +18,21 @@ for what each part means for Prospector.
 
 ---
 
+## [3.25.0] — 2026-09-14
+
+### Changed
+- **Record popup: the call form starts fresh, but the interest status carries
+  over.** Opening a record no longer pre-fills "Answered / No answer" from the
+  last call (that made it look like a call was already staged). Those buttons now
+  start blank, ready for a new call. Only the standing **interest** (interested
+  for sale / rent / not interested) stays selected from the previous outcome. The
+  last outcome is still shown — now as a small chip in the record header — instead
+  of the old "Current status" banner.
+
+No schema change / no migration — pull + rebuild (client) + restart.
+
+---
+
 ## [3.24.0] — 2026-09-14
 
 ### Added

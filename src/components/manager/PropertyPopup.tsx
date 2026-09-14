@@ -70,21 +70,17 @@ function latestEntry(u?: CallUnit): CallHistoryEntry | undefined {
 }
 
 /**
- * Which tabs represent a stored outcome — so reopening a record shows its
- * current status pre-selected (issue: "the outcome should still show when I come
- * back, even after reassignment"). A no-answer/unreachable is just the connection
- * step; the answered outcomes map to their canonical result chip.
+ * The INTEREST result chip(s) to carry over from the unit's last outcome, so a
+ * unit's standing interest stays selected across opens — but ONLY the interest
+ * disposition (interested-sell / -rent / not-interested). The connection
+ * (Answered / No answer) and everything else always start blank for a fresh call.
  */
-function presetForOutcome(o: CallOutcome): { connection: Connection; resultKey?: string } {
-  switch (o) {
-    case CallOutcome.noAnswer: return { connection: 'noAnswer' };
-    case CallOutcome.unreachable: return { connection: 'unreachable' };
-    case CallOutcome.interestedSell: return { connection: 'answered', resultKey: 'sell' };
-    case CallOutcome.interestedRent: return { connection: 'answered', resultKey: 'rent' };
-    case CallOutcome.callbackLater: return { connection: 'answered', resultKey: 'callback' };
-    case CallOutcome.notInterested: return { connection: 'answered', resultKey: 'notInterested' };
-    case CallOutcome.dnc: return { connection: 'answered', resultKey: 'dnc' };
-    default: return { connection: 'answered' };
+function interestPreset(u?: CallUnit): string[] {
+  switch (latestEntry(u)?.outcome) {
+    case CallOutcome.interestedSell: return ['sell'];
+    case CallOutcome.interestedRent: return ['rent'];
+    case CallOutcome.notInterested: return ['notInterested'];
+    default: return [];
   }
 }
 
@@ -146,10 +142,6 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
-  // The outcome tabs are pre-filled to the unit's current status when it opens,
-  // so a reassigned agent still sees what it is. That preview must NOT arm the
-  // Save button — only a deliberate change/confirm counts as a new call.
-  const [outcomeTouched, setOutcomeTouched] = useState(false);
   // Manager handoff dialog for an "interested" call (choose broker / keep in pool).
   const [showHandoff, setShowHandoff] = useState(false);
   const [handoffBroker, setHandoffBroker] = useState('');
@@ -231,18 +223,12 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   useEffect(() => {
     setNotes(noteOverrides[focusedId] ?? focusedUnit?.notes ?? '');
     setNotesSaved(false); setNotesDirty(false);
-    // Pre-fill the outcome tabs with the unit's current status so it's visible on
-    // reopen (and for a new agent after reassignment). `outcomeTouched` stays
-    // false so this preview can't be saved as a fresh call by accident.
-    const last = latestEntry(focusedUnit);
-    if (last) {
-      const preset = presetForOutcome(last.outcome);
-      setConnection(preset.connection);
-      setResults(preset.resultKey ? new Set([preset.resultKey]) : new Set());
-    } else {
-      setConnection(null); setResults(new Set());
-    }
-    setOutcomeTouched(false);
+    // A fresh call each open: the connection (Answered / No answer) always starts
+    // blank. Only the INTEREST result (interested-sell / -rent / not-interested)
+    // carries over from the last outcome, so the unit's standing interest stays
+    // selected while the call itself is logged clean.
+    setConnection(null);
+    setResults(new Set(interestPreset(focusedUnit)));
     setFeedback(''); setFollowUpAt(''); setJustSaved(false);
     setAddingUpdate(false); setUpdateText(''); setUpdateErr(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -323,7 +309,6 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   const wantsCallback = answered && selectedResults.some(r => r.key === 'callback' || r.key === 'future');
   const needFeedback = answered;                   // an answered call must be explained
   const canSave = primary != null
-    && outcomeTouched                              // don't save the pre-filled status preview
     && (!answered || selectedResults.length > 0)   // answered ⇒ at least one result
     && (!needFeedback || feedback.trim().length > 0)
     && (!wantsCallback || !!followUpAt)
@@ -502,7 +487,6 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
       n.add(opt.key);
       return n;
     });
-    setOutcomeTouched(true);
     setJustSaved(false);
   };
 
@@ -634,6 +618,13 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }} className="truncate">{focusedUnit.location}</div>
                 )}
               </div>
+              {/* Last recorded outcome — shown so it's clear at a glance, without
+                  pre-filling the call form below. */}
+              {lastStatus && (
+                <span title={`Last outcome${lastStatus.by ? ` · ${vault.userById(lastStatus.by)?.name ?? ''}` : ''}${lastStatus.at ? ` · ${timeAgo(lastStatus.at)}` : ''}`}>
+                  <OutcomeChip outcome={lastStatus.outcome} />
+                </span>
+              )}
               <LastCallPill at={focusedUnit?.detail?.lastCalledAt} />
               <StateChip state={curState} />
               <CountdownBadge deadline={curExpires} soonHours={vault.settings.expiringSoonHours} />
@@ -861,30 +852,14 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   Log the outcome{multiUnit ? ` — ${focusedUnit?.label ?? ''}` : ''}
                 </div>
 
-                {/* Current status — the last recorded outcome, persistent across
-                    reopen and reassignment. The tabs below start on this status. */}
-                {lastStatus && (
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
-                    marginBottom: 10, padding: '7px 11px', borderRadius: 10,
-                    background: 'var(--surface-2)', border: '1px solid var(--border-light)',
-                  }}>
-                    <span style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)', fontWeight: 600 }}>Current status</span>
-                    <OutcomeChip outcome={lastStatus.outcome} />
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>
-                      {[vault.userById(lastStatus.by ?? '')?.name, timeAgo(lastStatus.at)].filter(Boolean).join(' · ')}
-                    </span>
-                  </div>
-                )}
-
-                {/* Section 1 — did the call connect? */}
+                {/* Section 1 — did the call connect? Always starts fresh. */}
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 5 }}>Did the call connect?</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {([['answered', 'Answered'], ['noAnswer', 'No answer'], ['unreachable', 'Call didn’t connect']] as [Connection, string][]).map(([key, label]) => {
                     const sel = connection === key;
                     return (
                       <button key={key} className="btn btn-sm"
-                        onClick={() => { setConnection(key); if (key !== 'answered') setResults(new Set()); setOutcomeTouched(true); setJustSaved(false); }}
+                        onClick={() => { setConnection(key); if (key !== 'answered') setResults(new Set()); setJustSaved(false); }}
                         style={{ borderColor: sel ? 'var(--gold)' : 'var(--border)', borderWidth: sel ? 1.5 : 1, color: sel ? 'var(--gold-dark)' : 'var(--text)', background: sel ? 'color-mix(in srgb, var(--gold) 14%, transparent)' : 'var(--surface)', fontWeight: sel ? 600 : 500 }}>
                         {label}
                       </button>
@@ -922,11 +897,6 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   placeholder={needFeedback ? 'Call feedback — what was said… (required)' : 'Call feedback — what was said…'}
                   onChange={e => { setFeedback(e.target.value); setJustSaved(false); }} />
 
-                {lastStatus && !outcomeTouched && (
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: 8 }}>
-                    Showing the last recorded outcome. Pick an outcome to log a <b>new</b> call, or use <b>Add update</b> to note progress without a call.
-                  </div>
-                )}
                 {connection != null && (
                   <button className="btn btn-primary" onClick={() => void attemptSave()} disabled={!canSave}
                     style={{ marginTop: 8, width: '100%', justifyContent: 'center', padding: '10px', background: 'var(--gold)', borderColor: 'var(--gold)', color: '#2A2013', opacity: canSave ? 1 : 0.5 }}>
