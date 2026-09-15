@@ -20,6 +20,10 @@ export enum CallOutcome {
   noAnswer = 'noAnswer',
   unreachable = 'unreachable',
   callbackLater = 'callbackLater',
+  // The owner answered but asked to continue over text rather than talk now.
+  // NOT an interest decision — the unit stays in play, to be updated once the
+  // texting yields more information (behaves like callbackLater for the timer).
+  textRequested = 'textRequested',
   interestedSell = 'interestedSell',
   interestedRent = 'interestedRent',
   notInterested = 'notInterested',
@@ -31,6 +35,7 @@ export const CallOutcomeLabel: Record<CallOutcome, string> = {
   [CallOutcome.noAnswer]: 'No answer',
   [CallOutcome.unreachable]: 'Unreachable / wrong number',
   [CallOutcome.callbackLater]: 'Call back later',
+  [CallOutcome.textRequested]: 'Text requested',
   [CallOutcome.interestedSell]: 'Interested — Sell',
   [CallOutcome.interestedRent]: 'Interested — Rent',
   [CallOutcome.notInterested]: 'Not interested',
@@ -42,6 +47,7 @@ export const CallOutcomeBuyerLabel: Record<CallOutcome, string> = {
   [CallOutcome.noAnswer]: 'No answer',
   [CallOutcome.unreachable]: 'Unreachable / wrong number',
   [CallOutcome.callbackLater]: 'Call back later',
+  [CallOutcome.textRequested]: 'Text requested',
   [CallOutcome.interestedSell]: 'Interested — hot lead',
   [CallOutcome.interestedRent]: 'Interested — warm / later',
   [CallOutcome.notInterested]: 'Not interested',

@@ -13,6 +13,7 @@ import { ApiError } from '../../data/apiClient';
 
 export function outcomeColor(o: CallOutcome): string {
   if (o === CallOutcome.interestedSell || o === CallOutcome.interestedRent) return 'var(--success)';
+  if (o === CallOutcome.textRequested) return '#00838F';
   if (o === CallOutcome.callbackLater) return 'var(--info)';
   if (o === CallOutcome.unreachable || o === CallOutcome.dnc) return 'var(--error)';
   if (o === CallOutcome.notInterested || o === CallOutcome.alreadyListed) return 'var(--warning)';

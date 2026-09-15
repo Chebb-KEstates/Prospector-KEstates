@@ -92,6 +92,24 @@ describe('disposition state machine', () => {
     expect(p.assignmentExpiresAt).toBeDefined();
   });
 
+  it('text-requested keeps the record assigned and in play, like a callback', () => {
+    const p = prop();
+    p.callAttempts = 2;
+    applyOutcome(p, CallOutcome.textRequested, NOW);
+    expect(p.state).toBe(PropertyState.assigned);
+    expect(p.lastOutcome).toBe(CallOutcome.textRequested);
+    expect(p.callAttempts).toBe(0);
+    expect(p.assignmentExpiresAt).toBeDefined();
+  });
+
+  it('text-requested records an optional check-back follow-up when given', () => {
+    const p = prop();
+    const fu = '2026-07-24T10:00:00.000Z';
+    applyOutcome(p, CallOutcome.textRequested, NOW, fu);
+    expect(p.nextFollowUpAt).toBe(fu);
+    expect(p.state).toBe(PropertyState.assigned);
+  });
+
   it('renews the portfolio window when a portfolio unit is worked again', () => {
     const p = prop(PropertyState.portfolio);
     p.assignmentExpiresAt = addHours(NOW, 2); // nearly up

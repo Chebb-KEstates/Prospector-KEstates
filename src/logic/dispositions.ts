@@ -63,6 +63,10 @@ export function applyOutcome(
         p.assignmentExpiresAt = cappedDeadline(base, p, settings, now);
       }
       break;
+    // Text requested behaves exactly like "call back later": the owner answered
+    // and the conversation continues, so the unit stays held with a (possibly
+    // scheduled) follow-up, ready to be updated once the texting yields more.
+    case CallOutcome.textRequested:
     case CallOutcome.callbackLater:
       p.callAttempts = 0;
       if (wasPortfolio) {

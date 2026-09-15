@@ -18,6 +18,29 @@ for what each part means for Prospector.
 
 ---
 
+## [3.28.0] — 2026-09-15
+
+### Added
+- **New call outcome: "Text requested".** For when the owner answers but asks to
+  continue over text rather than talk right now. It is **not** an interest
+  decision — the unit stays in play (same timer behaviour as "Call back later")
+  so it can be **updated later** once the texting yields more. Available on the
+  property record's outcome list (manager) and the broker dialer. It offers an
+  **optional** "check back on" date (a reminder), unlike "Call back later" which
+  requires one. It counts as **reached** on every report and funnel, and is
+  **never** counted as interested. Picking it clears any "Interested" / "Not
+  interested" selection (and vice-versa) so a single call is never contradictory.
+
+### Data
+- Migration **014_text_requested_outcome** adds `textRequested` to the outcome
+  ENUMs on `properties.last_outcome`, `leads.last_outcome` and `calls.outcome`.
+  Additive only — no existing value or row changes. **Run `npm run migrate` on
+  deploy** (this is now the latest migration; the live batch needs 003–014).
+
+Server + client rebuild + `npm run migrate` on deploy.
+
+---
+
 ## [3.27.0] — 2026-09-15
 
 ### Added

@@ -45,6 +45,9 @@ const RESULT_OPTIONS: ResultOption[] = [
   { key: 'rent', label: 'Interested — rent', outcome: CallOutcome.interestedRent },
   { key: 'callback', label: 'Call back later', outcome: CallOutcome.callbackLater },
   { key: 'future', label: 'Possible future interest', outcome: CallOutcome.callbackLater },
+  // Owner answered but wants to continue over text — not an interest decision;
+  // the unit stays in play, to be updated once the texting yields more.
+  { key: 'text', label: 'Text requested', outcome: CallOutcome.textRequested },
   { key: 'notInterested', label: 'Not interested', outcome: CallOutcome.notInterested },
   { key: 'living', label: 'Living in property', outcome: CallOutcome.notInterested },
   // "Agent" — the broker reached an agent, not the owner. A pure tag: it's written
@@ -55,7 +58,8 @@ const RESULT_OPTIONS: ResultOption[] = [
 ];
 const OUTCOME_PRIORITY: CallOutcome[] = [
   CallOutcome.dnc, CallOutcome.interestedSell, CallOutcome.interestedRent,
-  CallOutcome.callbackLater, CallOutcome.notInterested, CallOutcome.unreachable, CallOutcome.noAnswer,
+  CallOutcome.callbackLater, CallOutcome.textRequested, CallOutcome.notInterested,
+  CallOutcome.unreachable, CallOutcome.noAnswer,
 ];
 function strongestOutcome(rs: ResultOption[]): CallOutcome | null {
   for (const o of OUTCOME_PRIORITY) if (rs.some(r => r.outcome === o)) return o;
@@ -333,6 +337,10 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   // "Agent" also keeps the unit in play (callback disposition) but needs no
   // follow-up, so gate the date picker on the broker's intent, not the outcome.
   const wantsCallback = answered && selectedResults.some(r => r.key === 'callback' || r.key === 'future');
+  // "Text requested" may carry a check-back reminder too, but it's OPTIONAL — the
+  // owner will text when they text. So it opens the date picker without requiring it.
+  const wantsText = answered && selectedResults.some(r => r.key === 'text');
+  const wantsFollowUp = wantsCallback || wantsText;
   const needFeedback = answered;                   // an answered call must be explained
   const canSave = primary != null
     && (!answered || selectedResults.length > 0)   // answered ⇒ at least one result
@@ -508,22 +516,30 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   };
 
   /**
-   * Toggle a call-outcome chip. Outcomes are multi-select, but "Interested"
-   * (sell/rent) and "Not interested" (incl. "Living in property") are
-   * contradictory — picking one clears the other, so a call can never be saved as
-   * both interested and not interested.
+   * Toggle a call-outcome chip. Outcomes are multi-select, but the three
+   * DISPOSITIONS a call can carry are contradictory with one another:
+   *   • Interested (sell / rent — these two may coexist),
+   *   • Not interested (incl. "Living in property"),
+   *   • Text requested (no decision this call — continuing over text).
+   * Picking one clears the others, so a call is never saved as, say, both
+   * "text requested" and "not interested". Neutral tags (callback, agent, …)
+   * stay freely combinable.
    */
   const toggleResult = (opt: ResultOption) => {
-    const isInterested = (o: CallOutcome) => o === CallOutcome.interestedSell || o === CallOutcome.interestedRent;
-    const isNotInterested = (o: CallOutcome) => o === CallOutcome.notInterested;
+    const disp = (o: CallOutcome): 'interested' | 'notInterested' | 'text' | null =>
+      (o === CallOutcome.interestedSell || o === CallOutcome.interestedRent) ? 'interested'
+        : o === CallOutcome.notInterested ? 'notInterested'
+          : o === CallOutcome.textRequested ? 'text'
+            : null;
     setResults(prev => {
       const n = new Set(prev);
       if (n.has(opt.key)) { n.delete(opt.key); return n; }
-      if (isInterested(opt.outcome) || isNotInterested(opt.outcome)) {
+      const kind = disp(opt.outcome);
+      if (kind) {
         for (const o of RESULT_OPTIONS) {
           if (!n.has(o.key)) continue;
-          const clash = isInterested(opt.outcome) ? isNotInterested(o.outcome) : isInterested(o.outcome);
-          if (clash) n.delete(o.key);
+          const other = disp(o.outcome);
+          if (other && other !== kind) n.delete(o.key);
         }
       }
       n.add(opt.key);
@@ -929,9 +945,9 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   </div>
                 )}
 
-                {wantsCallback && (
+                {wantsFollowUp && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Call back on</span>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{wantsCallback ? 'Call back on' : 'Check back on (optional)'}</span>
                     <input className="input" type="date" value={followUpAt} onChange={e => setFollowUpAt(e.target.value)} style={{ width: 170 }} />
                   </div>
                 )}

@@ -14,7 +14,8 @@ function rank(o: CallOutcome): number {
   switch (o) {
     case CallOutcome.interestedSell:
     case CallOutcome.interestedRent: return 6;
-    case CallOutcome.callbackLater: return 5;
+    case CallOutcome.callbackLater:
+    case CallOutcome.textRequested: return 5;
     case CallOutcome.alreadyListed: return 4;
     case CallOutcome.notInterested:
     case CallOutcome.dnc: return 3;
@@ -97,6 +98,10 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
     : (outcome ? [['self', outcome]] : []);
   const anyChosen = chosen.length > 0;
   const anyCallback = chosen.some(([, o]) => o === CallOutcome.callbackLater);
+  // "Text requested" also offers a check-back date, but optionally — so it shows
+  // the picker without gating the save on it (unlike a mandatory call-back date).
+  const anyText = chosen.some(([, o]) => o === CallOutcome.textRequested);
+  const anyFollowUp = anyCallback || anyText;
   const isReached = (o: CallOutcome) => o !== CallOutcome.noAnswer && o !== CallOutcome.unreachable;
   // Feedback text for a given result — per-property in the multi-unit view, or
   // the single shared note otherwise.
@@ -151,7 +156,7 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
         // onto the owner's other units.
         for (const [unitId, o] of chosen) {
           const n = (unitNotes[unitId] ?? '').trim() || undefined;
-          await stop.logUnit!(unitId, o, n, o === CallOutcome.callbackLater ? fu : undefined, activeOwnerName);
+          await stop.logUnit!(unitId, o, n, (o === CallOutcome.callbackLater || o === CallOutcome.textRequested) ? fu : undefined, activeOwnerName);
         }
       } else {
         await stop.log(chosen[0][1], note.trim() || undefined, fu, activeOwnerName);
@@ -437,10 +442,10 @@ export function CallCard({ stop, onComplete, onSkip, onReveal, onLockChange }: {
         </div>
       )}
 
-      {/* Follow-up date when any result is "call back later" */}
-      {revealed && anyCallback && (
+      {/* Follow-up date — required for "call back later", optional for "text requested". */}
+      {revealed && anyFollowUp && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>Call back on</span>
+          <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>{anyCallback ? 'Call back on' : 'Check back on (optional)'}</span>
           <input className="input" type="date" value={followUpAt} onChange={e => setFollowUpAt(e.target.value)} style={{ width: 180 }} />
         </div>
       )}

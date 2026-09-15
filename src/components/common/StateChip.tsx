@@ -16,6 +16,7 @@ const outcomeColors: Record<CallOutcome, string> = {
   [CallOutcome.noAnswer]: '#9C9690',
   [CallOutcome.unreachable]: '#9C9690',
   [CallOutcome.callbackLater]: '#E65100',
+  [CallOutcome.textRequested]: '#00838F',
   [CallOutcome.interestedSell]: '#2E7D32',
   [CallOutcome.interestedRent]: '#66BB6A',
   [CallOutcome.notInterested]: '#C62828',
