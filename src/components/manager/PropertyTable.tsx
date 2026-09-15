@@ -3,6 +3,7 @@ import { Property, PropertyState, PropertyStateLabel, CallOutcomeLabel } from '.
 import { StateChip, OutcomeChip, CountdownBadge } from '../common/StateChip';
 import { Icon } from '../common/Icon';
 import { useTableLayout, ColumnsDialog } from '../common/tableLayout';
+import { FilterField, NumberRange, CalledPeriod, CALLED_PERIODS, calledRange } from '../common/propertyFilters';
 import { usePropertyPage, usePropertyFacetsOrEmpty } from '../../data/hooks';
 import { useVault } from '../../state/VaultContext';
 import { fmtDate, fmtDateTime, fmtAed, fmtArea, fmtInt, splitOwnerNames } from '../../utils/format';
@@ -191,75 +192,6 @@ interface Props {
 }
 
 const PAGE_SIZES = [10, 25, 50, 100, 250];
-
-/** A labelled control inside the Filters popover. */
-function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</span>
-      {children}
-    </label>
-  );
-}
-
-/** A min–max pair of number inputs — the price / size / plot bands. */
-function NumberRange({ from, to, setFrom, setTo }: {
-  from: string; to: string; setFrom: (v: string) => void; setTo: (v: string) => void;
-}) {
-  const box = { flex: 1, minWidth: 0, padding: '5px 8px' } as React.CSSProperties;
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <input className="input" type="number" min={0} placeholder="Min" style={box} value={from} onChange={e => setFrom(e.target.value)} />
-      <span style={{ color: 'var(--text-tertiary)' }}>–</span>
-      <input className="input" type="number" min={0} placeholder="Max" style={box} value={to} onChange={e => setTo(e.target.value)} />
-    </div>
-  );
-}
-
-type CalledPeriod = '' | 'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'thisMonth' | 'lastMonth';
-const CALLED_PERIODS: { key: CalledPeriod; label: string }[] = [
-  { key: '', label: 'Called: any time' },
-  { key: 'today', label: 'Called today' },
-  { key: 'yesterday', label: 'Called yesterday' },
-  { key: 'thisWeek', label: 'Called this week' },
-  { key: 'lastWeek', label: 'Called last week' },
-  { key: 'thisMonth', label: 'Called this month' },
-  { key: 'lastMonth', label: 'Called last month' },
-];
-
-/**
- * The [from, to) UTC bounds for a "called within" period, computed from the
- * caller's LOCAL calendar (week starts Monday, Dubai's work week) so the edges
- * follow the broker's day/week/month rather than the server's. `last_called_at`
- * is stored UTC, so the ISO bounds compare directly.
- */
-function calledRange(period: CalledPeriod): { from?: string; to?: string } {
-  if (!period) return {};
-  const now = new Date();
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const dow = (startOfDay.getDay() + 6) % 7; // Mon=0 … Sun=6
-  const shift = (d: Date, days: number) => { const n = new Date(d); n.setDate(n.getDate() + days); return n; };
-  const iso = (d: Date) => d.toISOString();
-  switch (period) {
-    case 'today':     return { from: iso(startOfDay), to: iso(shift(startOfDay, 1)) };
-    case 'yesterday': return { from: iso(shift(startOfDay, -1)), to: iso(startOfDay) };
-    case 'thisWeek': {
-      const from = shift(startOfDay, -dow);
-      return { from: iso(from), to: iso(shift(from, 7)) };
-    }
-    case 'lastWeek': {
-      const thisWeek = shift(startOfDay, -dow);
-      return { from: iso(shift(thisWeek, -7)), to: iso(thisWeek) };
-    }
-    case 'thisMonth':
-      return { from: iso(new Date(now.getFullYear(), now.getMonth(), 1)),
-               to: iso(new Date(now.getFullYear(), now.getMonth() + 1, 1)) };
-    case 'lastMonth':
-      return { from: iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
-               to: iso(new Date(now.getFullYear(), now.getMonth(), 1)) };
-  }
-  return {};
-}
 
 export function PropertyTable({
   scope, assignedTo, datasetId, fixedState,

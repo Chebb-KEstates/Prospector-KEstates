@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import * as api from '../../data/api';
 import { Property } from '../../types/models';
 import { Icon } from '../common/Icon';
 import { StateChip, OutcomeChip } from '../common/StateChip';
 import { AnalyticsTable, Col } from '../common/AnalyticsTable';
+import { useClientPropertyFilters } from '../common/propertyFilters';
 import { fmtInt, fmtArea, timeAgo } from '../../utils/format';
 import { ApiError } from '../../data/apiClient';
 import { PropertyPopup } from './PropertyPopup';
@@ -21,8 +22,9 @@ export interface DrillParams {
 /**
  * The units behind a clicked report/dashboard number (or a supplied list). Shows
  * them in a quick table with the main tables' feel — sortable headers, show/hide
- * columns (remembered), and a quick filter (search + State + Community). A row
- * opens the unit's full record, layered above this popup.
+ * columns (remembered), and the SAME full "Filters" button the data tables carry
+ * (search + state inline, everything else behind one button), applied to the
+ * loaded list. A row opens the unit's full record, layered above this popup.
  */
 export function UnitsDrilldownPopup({ title, subtitle, params, units: given, onClose }: {
   title: string;
@@ -40,10 +42,8 @@ export function UnitsDrilldownPopup({ title, subtitle, params, units: given, onC
   const [detailId, setDetailId] = useState<string | null>(null);
   const all = given ?? fetched;
 
-  // Quick filter
-  const [search, setSearch] = useState('');
-  const [stateF, setStateF] = useState('');
-  const [communityF, setCommunityF] = useState('');
+  // The full filter set (same as the data tables), applied to the loaded list.
+  const { rows, bar, filtered } = useClientPropertyFilters(all);
 
   useEffect(() => {
     if (!params) return;
@@ -63,18 +63,6 @@ export function UnitsDrilldownPopup({ title, subtitle, params, units: given, onC
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params?.metric, params?.brokerId, params?.from, params?.to, params?.community, params?.cluster]);
 
-  const states = useMemo(() => Array.from(new Set(all.map(p => p.state))).sort(), [all]);
-  const communities = useMemo(() => Array.from(new Set(all.map(p => p.community).filter(Boolean))).sort(), [all]);
-
-  const rows = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return all.filter(p =>
-      (!stateF || p.state === stateF) &&
-      (!communityF || p.community === communityF) &&
-      (!q || [p.unitLabel, p.community, p.cluster, p.owner.name].some(v => (v ?? '').toLowerCase().includes(q))),
-    );
-  }, [all, search, stateF, communityF]);
-
   const columns: Col<Property>[] = [
     { key: 'community', label: 'Community', render: p => p.community || '—', sortValue: p => p.community },
     { key: 'cluster', label: 'Sub-community', render: p => p.cluster || '—', sortValue: p => p.cluster },
@@ -87,13 +75,13 @@ export function UnitsDrilldownPopup({ title, subtitle, params, units: given, onC
   ];
   const defaultVisible = ['community', 'cluster', 'beds', 'size', 'state', 'outcome', 'owner'];
 
-  const filtered = rows.length !== all.length;
-  const selInput = { padding: '5px 8px', width: 'auto' } as React.CSSProperties;
-
   return (
     <>
       <div className="modal-overlay" onClick={onClose}>
-        <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 1040, width: '94vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
+        {/* overflow visible so the Filters popover can extend over the table
+            without the modal's own scrollbox clipping it; the inner list has its
+            own scroll region below. */}
+        <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 1040, width: '94vw', maxHeight: '88vh', overflow: 'visible', display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
             <h3 style={{ fontWeight: 600, margin: 0 }}>{title}</h3>
             <span style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
@@ -103,18 +91,8 @@ export function UnitsDrilldownPopup({ title, subtitle, params, units: given, onC
             <button className="btn btn-sm btn-ghost" onClick={onClose}><Icon name="x" size={14} /> Close</button>
           </div>
 
-          {/* Quick filter */}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-            <input className="input" placeholder="Search unit, community, owner…" value={search} onChange={e => setSearch(e.target.value)} style={{ flex: 1, minWidth: 200, padding: '5px 10px' }} />
-            <select className="input" value={stateF} onChange={e => setStateF(e.target.value)} style={selInput}>
-              <option value="">Any state</option>
-              {states.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <select className="input" value={communityF} onChange={e => setCommunityF(e.target.value)} style={selInput}>
-              <option value="">Any community</option>
-              {communities.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
+          {/* The full filter bar — identical to the data-table pages. */}
+          <div style={{ marginBottom: 10 }}>{bar}</div>
 
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
             {error ? (

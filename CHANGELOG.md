@@ -18,6 +18,28 @@ for what each part means for Prospector.
 
 ---
 
+## [3.27.0] — 2026-09-15
+
+### Added
+- **Full "Filters" button on the pop-up unit lists.** The drill-down pop-up (the
+  table that appears when you click a report/dashboard/board number, or a
+  conflict count) now carries the **same filter bar as the main data-table
+  pages** — Search + State inline, and one **Filters** button holding Community,
+  Sub-community, Bedrooms, Property type, Size & Plot bands, Nationality, Last
+  outcome, Assigned to, Tenancy, Last call, Follow-up, Purchase date, Last-sale
+  price, Contact info and Has-a-note. Dropdowns only offer the values present in
+  the list, and the active-filter count shows on the button.
+
+### Changed
+- The table filter primitives (the Filters popover fields and the "called within"
+  date logic) now live in one shared module (`components/common/propertyFilters`),
+  used by both the main tables and the pop-up lists — so the two can't drift apart.
+  No behaviour change to the main tables.
+
+Client rebuild only — no server change and no migration.
+
+---
+
 ## [3.26.0] — 2026-09-14
 
 ### Added
