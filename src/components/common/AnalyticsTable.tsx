@@ -54,9 +54,9 @@ export function AnalyticsTable<T extends { id: string }>({
   toolbarLeft?: React.ReactNode;
   /** Show a totals row pinned to the bottom (uses each column's `total`). */
   showTotals?: boolean;
-  /** Cap the body height (px): the header stays pinned at the top, the totals row
-   *  at the bottom, and the rows scroll between them. */
-  maxHeight?: number;
+  /** Cap the body height (px, or any CSS length like '50vh'): the header stays
+   *  pinned at the top, the totals row at the bottom, and rows scroll between. */
+  maxHeight?: number | string;
 }) {
   const available = columns.map(c => c.key);
   const layout = useTableLayout(available, defaultVisible ?? available, prefsKey);

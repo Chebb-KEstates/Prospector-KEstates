@@ -18,6 +18,16 @@ for what each part means for Prospector.
 
 ---
 
+## [3.32.1] — 2026-09-15
+
+### Changed
+- **Report tables' max height is now `50vh`** (half the screen) instead of a fixed
+  460px, so how many rows show before scrolling scales with the monitor.
+
+Client rebuild only — no server change, no migration.
+
+---
+
 ## [3.32.0] — 2026-09-15
 
 ### Added

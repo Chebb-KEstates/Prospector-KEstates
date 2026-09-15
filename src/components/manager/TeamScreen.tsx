@@ -19,9 +19,10 @@ import { UnitsDrilldownPopup, DrillParams } from './UnitsDrilldownPopup';
  * table's columns are show/hide-able and reorderable (remembered per screen).
  */
 
-/** Max body height (px) for the Report tables: the header + total bar stay put
- *  and the rows scroll within, so a long broker/area list doesn't stretch the page. */
-const TABLE_MAX_H = 460;
+/** Max body height for the Report tables — half the viewport, so it scales with
+ *  the screen. The header + total bar stay put and the rows scroll within, so a
+ *  long broker/area list doesn't stretch the page. */
+const TABLE_MAX_H = '50vh';
 
 type RangeKey = 'today' | 'yesterday' | 'thisWeek' | 'last30' | 'custom' | 'all';
 const RANGES: { key: RangeKey; label: string }[] = [
