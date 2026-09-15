@@ -19,10 +19,11 @@ import { UnitsDrilldownPopup, DrillParams } from './UnitsDrilldownPopup';
  * table's columns are show/hide-able and reorderable (remembered per screen).
  */
 
-/** Max body height for the Report tables — half the viewport, so it scales with
- *  the screen. The header + total bar stay put and the rows scroll within, so a
- *  long broker/area list doesn't stretch the page. */
-const TABLE_MAX_H = '50vh';
+/** Max body height for the (single, toggled) Report table — about three-quarters
+ *  of the viewport, but never so tall that the Data-ROI summary below is pushed
+ *  off-screen (the calc reserves room for the header, toggle and summary). The
+ *  header + total bar stay pinned and the rows scroll within. */
+const TABLE_MAX_H = 'min(75vh, calc(100vh - 340px))';
 
 type RangeKey = 'today' | 'yesterday' | 'thisWeek' | 'last30' | 'custom' | 'all';
 const RANGES: { key: RangeKey; label: string }[] = [
@@ -97,6 +98,8 @@ export function TeamScreen() {
   const [rangeKey, setRangeKey] = useState<RangeKey>('last30');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
+  // Which report is shown — one table at a time, toggled at the top.
+  const [view, setView] = useState<'brokers' | 'areas'>('brokers');
 
   const range = useMemo(() => computeRange(rangeKey, customFrom, customTo), [rangeKey, customFrom, customTo]);
   const { data, loading, error } = useTeamDashboard({ from: range.from, to: range.to });
@@ -157,6 +160,11 @@ export function TeamScreen() {
     <div style={{ maxWidth: 1500, margin: '0 auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 18 }}>
         <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>Report</h2>
+        {/* Toggle: one report at a time. */}
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button className={`btn btn-sm ${view === 'brokers' ? 'btn-primary' : ''}`} onClick={() => setView('brokers')}>Agents report</button>
+          <button className={`btn btn-sm ${view === 'areas' ? 'btn-primary' : ''}`} onClick={() => setView('areas')}>Area report</button>
+        </div>
         <div style={{ flex: 1 }} />
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
           <Icon name="calendar" size={15} /> Showing
@@ -179,31 +187,35 @@ export function TeamScreen() {
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--error)' }}>{error}</div>
       ) : !data ? null : (
         <>
-          <SectionTitle>
-            Brokers
-            <span style={{ fontWeight: 400, fontSize: '0.8125rem', color: 'var(--text-secondary)', marginLeft: 8 }}>
-              call columns: {rangeLabel.toLowerCase()} · assignment &amp; coverage: current book
-            </span>
-          </SectionTitle>
-          <AnalyticsTable
-            rows={data.brokers ?? []} prefsKey="team.brokers.v4"
-            pinned={{ label: 'Broker', render: b => b.name, sortValue: b => b.name, total: rows => `Total · ${rows.length} broker${rows.length === 1 ? '' : 's'}` }}
-            columns={brokerCols} defaultVisible={brokerDefault} empty="No active brokers."
-            showTotals maxHeight={TABLE_MAX_H} />
-
-          <div style={{ height: 28 }} />
-
-          <SectionTitle>
-            Area breakdown
-            <span style={{ fontWeight: 400, fontSize: '0.8125rem', color: 'var(--text-secondary)', marginLeft: 8 }}>
-              community · sub-community — who holds what · new interested: {rangeLabel.toLowerCase()}
-            </span>
-          </SectionTitle>
-          <AnalyticsTable
-            rows={data.areas ?? []} prefsKey="team.areas.v1"
-            pinned={{ label: 'Area', render: areaLabel, sortValue: areaLabel, total: rows => `Total · ${rows.length} area${rows.length === 1 ? '' : 's'}` }}
-            columns={areaCols} empty="No areas yet."
-            showTotals maxHeight={TABLE_MAX_H} />
+          {view === 'brokers' ? (
+            <>
+              <SectionTitle>
+                Agents
+                <span style={{ fontWeight: 400, fontSize: '0.8125rem', color: 'var(--text-secondary)', marginLeft: 8 }}>
+                  call columns: {rangeLabel.toLowerCase()} · assignment &amp; coverage: current book
+                </span>
+              </SectionTitle>
+              <AnalyticsTable
+                rows={data.brokers ?? []} prefsKey="team.brokers.v4"
+                pinned={{ label: 'Broker', render: b => b.name, sortValue: b => b.name, total: rows => `Total · ${rows.length} broker${rows.length === 1 ? '' : 's'}` }}
+                columns={brokerCols} defaultVisible={brokerDefault} empty="No active brokers."
+                showTotals maxHeight={TABLE_MAX_H} />
+            </>
+          ) : (
+            <>
+              <SectionTitle>
+                Area breakdown
+                <span style={{ fontWeight: 400, fontSize: '0.8125rem', color: 'var(--text-secondary)', marginLeft: 8 }}>
+                  community · sub-community — who holds what · new interested: {rangeLabel.toLowerCase()}
+                </span>
+              </SectionTitle>
+              <AnalyticsTable
+                rows={data.areas ?? []} prefsKey="team.areas.v1"
+                pinned={{ label: 'Area', render: areaLabel, sortValue: areaLabel, total: rows => `Total · ${rows.length} area${rows.length === 1 ? '' : 's'}` }}
+                columns={areaCols} empty="No areas yet."
+                showTotals maxHeight={TABLE_MAX_H} />
+            </>
+          )}
 
           <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: '28px 0 12px' }}>Data ROI <span style={{ fontWeight: 400, fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>· all time</span></h3>
           <div className="card">

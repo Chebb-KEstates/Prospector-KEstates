@@ -18,6 +18,20 @@ for what each part means for Prospector.
 
 ---
 
+## [3.33.0] — 2026-09-15
+
+### Changed
+- **Report page shows one report at a time, toggled.** Two buttons at the top —
+  **Agents report** and **Area report** — switch between the broker and area tables
+  instead of stacking both. The visible table is taller (≈75% of the viewport, but
+  never so tall that the **Data ROI** summary is pushed off-screen), with its header
+  and total bar pinned and the rows scrolling within. The Data ROI summary stays
+  visible at the bottom in both views.
+
+Client rebuild only — no server change, no migration.
+
+---
+
 ## [3.32.1] — 2026-09-15
 
 ### Changed
