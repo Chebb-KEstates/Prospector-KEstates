@@ -307,7 +307,7 @@ export function UsersScreen() {
                 <td>{u.team}</td>
                 <td>
                   <span className="chip" style={{
-                    background: u.active ? 'var(--success)20' : 'var(--error)20',
+                    background: u.active ? 'color-mix(in srgb, var(--success) 20%, transparent)' : 'color-mix(in srgb, var(--error) 20%, transparent)',
                     color: u.active ? 'var(--success)' : 'var(--error)',
                   }}>
                     {u.active ? 'Active' : 'Deactivated'}

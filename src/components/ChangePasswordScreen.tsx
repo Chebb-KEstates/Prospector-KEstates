@@ -78,7 +78,7 @@ export function ChangePasswordScreen() {
 
           {error && (
             <div style={{
-              padding: '8px 12px', background: 'var(--error)15',
+              padding: '8px 12px', background: 'color-mix(in srgb, var(--error) 15%, transparent)',
               border: '1px solid var(--error)', borderRadius: 8,
               color: 'var(--error)', fontSize: '0.8125rem', marginBottom: 16,
             }}>

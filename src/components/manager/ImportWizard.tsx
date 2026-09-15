@@ -397,7 +397,7 @@ export function ImportWizard({ remapRequest, restageRequest }: {
               </div>
             </div>
 
-            <div className="chip" style={{ background: 'var(--info)15', color: 'var(--info)', marginBottom: 16 }}>
+            <div className="chip" style={{ background: 'color-mix(in srgb, var(--info) 15%, transparent)', color: 'var(--info)', marginBottom: 16 }}>
               Detected: {type === DataSetType.register ? 'Ownership register' : 'DLD transactions'}
             </div>
 

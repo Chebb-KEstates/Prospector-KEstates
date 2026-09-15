@@ -63,6 +63,16 @@ export function UnitsDrilldownPopup({ title, subtitle, params, units: given, onC
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params?.metric, params?.brokerId, params?.from, params?.to, params?.community, params?.cluster]);
 
+  // Escape closes this popup — but only when no unit record is layered on top
+  // (that record popup handles Escape itself, so one press closes it first).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !detailId) { e.preventDefault(); onClose(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [detailId, onClose]);
+
   const columns: Col<Property>[] = [
     { key: 'community', label: 'Community', render: p => p.community || '—', sortValue: p => p.community },
     { key: 'cluster', label: 'Sub-community', render: p => p.cluster || '—', sortValue: p => p.cluster },

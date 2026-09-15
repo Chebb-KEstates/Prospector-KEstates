@@ -34,7 +34,7 @@ type View = 'owners' | 'leads' | 'requests';
  * the State filter, "All" simply means "no quick filter". Each chip maps onto the
  * same server filters the broker chips use.
  */
-type Quick = 'all' | 'expiring' | 'due' | 'fresh' | 'noAnswer' | 'callback' | 'interested';
+type Quick = 'all' | 'expiring' | 'due' | 'fresh' | 'noAnswer' | 'callback' | 'text' | 'interested';
 // These chips filter on each unit's CURRENT status (its last outcome / state) —
 // a live worklist, distinct from the Report's date-range columns (e.g. the
 // Report's "New interested" counts what changed in a period). The "(now)"/"(last
@@ -46,6 +46,7 @@ const QUICKS: { key: Quick; label: string }[] = [
   { key: 'fresh', label: 'Never called' },
   { key: 'noAnswer', label: 'No answer (last call)' },
   { key: 'callback', label: 'Awaiting callback' },
+  { key: 'text', label: 'Awaiting text' },
   { key: 'interested', label: 'Interested (now)' },
 ];
 function quickToQuery(quick: Quick): {
@@ -55,6 +56,7 @@ function quickToQuery(quick: Quick): {
     case 'fresh': return { forcedOutcome: 'none' };
     case 'noAnswer': return { forcedOutcome: CallOutcome.noAnswer };
     case 'callback': return { forcedOutcome: CallOutcome.callbackLater };
+    case 'text': return { forcedOutcome: CallOutcome.textRequested };
     case 'due': return { dueOnly: true };
     case 'interested': return { interestedOnly: true };
     case 'expiring': return { expiringSoon: true };

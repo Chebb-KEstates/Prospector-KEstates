@@ -23,7 +23,7 @@ import { useStickyHeader, stickyHeaderStyle } from '../common/useStickyHeader';
  * with ← / → from there. Buyer leads use a simple table + single-call dialog.
  */
 
-type Quick = 'toCall' | 'all' | 'due' | 'fresh' | 'noAnswer' | 'callback' | 'interested' | 'expiring';
+type Quick = 'toCall' | 'all' | 'due' | 'fresh' | 'noAnswer' | 'callback' | 'text' | 'interested' | 'expiring';
 const QUICKS: { key: Quick; label: string }[] = [
   // "To call" is the actionable working list (assigned + portfolio). "All" also
   // shows the units the broker still holds but that dropped off — cooled-off and
@@ -37,6 +37,7 @@ const QUICKS: { key: Quick; label: string }[] = [
   // a date range — the labels say so.
   { key: 'noAnswer', label: 'No answer (last call)' },
   { key: 'callback', label: 'Awaiting callback' },
+  { key: 'text', label: 'Awaiting text' },
   { key: 'interested', label: 'Interested (now)' },
 ];
 
@@ -55,6 +56,7 @@ function quickToQuery(quick: Quick): {
     case 'fresh': return { forcedOutcome: 'none' };
     case 'noAnswer': return { forcedOutcome: CallOutcome.noAnswer };
     case 'callback': return { forcedOutcome: CallOutcome.callbackLater };
+    case 'text': return { forcedOutcome: CallOutcome.textRequested };
     case 'due': return { dueOnly: true };
     case 'interested': return { interestedOnly: true };
     case 'expiring': return { expiringSoon: true };

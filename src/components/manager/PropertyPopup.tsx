@@ -497,10 +497,14 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
 
   // ← / → flip between property tabs (like the dialer). A ref keeps the handler
   // pointed at the latest closures without re-binding the listener each render.
-  const navRef = useRef({ next: tryNext, prev: tryPrev, locked });
-  navRef.current = { next: tryNext, prev: tryPrev, locked };
+  const navRef = useRef({ next: tryNext, prev: tryPrev, close: tryClose, locked });
+  navRef.current = { next: tryNext, prev: tryPrev, close: tryClose, locked };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Escape closes the record — works from anywhere (notes auto-flush on close).
+      // `tryClose` no-ops while a revealed number is still unlogged, same as the
+      // Close button, so Escape can't be a back door around that.
+      if (e.key === 'Escape') { e.preventDefault(); void navRef.current.close(); return; }
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (navRef.current.locked) return;

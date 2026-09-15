@@ -18,6 +18,36 @@ for what each part means for Prospector.
 
 ---
 
+## [3.29.0] — 2026-09-15
+
+Polish pass from a full review of the build — all verified in the app.
+
+### Added
+- **"Awaiting text" quick filter** on both the broker Database and the manager
+  Database, next to "Awaiting callback". One click lists every unit whose last
+  outcome is "Text requested" — the worklist for owners you're waiting to hear
+  back from over text. Completes the v3.28.0 outcome.
+
+### Changed
+- **Requests → "view units" now opens the shared drill-down popup** (search, the
+  full Filters button, sortable/show-hide columns, and click a unit to open its
+  record) instead of the old plain static table — so it matches every other
+  "click a number" list in the app.
+
+### Fixed
+- **Missing background tints.** Several status pills and message boxes used an
+  invalid `var(--token)NN` colour (you can't append alpha to a CSS variable), so
+  their tint silently didn't render — the login/change-password error boxes, the
+  Users active/deactivated pill, the import "Detected" banner, and the Requests
+  status chips. Switched to `color-mix(...)`; text colours were already correct.
+- **Escape closes the record popup and the drill-down popup.** Matches the ← / →
+  paging that was already there; Escape on the record still can't skip logging a
+  revealed number (same guard as the Close button).
+
+Client rebuild only — no server change, no migration.
+
+---
+
 ## [3.28.1] — 2026-09-15
 
 ### Fixed

@@ -91,7 +91,7 @@ export function LoginScreen() {
               ))}
             </div>
             {error && (
-              <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--error)15', border: '1px solid var(--error)', borderRadius: 8, color: 'var(--error)', fontSize: '0.8125rem' }}>{error}</div>
+              <div style={{ marginTop: 12, padding: '8px 12px', background: 'color-mix(in srgb, var(--error) 15%, transparent)', border: '1px solid var(--error)', borderRadius: 8, color: 'var(--error)', fontSize: '0.8125rem' }}>{error}</div>
             )}
             <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => { setShowPassword(true); setError(null); }}>
               Sign in with a password instead
@@ -143,7 +143,7 @@ export function LoginScreen() {
 
           {error && (
             <div style={{
-              padding: '8px 12px', background: 'var(--error)15',
+              padding: '8px 12px', background: 'color-mix(in srgb, var(--error) 15%, transparent)',
               border: '1px solid var(--error)', borderRadius: 8,
               color: 'var(--error)', fontSize: '0.8125rem',
               marginBottom: 16,
