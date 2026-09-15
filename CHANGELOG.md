@@ -18,6 +18,19 @@ for what each part means for Prospector.
 
 ---
 
+## [3.30.1] — 2026-09-15
+
+### Changed
+- **Moved the owner + Reveal tab back to the middle column** (it briefly moved to
+  the left in 3.30.0), so the left column has more room. The left now carries the
+  property facts, the "Information" section, and notes; the middle leads with the
+  owner name + masked number + Reveal, then the call outcome. The number still
+  shows only once.
+
+Client rebuild only — no server change, no migration.
+
+---
+
 ## [3.30.0] — 2026-09-15
 
 Record-popup cleanup — free up space and stop showing the phone twice.

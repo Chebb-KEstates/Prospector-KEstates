@@ -843,41 +843,6 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   </div>
                 </div>
 
-                {/* OWNER + reveal — name(s) and number(s) in one place. The number
-                    shows masked until Reveal swaps in the real one (and starts the
-                    "must log a call" lock). Shown once here, not repeated by the call. */}
-                <div style={{ ...sectionLabel, marginTop: 14 }}>{multiOwner ? `Owners (${stop.owners!.length})` : 'Owner'}</div>
-                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {ownerBlocks.map((o, i) => (
-                    <div key={i}>
-                      <div style={{ fontWeight: 600, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-                        <Icon name="user" size={13} style={{ color: 'var(--text-tertiary)' }} /> {o.name || `Owner ${i + 1}`}
-                        {o.nationality && <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 400 }}>· {o.nationality}</span>}
-                      </div>
-                      <div className="tabular-nums" style={{
-                        marginTop: 3, color: o.nums.length ? 'var(--text)' : 'var(--text-tertiary)',
-                        display: 'flex', flexWrap: 'wrap', gap: '4px 12px', alignItems: 'center',
-                        fontSize: revealed ? '1.02rem' : '0.85rem', fontWeight: revealed ? 700 : 500, letterSpacing: revealed ? '0.5px' : undefined,
-                      }}>
-                        {o.nums.length > 0 ? o.nums.map((p, j) => (
-                          <span key={j} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                            {o.nums.length > 1 && <span className="chip" style={{ background: 'var(--surface)', color: 'var(--text-secondary)', fontSize: '0.62rem', padding: '0 6px', fontWeight: 700 }}>{p.label}</span>}
-                            <span style={{ userSelect: revealed ? 'all' : 'none' }}>{p.number}</span>
-                            {revealed && <button className="btn btn-ghost btn-sm" style={{ padding: 2 }} onClick={() => navigator.clipboard?.writeText(p.number)} aria-label="Copy number"><Icon name="copy" size={13} /></button>}
-                          </span>
-                        )) : <span>—</span>}
-                      </div>
-                    </div>
-                  ))}
-                  {!revealed && anyNumber && (
-                    <button className="btn btn-primary btn-sm" onClick={doReveal} disabled={revealing} style={{ alignSelf: 'flex-start' }}>
-                      <Icon name="phoneCall" size={14} /> {revealing ? 'Revealing…' : `Reveal number${multiOwner ? 's' : ''}`}
-                    </button>
-                  )}
-                  {!anyNumber && <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>No number on file.</span>}
-                  {revealError && <ErrorBox>{revealError}</ErrorBox>}
-                </div>
-
                 {/* Information — asking price / rent + listing notes, kept on the
                     unit's record AND written to the journal on save. Shown when the
                     unit is interested (or already has listing info). */}
@@ -931,8 +896,43 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   onChange={e => { setNotes(e.target.value); setNotesDirty(true); setNotesSaved(false); }} />
               </Column>
 
-              {/* ── MIDDLE: log the call ────────────────────────────────────── */}
+              {/* ── MIDDLE: owner + reveal, then log the call ───────────────── */}
               <Column>
+                {/* OWNER + reveal — name(s) and number(s) in one place. The number
+                    shows masked until Reveal swaps in the real one (and starts the
+                    "must log a call" lock). Shown once here, not repeated on the left. */}
+                <div style={sectionLabel}>{multiOwner ? `Owners (${stop.owners!.length})` : 'Owner'}</div>
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
+                  {ownerBlocks.map((o, i) => (
+                    <div key={i}>
+                      <div style={{ fontWeight: 600, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                        <Icon name="user" size={13} style={{ color: 'var(--text-tertiary)' }} /> {o.name || `Owner ${i + 1}`}
+                        {o.nationality && <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 400 }}>· {o.nationality}</span>}
+                      </div>
+                      <div className="tabular-nums" style={{
+                        marginTop: 3, color: o.nums.length ? 'var(--text)' : 'var(--text-tertiary)',
+                        display: 'flex', flexWrap: 'wrap', gap: '4px 12px', alignItems: 'center',
+                        fontSize: revealed ? '1.02rem' : '0.85rem', fontWeight: revealed ? 700 : 500, letterSpacing: revealed ? '0.5px' : undefined,
+                      }}>
+                        {o.nums.length > 0 ? o.nums.map((p, j) => (
+                          <span key={j} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            {o.nums.length > 1 && <span className="chip" style={{ background: 'var(--surface)', color: 'var(--text-secondary)', fontSize: '0.62rem', padding: '0 6px', fontWeight: 700 }}>{p.label}</span>}
+                            <span style={{ userSelect: revealed ? 'all' : 'none' }}>{p.number}</span>
+                            {revealed && <button className="btn btn-ghost btn-sm" style={{ padding: 2 }} onClick={() => navigator.clipboard?.writeText(p.number)} aria-label="Copy number"><Icon name="copy" size={13} /></button>}
+                          </span>
+                        )) : <span>—</span>}
+                      </div>
+                    </div>
+                  ))}
+                  {!revealed && anyNumber && (
+                    <button className="btn btn-primary btn-sm" onClick={doReveal} disabled={revealing} style={{ alignSelf: 'flex-start' }}>
+                      <Icon name="phoneCall" size={14} /> {revealing ? 'Revealing…' : `Reveal number${multiOwner ? 's' : ''}`}
+                    </button>
+                  )}
+                  {!anyNumber && <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>No number on file.</span>}
+                  {revealError && <ErrorBox>{revealError}</ErrorBox>}
+                </div>
+
                 {multiOwner && (
                   <div style={{ marginBottom: 8 }}>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 4 }}>Whose feedback are you logging?</div>
