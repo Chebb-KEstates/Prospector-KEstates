@@ -236,7 +236,7 @@ export function Funnel({ stages }: { stages: FunnelStage[] }) {
             {s.onClick
               ? (
                 <button type="button" onClick={s.onClick} title="View these units"
-                  style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', background: 'none', border: 'none', padding: '4px 2px', cursor: 'pointer', font: 'inherit', borderRadius: 8 }}>
+                  style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', background: 'none', border: 'none', padding: '4px 2px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit', borderRadius: 8 }}>
                   {inner}
                 </button>
               )

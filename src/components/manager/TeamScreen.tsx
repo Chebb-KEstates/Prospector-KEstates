@@ -19,10 +19,10 @@ import { UnitsDrilldownPopup, DrillParams } from './UnitsDrilldownPopup';
  * table's columns are show/hide-able and reorderable (remembered per screen).
  */
 
-type RangeKey = 'today' | 'yesterday' | 'last7' | 'last30' | 'custom' | 'all';
+type RangeKey = 'today' | 'yesterday' | 'thisWeek' | 'last30' | 'custom' | 'all';
 const RANGES: { key: RangeKey; label: string }[] = [
   { key: 'last30', label: 'Last 30 days' },
-  { key: 'last7', label: 'Last 7 days' },
+  { key: 'thisWeek', label: 'This week' },
   { key: 'today', label: 'Today' },
   { key: 'yesterday', label: 'Yesterday' },
   { key: 'custom', label: 'Custom range…' },
@@ -37,9 +37,25 @@ function parseLocalDate(s: string): Date | null {
 }
 
 /**
- * The [from, to) ISO bounds for the chosen range, plus the number of days it
- * spans (for the Calls/day column). Calendar days (today/yesterday/custom) follow
- * the viewer's local calendar; the rolling windows are the last N×24h.
+ * Working days (Mon–Fri) whose local start falls in [from, to). The brokers don't
+ * call on weekends, so the Calls/day metric divides by working days, not calendar
+ * days — a full week is 5, not 7. At least 1, so a single day never divides by 0.
+ */
+function workingDaysInRange(from: Date, toExclusive: Date): number {
+  let n = 0;
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  while (d < toExclusive) {
+    const dow = d.getDay(); // 0 = Sun, 6 = Sat
+    if (dow !== 0 && dow !== 6) n++;
+    d.setDate(d.getDate() + 1);
+  }
+  return Math.max(1, n);
+}
+
+/**
+ * The [from, to) ISO bounds for the chosen range, plus the number of WORKING days
+ * it spans (Mon–Fri, for the Calls/day column). Calendar bounds follow the
+ * viewer's local calendar; "This week" starts on Monday.
  */
 function computeRange(key: RangeKey, customFrom: string, customTo: string): { from?: string; to?: string; days?: number } {
   const now = new Date();
@@ -51,15 +67,22 @@ function computeRange(key: RangeKey, customFrom: string, customTo: string): { fr
     case 'all': return {};
     case 'today': return { from: iso(startOfDay), to: iso(shift(startOfDay, 1)), days: 1 };
     case 'yesterday': return { from: iso(shift(startOfDay, -1)), to: iso(startOfDay), days: 1 };
-    case 'last7': return { from: iso(new Date(now.getTime() - 7 * DAY)), to: iso(now), days: 7 };
-    case 'last30': return { from: iso(new Date(now.getTime() - 30 * DAY)), to: iso(now), days: 30 };
+    case 'thisWeek': {
+      // Monday of the current week (local) through now — working days elapsed so far.
+      const dow = (startOfDay.getDay() + 6) % 7; // Mon = 0 … Sun = 6
+      const monday = shift(startOfDay, -dow);
+      return { from: iso(monday), to: iso(now), days: workingDaysInRange(monday, now) };
+    }
+    case 'last30': {
+      const from = new Date(now.getTime() - 30 * DAY);
+      return { from: iso(from), to: iso(now), days: workingDaysInRange(from, now) };
+    }
     case 'custom': {
       const f = parseLocalDate(customFrom);
       const t = parseLocalDate(customTo);
       if (!f || !t || t < f) return {};
       const toExclusive = shift(t, 1);
-      const days = Math.max(1, Math.round((toExclusive.getTime() - f.getTime()) / DAY));
-      return { from: iso(f), to: iso(toExclusive), days };
+      return { from: iso(f), to: iso(toExclusive), days: workingDaysInRange(f, toExclusive) };
     }
   }
   return {};
@@ -106,7 +129,7 @@ export function TeamScreen() {
         subtitle: metric === 'interested' ? rangeLabel : 'current status',
         params: { metric, community: a.community, cluster: a.cluster, from: range.from, to: range.to },
       })}
-      style={{ color, fontWeight: color ? 700 : undefined, background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer', textDecoration: 'underline dotted var(--border)', textUnderlineOffset: 3 }}>
+      style={{ color, fontWeight: color ? 700 : undefined, background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', cursor: 'pointer', textDecoration: 'underline dotted var(--border)', textUnderlineOffset: 3 }}>
       {fmtInt(value)}
     </button>
   );

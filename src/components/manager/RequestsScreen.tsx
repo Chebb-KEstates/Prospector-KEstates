@@ -177,7 +177,7 @@ function AreaSummary({ areas, onClick, loading }: { areas: RequestArea[]; onClic
   if (!onClick) return body;
   return (
     <button type="button" onClick={onClick} disabled={loading} title="View the requested units"
-      style={{ background: 'none', border: 'none', padding: 0, cursor: loading ? 'default' : 'pointer', textAlign: 'left', font: 'inherit', color: 'var(--primary)', opacity: loading ? 0.6 : 1 }}>
+      style={{ background: 'none', border: 'none', padding: 0, cursor: loading ? 'default' : 'pointer', textAlign: 'left', fontFamily: 'inherit', fontSize: 'inherit', color: 'var(--primary)', opacity: loading ? 0.6 : 1 }}>
       {body}
     </button>
   );

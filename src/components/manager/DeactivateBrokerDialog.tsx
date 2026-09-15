@@ -44,7 +44,7 @@ export function DeactivateBrokerDialog({
             {n === 1 ? ' it' : ' them'} — the broker is signed out and can no longer sign in either way.
           </p>
           <button type="button" onClick={() => setShowList(true)}
-            style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer', color: 'var(--primary)', textDecoration: 'underline', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            style={{ background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', cursor: 'pointer', color: 'var(--primary)', textDecoration: 'underline', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
             <Icon name="eye" size={13} /> View {fmtInt(n)} unit{n === 1 ? '' : 's'}
           </button>
 

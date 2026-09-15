@@ -233,7 +233,7 @@ export function AuditScreen() {
                                 fontSize: '0.8125rem', textAlign: 'left', cursor: 'pointer',
                                 background: 'none', border: 'none', padding: 0,
                                 color: 'var(--primary)', textDecoration: 'underline',
-                                textUnderlineOffset: 2, font: 'inherit',
+                                textUnderlineOffset: 2, fontFamily: 'inherit',
                               }}>{a.unitLabel}</button>
                           : <span style={{ fontSize: '0.8125rem' }}>{a.unitLabel}</span>)
                         : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}

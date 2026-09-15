@@ -18,6 +18,32 @@ for what each part means for Prospector.
 
 ---
 
+## [3.31.0] — 2026-09-15
+
+Report-page refinements — brokers work a 5-day week.
+
+### Changed
+- **Calls/day now divides by working days (Mon–Fri), not calendar days.** Brokers
+  don't call at weekends, so a full week counts as 5, not 7 — the per-day figure
+  is no longer diluted by Saturdays and Sundays. Applies to every multi-day range
+  (This week / Last 30 days / Custom); the cell tooltip shows the exact divisor.
+- **Date range: "This week" (from Monday) replaces "Last 7 days."** It runs from
+  Monday of the current week through now, so the figures line up with the working
+  week rather than a rolling 7×24h window.
+- **Pop-up filter bar fits on one line.** The drill-down table's Search box is now
+  compact (shorter placeholder, fixed width) so Search · State · Filters no longer
+  wrap onto a second line.
+
+### Fixed
+- Removed a set of React dev-console warnings caused by mixing the `font` shorthand
+  with `fontWeight` on the clickable numbers and link-buttons (Report, dashboard
+  funnel, audit, dialogs) — replaced the shorthand with explicit `fontFamily` /
+  `fontSize`. No visual change.
+
+Client rebuild only — no server change, no migration.
+
+---
+
 ## [3.30.1] — 2026-09-15
 
 ### Changed

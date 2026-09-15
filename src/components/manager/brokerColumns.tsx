@@ -11,7 +11,7 @@ function DrillNum({ value, color, weight, onClick }: {
   if (!onClick) return <span style={style}>{fmtInt(value)}</span>;
   return (
     <button type="button" onClick={onClick} title="View these units"
-      style={{ ...style, background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer',
+      style={{ ...style, background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', cursor: 'pointer',
         textDecoration: 'underline dotted var(--border)', textUnderlineOffset: 3 }}>
       {fmtInt(value)}
     </button>
@@ -73,7 +73,9 @@ export function brokerBoardColumns(
     { key: 'idle', label: 'Days since last call', align: 'right', render: b => idleDays(b.lastAt), sortValue: b => (b.lastAt ? Date.now() - new Date(b.lastAt).getTime() : undefined) },
     {
       key: 'perDay', label: 'Calls/day', align: 'right', sortValue: b => (days ? b.calls / days : undefined),
-      render: b => (days ? (b.calls / days).toFixed(1) : '—'),
+      render: b => (days
+        ? <span title={`${b.calls} calls ÷ ${days} working day${days === 1 ? '' : 's'} (Mon–Fri)`}>{(b.calls / days).toFixed(1)}</span>
+        : '—'),
     },
   ];
 }

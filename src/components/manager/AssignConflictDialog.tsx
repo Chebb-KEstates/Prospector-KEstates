@@ -38,7 +38,7 @@ export function AssignConflictDialog({
             move or split {conflictOwners === 1 ? 'it' : 'them'}.
           </p>
           <button type="button" onClick={() => setShowList(true)}
-            style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer', color: 'var(--primary)', textDecoration: 'underline', marginBottom: 16, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            style={{ background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', cursor: 'pointer', color: 'var(--primary)', textDecoration: 'underline', marginBottom: 16, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
             <Icon name="eye" size={13} /> {fmtInt(n)} conflicting unit{n === 1 ? '' : 's'}
           </button>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>

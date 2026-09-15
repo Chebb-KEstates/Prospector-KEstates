@@ -235,14 +235,16 @@ export function useClientPropertyFilters(all: Property[]): {
     setPlotFrom(''); setPlotTo(''); setHasNotes(false);
   };
 
-  const sel = { display: 'inline-block', width: 'auto', minWidth: 130, padding: '6px 10px' } as React.CSSProperties;
+  const sel = { display: 'inline-block', width: 'auto', minWidth: 110, padding: '6px 10px' } as React.CSSProperties;
   const selFull = { width: '100%', padding: '6px 10px' } as React.CSSProperties;
 
   const bar = (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-      <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+      {/* A compact, non-growing search so the whole bar (search · state · Filters ·
+          Clear) stays on one line instead of wrapping. */}
+      <div style={{ position: 'relative', flex: '0 1 200px', minWidth: 120 }}>
         <Icon name="search" size={15} style={{ position: 'absolute', left: 9, top: 9, color: 'var(--text-tertiary)' }} />
-        <input className="input" style={{ width: '100%', paddingLeft: 30 }} placeholder="Search unit, plot, owner…" value={search} onChange={e => setSearch(e.target.value)} />
+        <input className="input" style={{ width: '100%', paddingLeft: 30 }} placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
       {facets.states.length > 1 && (
         <select className="input" style={sel} value={state} onChange={e => setState(e.target.value as PropertyState | '')}>
