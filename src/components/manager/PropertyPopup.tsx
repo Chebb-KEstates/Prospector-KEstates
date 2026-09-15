@@ -916,9 +916,14 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {([['answered', 'Answered'], ['noAnswer', 'No answer'], ['unreachable', 'Call didn’t connect']] as [Connection, string][]).map(([key, label]) => {
                     const sel = connection === key;
+                    // Toggling the connection keeps the result chips as they are — the
+                    // standing interest (carried over on open) survives flipping to
+                    // "No answer" and back. A non-answered save ignores the chips anyway
+                    // (they're hidden, and only `answered` calls write result tags), so
+                    // there's nothing to reset — clearing them only lost the carry-over.
                     return (
                       <button key={key} className="btn btn-sm"
-                        onClick={() => { setConnection(key); if (key !== 'answered') setResults(new Set()); setJustSaved(false); }}
+                        onClick={() => { setConnection(key); setJustSaved(false); }}
                         style={{ borderColor: sel ? 'var(--gold)' : 'var(--border)', borderWidth: sel ? 1.5 : 1, color: sel ? 'var(--gold-dark)' : 'var(--text)', background: sel ? 'color-mix(in srgb, var(--gold) 14%, transparent)' : 'var(--surface)', fontWeight: sel ? 600 : 500 }}>
                         {label}
                       </button>

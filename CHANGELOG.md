@@ -18,6 +18,21 @@ for what each part means for Prospector.
 
 ---
 
+## [3.28.1] — 2026-09-15
+
+### Fixed
+- **The record popup lost the carried-over interest when toggling the connection.**
+  On opening a unit, its standing interest (Interested — sell / rent, or Not
+  interested) is pre-selected. Clicking **No answer** and then **Answered** again
+  used to leave it unselected, because switching away from "Answered" wiped the
+  result chips. It no longer clears them — the standing interest survives flipping
+  the connection back and forth. A non-answered call still ignores the chips (only
+  an answered call records result tags), so nothing about a no-answer save changes.
+
+Client rebuild only — no server change, no migration.
+
+---
+
 ## [3.28.0] — 2026-09-15
 
 ### Added
