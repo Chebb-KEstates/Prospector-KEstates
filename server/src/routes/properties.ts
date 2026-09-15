@@ -535,6 +535,32 @@ export default async function propertyRoutes(app: FastifyInstance) {
     }
 
     await updateListingInfo(id, body);
+
+    // Record the change on the record's journal — but only the fields that
+    // ACTUALLY changed, compared against the values before this write. A re-save
+    // with no edits (e.g. the flush when the popup closes) writes nothing.
+    const chgs: string[] = [];
+    if ('askingPrice' in body) {
+      const after = body.askingPrice ?? null;
+      if (after !== (p.askingPrice ?? null)) {
+        chgs.push(after != null ? `Asking price: AED ${after.toLocaleString('en-US')}` : 'Asking price cleared');
+      }
+    }
+    if ('askingRent' in body) {
+      const after = body.askingRent ?? null;
+      if (after !== (p.askingRent ?? null)) {
+        chgs.push(after != null ? `Asking rent: AED ${after.toLocaleString('en-US')}/yr` : 'Asking rent cleared');
+      }
+    }
+    if ('listingNote' in body) {
+      const after = (body.listingNote ?? '').trim();
+      const before = (p.listingNote ?? '').trim();
+      if (after !== before) chgs.push(after ? `Listing note: ${after}` : 'Listing note cleared');
+    }
+    if (chgs.length > 0) {
+      await writeAudit({ actorId: me.id, action: 'listing', detail: chgs.join(' · '), propertyIds: [id] });
+    }
+
     const updated = await findPropertyById(id);
     return serializeProperty(updated!);
   });

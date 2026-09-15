@@ -323,7 +323,6 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   };
   const multiUnit = units.length > 1;
   const multiOwner = !!(stop?.owners && stop.owners.length > 1);
-  const activePhones = multiOwner ? (revealedOwners[activeOwner]?.phones ?? []) : phones;
   const activeOwnerName = multiOwner ? stop?.owners?.[activeOwner]?.name : undefined;
 
   const answered = connection === 'answered';
@@ -403,6 +402,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
         listingNote: listingNote.trim() ? listingNote.trim() : null,
       });
       setListingDirty(false); setListingSaved(true);
+      setEventsKey(k => k + 1); // the change is now on the journal — refresh it
       return true;
     } catch { return false; }
   };
@@ -629,6 +629,8 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   const ownerBlocks = multiOwner
     ? stop!.owners!.map((o, i) => ({ name: o.name, nationality: o.nationality, nums: revealedOwners[i]?.phones ?? o.phonesMasked ?? [] }))
     : [{ name: stop?.name ?? 'Owner', nationality: stop?.nationality, nums: (revealed ? phones : (stop?.phonesMasked ?? [])) }];
+  // Any number on record (masked before reveal) — gates the Reveal button.
+  const anyNumber = ownerBlocks.some(o => o.nums.length > 0);
 
   const answerRate = session.made > 0 ? Math.round((session.answered / session.made) * 100) : 0;
 
@@ -841,21 +843,82 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   </div>
                 </div>
 
-                {/* OWNER box */}
+                {/* OWNER + reveal — name(s) and number(s) in one place. The number
+                    shows masked until Reveal swaps in the real one (and starts the
+                    "must log a call" lock). Shown once here, not repeated by the call. */}
                 <div style={{ ...sectionLabel, marginTop: 14 }}>{multiOwner ? `Owners (${stop.owners!.length})` : 'Owner'}</div>
-                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {ownerBlocks.map((o, i) => (
                     <div key={i}>
-                      <div style={{ fontWeight: 600, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
                         <Icon name="user" size={13} style={{ color: 'var(--text-tertiary)' }} /> {o.name || `Owner ${i + 1}`}
+                        {o.nationality && <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 400 }}>· {o.nationality}</span>}
                       </div>
-                      {o.nationality && <span style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginLeft: 6 }}>{o.nationality}</span>}
-                      <div className="tabular-nums" style={{ fontSize: '0.8rem', marginTop: 2, color: 'var(--text)', display: 'flex', flexWrap: 'wrap', gap: '2px 12px' }}>
-                        {o.nums.length > 0 ? o.nums.map((p, j) => <span key={j}>{p.number}</span>) : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
+                      <div className="tabular-nums" style={{
+                        marginTop: 3, color: o.nums.length ? 'var(--text)' : 'var(--text-tertiary)',
+                        display: 'flex', flexWrap: 'wrap', gap: '4px 12px', alignItems: 'center',
+                        fontSize: revealed ? '1.02rem' : '0.85rem', fontWeight: revealed ? 700 : 500, letterSpacing: revealed ? '0.5px' : undefined,
+                      }}>
+                        {o.nums.length > 0 ? o.nums.map((p, j) => (
+                          <span key={j} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            {o.nums.length > 1 && <span className="chip" style={{ background: 'var(--surface)', color: 'var(--text-secondary)', fontSize: '0.62rem', padding: '0 6px', fontWeight: 700 }}>{p.label}</span>}
+                            <span style={{ userSelect: revealed ? 'all' : 'none' }}>{p.number}</span>
+                            {revealed && <button className="btn btn-ghost btn-sm" style={{ padding: 2 }} onClick={() => navigator.clipboard?.writeText(p.number)} aria-label="Copy number"><Icon name="copy" size={13} /></button>}
+                          </span>
+                        )) : <span>—</span>}
                       </div>
                     </div>
                   ))}
+                  {!revealed && anyNumber && (
+                    <button className="btn btn-primary btn-sm" onClick={doReveal} disabled={revealing} style={{ alignSelf: 'flex-start' }}>
+                      <Icon name="phoneCall" size={14} /> {revealing ? 'Revealing…' : `Reveal number${multiOwner ? 's' : ''}`}
+                    </button>
+                  )}
+                  {!anyNumber && <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>No number on file.</span>}
+                  {revealError && <ErrorBox>{revealError}</ErrorBox>}
                 </div>
+
+                {/* Information — asking price / rent + listing notes, kept on the
+                    unit's record AND written to the journal on save. Shown when the
+                    unit is interested (or already has listing info). */}
+                {(() => {
+                  const wantSell = selectedResults.some(r => r.key === 'sell');
+                  const wantRent = selectedResults.some(r => r.key === 'rent');
+                  const showSale = wantSell || !!askingPrice.trim();
+                  const showRent = wantRent || !!askingRent.trim();
+                  if (!showSale && !showRent && !wantSell && !wantRent && !listingNote.trim()) return null;
+                  const onPrice = (set: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => { set(e.target.value); setListingDirty(true); setListingSaved(false); };
+                  return (
+                    <>
+                      <div style={{ ...sectionLabel, marginTop: 14 }}>Information</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 8 }}>Interest details kept on this unit's record and its journal.</div>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        {showSale && (
+                          <label style={{ flex: 1, minWidth: 140, fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                            Asking price (AED — sale)
+                            <input className="input" type="number" min={0} value={askingPrice} onChange={onPrice(setAskingPrice)} style={{ marginTop: 4 }} placeholder="e.g. 3500000" />
+                          </label>
+                        )}
+                        {showRent && (
+                          <label style={{ flex: 1, minWidth: 140, fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                            Asking rent (AED / year)
+                            <input className="input" type="number" min={0} value={askingRent} onChange={onPrice(setAskingRent)} style={{ marginTop: 4 }} placeholder="e.g. 180000" />
+                          </label>
+                        )}
+                      </div>
+                      <textarea className="input" value={listingNote} rows={3} style={{ resize: 'vertical', marginTop: 10 }}
+                        placeholder="Listing notes — condition, availability, vendor expectations…"
+                        onChange={e => { setListingNote(e.target.value); setListingDirty(true); setListingSaved(false); }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, minHeight: 28 }}>
+                        {listingDirty
+                          ? <button className="btn btn-sm btn-primary" onClick={() => void flushListing()}>Save information</button>
+                          : listingSaved
+                            ? <span style={{ color: 'var(--success)', fontSize: '0.78rem', fontWeight: 600 }}>Saved ✓</span>
+                            : null}
+                      </div>
+                    </>
+                  );
+                })()}
 
                 {/* NOTES — auto-saved (no button). */}
                 <div style={{ ...sectionLabel, marginTop: 14 }}>Notes {multiUnit ? `on ${focusedUnit?.label ?? 'this unit'}` : 'on this property'}</div>
@@ -868,12 +931,11 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   onChange={e => { setNotes(e.target.value); setNotesDirty(true); setNotesSaved(false); }} />
               </Column>
 
-              {/* ── MIDDLE: call & log ──────────────────────────────────────── */}
+              {/* ── MIDDLE: log the call ────────────────────────────────────── */}
               <Column>
-                <div style={sectionLabel}>Call</div>
                 {multiOwner && (
                   <div style={{ marginBottom: 8 }}>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 4 }}>Who are you calling?</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 4 }}>Whose feedback are you logging?</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                       {stop.owners!.map((o, i) => {
                         const sel = i === activeOwner; const n = o.phonesMasked?.length ?? 0;
@@ -888,30 +950,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   </div>
                 )}
 
-                {!revealed ? (
-                  <div>
-                    <button className="btn btn-primary" onClick={doReveal} disabled={revealing || !stop.phoneMasked}
-                      style={{ width: '100%', justifyContent: 'center', padding: '11px' }}>
-                      <Icon name="phoneCall" size={17} /> {revealing ? 'Fetching number…' : (stop.phoneMasked ? 'Call — reveal number' : 'No number on file')}
-                    </button>
-                    {revealError && <ErrorBox>{revealError}</ErrorBox>}
-                  </div>
-                ) : activePhones.length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {multiOwner && <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{activeOwnerName} · {activePhones.length} number{activePhones.length === 1 ? '' : 's'}</div>}
-                    {activePhones.map((ph, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 10, background: 'color-mix(in srgb, var(--gold) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--gold) 45%, transparent)' }}>
-                        {activePhones.length > 1 && <span className="chip" style={{ background: 'var(--surface)', color: 'var(--gold-dark)', fontWeight: 700, flexShrink: 0 }}>{ph.label}</span>}
-                        <span className="tabular-nums" style={{ flex: 1, fontSize: '1.05rem', fontWeight: 700, letterSpacing: '0.5px', userSelect: 'all' }}>{ph.number}</span>
-                        <button className="btn btn-ghost btn-sm" onClick={() => navigator.clipboard?.writeText(ph.number)}><Icon name="copy" size={14} /></button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ padding: '8px 12px', borderRadius: 10, fontSize: '0.8rem', color: 'var(--text-tertiary)', background: 'var(--surface-2)', border: '1px solid var(--border)' }}>No number on file.</div>
-                )}
-
-                <div style={{ ...sectionLabel, marginTop: 14 }}>
+                <div style={sectionLabel}>
                   Log the outcome{multiUnit ? ` — ${focusedUnit?.label ?? ''}` : ''}
                 </div>
 
@@ -973,44 +1012,6 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                 )}
                 {justSaved && <div style={{ color: 'var(--success)', fontSize: '0.8rem', marginTop: 6, fontWeight: 600 }}>✓ Call logged to the record.</div>}
                 {saveError && <ErrorBox>{saveError}</ErrorBox>}
-
-                {/* Information — asking price / rent + listing notes, shown when the
-                    unit is interested (or already has listing info on record). */}
-                {(() => {
-                  const wantSell = selectedResults.some(r => r.key === 'sell');
-                  const wantRent = selectedResults.some(r => r.key === 'rent');
-                  const showSale = wantSell || !!askingPrice.trim();
-                  const showRent = wantRent || !!askingRent.trim();
-                  if (!showSale && !showRent && !wantSell && !wantRent && !listingNote.trim()) return null;
-                  const onPrice = (set: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => { set(e.target.value); setListingDirty(true); setListingSaved(false); };
-                  return (
-                    <div style={{ marginTop: 12, borderTop: '1px solid var(--border-light)', paddingTop: 12 }}>
-                      <div style={sectionLabel}>Information</div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 8 }}>Interest details kept on this unit's record.</div>
-                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                        {showSale && (
-                          <label style={{ flex: 1, minWidth: 150, fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
-                            Asking price (AED — sale)
-                            <input className="input" type="number" min={0} value={askingPrice} onChange={onPrice(setAskingPrice)} style={{ marginTop: 4 }} placeholder="e.g. 3500000" />
-                          </label>
-                        )}
-                        {showRent && (
-                          <label style={{ flex: 1, minWidth: 150, fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
-                            Asking rent (AED / year)
-                            <input className="input" type="number" min={0} value={askingRent} onChange={onPrice(setAskingRent)} style={{ marginTop: 4 }} placeholder="e.g. 180000" />
-                          </label>
-                        )}
-                      </div>
-                      <textarea className="input" value={listingNote} rows={3} style={{ resize: 'vertical', marginTop: 10 }}
-                        placeholder="Listing notes — condition, availability, vendor expectations…"
-                        onChange={e => { setListingNote(e.target.value); setListingDirty(true); setListingSaved(false); }} />
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-                        <button className="btn btn-sm" disabled={!listingDirty} onClick={() => void flushListing()}>Save information</button>
-                        {listingSaved && !listingDirty && <span style={{ color: 'var(--success)', fontSize: '0.78rem', fontWeight: 600 }}>Saved ✓</span>}
-                      </div>
-                    </div>
-                  );
-                })()}
 
                 <div style={{ marginTop: 'auto', paddingTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button className="btn" onClick={() => void tryClose()} disabled={locked} style={{ opacity: locked ? 0.5 : 1 }}>Close</button>
@@ -1160,14 +1161,16 @@ function ErrorBox({ children }: { children: React.ReactNode }) {
 /** One entry in the history journal: a call, a record event, or the import. */
 function JournalRow({ e, actorName }: { e: PropertyEvent; actorName: (id: string) => string | undefined }) {
   const isNote = e.kind === 'audit' && e.action === 'note';
+  const isListing = e.kind === 'audit' && e.action === 'listing';
   const icon = e.kind === 'call' ? 'phoneCall'
     : e.kind === 'import' ? 'upload'
       : e.action === 'note' ? 'plus'
-        : e.action === 'view' ? 'eye'
-          : e.action === 'assign' ? 'assign'
-            : e.action === 'reclaim' ? 'refresh'
-              : e.action === 'update' ? 'refresh'
-                : 'clock';
+        : e.action === 'listing' ? 'coin'
+          : e.action === 'view' ? 'eye'
+            : e.action === 'assign' ? 'assign'
+              : e.action === 'reclaim' ? 'refresh'
+                : e.action === 'update' ? 'refresh'
+                  : 'clock';
   const who = e.kind === 'import' ? undefined : actorName(e.actorId ?? '') ?? undefined;
   // A call's ticked results are kept in the note as "[Label · Label] free text";
   // show every ticked label as a chip, not just the single strongest outcome.
@@ -1183,7 +1186,7 @@ function JournalRow({ e, actorName }: { e: PropertyEvent; actorName: (id: string
             ? <FeedbackChips tags={fb.tags} color={outcomeColor(e.outcome)} />
             : <OutcomeChip outcome={e.outcome} />)}
           <span style={{ fontWeight: 600, fontSize: '0.82rem' }}>
-            {e.kind === 'call' ? (e.ownerName ? `Call · ${e.ownerName}` : 'Call') : isNote ? 'Update' : e.detail}
+            {e.kind === 'call' ? (e.ownerName ? `Call · ${e.ownerName}` : 'Call') : isNote ? 'Update' : isListing ? 'Listing info' : e.detail}
           </span>
           {/* Which of the owner's units the call was about — so a note left on
               another unit is clearly attributed. */}
@@ -1197,7 +1200,7 @@ function JournalRow({ e, actorName }: { e: PropertyEvent; actorName: (id: string
           )}
         </div>
         {e.kind === 'call' && fb.text && <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 2 }}>“{fb.text}”</div>}
-        {e.kind === 'audit' && e.action === 'note' && <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 2, whiteSpace: 'pre-wrap' }}>{e.detail}</div>}
+        {e.kind === 'audit' && (e.action === 'note' || e.action === 'listing') && <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 2, whiteSpace: 'pre-wrap' }}>{e.detail}</div>}
         <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
           {[who, fmtDateTime(e.at), timeAgo(e.at)].filter(Boolean).join(' · ')}
         </div>

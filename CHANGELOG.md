@@ -18,6 +18,31 @@ for what each part means for Prospector.
 
 ---
 
+## [3.30.0] — 2026-09-15
+
+Record-popup cleanup — free up space and stop showing the phone twice.
+
+### Added
+- **Listing "Information" is written to the record's journal.** Saving the asking
+  price, asking rent, or listing notes now leaves a dated "Listing info" entry on
+  the timeline (e.g. "Asking price: AED 3,750,000") — only for the fields that
+  actually changed, so re-saving with no edits writes nothing.
+
+### Changed
+- **Owner + number consolidated into one "reveal tab."** The separate owner box
+  is gone; the owner's name and masked number(s) now sit together with a **Reveal**
+  button — pressing it swaps in the real numbers (with copy). The number no longer
+  appears twice on the page: the call column is now just "Log the outcome."
+- **The "Information" section moved to the left**, directly under the owner, instead
+  of below the call outcome.
+- **"Save information" appears only when something changed** (and shows "Saved ✓"
+  once saved), matching how the notes field behaves.
+
+Client + server rebuild — no migration (the journal entry uses the existing audit
+trail).
+
+---
+
 ## [3.29.0] — 2026-09-15
 
 Polish pass from a full review of the build — all verified in the app.
