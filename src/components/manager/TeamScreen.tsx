@@ -19,6 +19,10 @@ import { UnitsDrilldownPopup, DrillParams } from './UnitsDrilldownPopup';
  * table's columns are show/hide-able and reorderable (remembered per screen).
  */
 
+/** Max body height (px) for the Report tables: the header + total bar stay put
+ *  and the rows scroll within, so a long broker/area list doesn't stretch the page. */
+const TABLE_MAX_H = 460;
+
 type RangeKey = 'today' | 'yesterday' | 'thisWeek' | 'last30' | 'custom' | 'all';
 const RANGES: { key: RangeKey; label: string }[] = [
   { key: 'last30', label: 'Last 30 days' },
@@ -133,16 +137,18 @@ export function TeamScreen() {
       {fmtInt(value)}
     </button>
   );
+  const aSum = (rows: TeamAreaRow[], f: (a: TeamAreaRow) => number) => fmtInt(rows.reduce((n, a) => n + (f(a) || 0), 0));
   const areaCols: Col<TeamAreaRow>[] = [
     { key: 'brokers', label: 'Assigned brokers', render: a => <HoldingList items={a.brokers} /> },
-    { key: 'properties', label: 'Units', align: 'right', render: a => areaNum(a, a.properties, 'properties', 'Units'), sortValue: a => a.properties },
-    { key: 'callable', label: 'Callable', align: 'right', render: a => areaNum(a, a.callable, 'callable', 'Callable'), sortValue: a => a.callable },
-    { key: 'assigned', label: 'Assigned', align: 'right', render: a => areaNum(a, a.assigned, 'held', 'Assigned'), sortValue: a => a.assigned },
-    { key: 'pool', label: 'In pool', align: 'right', render: a => areaNum(a, a.pool, 'pool', 'In pool'), sortValue: a => a.pool },
-    { key: 'untouched', label: 'Untouched', align: 'right', render: a => areaNum(a, a.untouched, 'untouched', 'Untouched', a.untouched > 0 ? 'var(--warning)' : undefined), sortValue: a => a.untouched },
+    { key: 'properties', label: 'Units', align: 'right', render: a => areaNum(a, a.properties, 'properties', 'Units'), sortValue: a => a.properties, total: rows => aSum(rows, a => a.properties) },
+    { key: 'callable', label: 'Callable', align: 'right', render: a => areaNum(a, a.callable, 'callable', 'Callable'), sortValue: a => a.callable, total: rows => aSum(rows, a => a.callable) },
+    { key: 'assigned', label: 'Assigned', align: 'right', render: a => areaNum(a, a.assigned, 'held', 'Assigned'), sortValue: a => a.assigned, total: rows => aSum(rows, a => a.assigned) },
+    { key: 'pool', label: 'In pool', align: 'right', render: a => areaNum(a, a.pool, 'pool', 'In pool'), sortValue: a => a.pool, total: rows => aSum(rows, a => a.pool) },
+    { key: 'untouched', label: 'Untouched', align: 'right', render: a => areaNum(a, a.untouched, 'untouched', 'Untouched', a.untouched > 0 ? 'var(--warning)' : undefined), sortValue: a => a.untouched, total: rows => aSum(rows, a => a.untouched) },
     {
       key: 'interested', label: 'New interested', align: 'right', sortValue: a => a.interested,
       render: a => areaNum(a, a.interested, 'interested', 'New interested', a.interested > 0 ? 'var(--success)' : undefined),
+      total: rows => aSum(rows, a => a.interested),
     },
   ];
 
@@ -180,8 +186,9 @@ export function TeamScreen() {
           </SectionTitle>
           <AnalyticsTable
             rows={data.brokers ?? []} prefsKey="team.brokers.v4"
-            pinned={{ label: 'Broker', render: b => b.name, sortValue: b => b.name }}
-            columns={brokerCols} defaultVisible={brokerDefault} empty="No active brokers." />
+            pinned={{ label: 'Broker', render: b => b.name, sortValue: b => b.name, total: rows => `Total · ${rows.length} broker${rows.length === 1 ? '' : 's'}` }}
+            columns={brokerCols} defaultVisible={brokerDefault} empty="No active brokers."
+            showTotals maxHeight={TABLE_MAX_H} />
 
           <div style={{ height: 28 }} />
 
@@ -193,8 +200,9 @@ export function TeamScreen() {
           </SectionTitle>
           <AnalyticsTable
             rows={data.areas ?? []} prefsKey="team.areas.v1"
-            pinned={{ label: 'Area', render: areaLabel, sortValue: areaLabel }}
-            columns={areaCols} empty="No areas yet." />
+            pinned={{ label: 'Area', render: areaLabel, sortValue: areaLabel, total: rows => `Total · ${rows.length} area${rows.length === 1 ? '' : 's'}` }}
+            columns={areaCols} empty="No areas yet."
+            showTotals maxHeight={TABLE_MAX_H} />
 
           <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: '28px 0 12px' }}>Data ROI <span style={{ fontWeight: 400, fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>· all time</span></h3>
           <div className="card">

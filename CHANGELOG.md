@@ -18,6 +18,24 @@ for what each part means for Prospector.
 
 ---
 
+## [3.32.0] — 2026-09-15
+
+### Added
+- **Total bar + bounded, scrollable Report tables.** Both the Brokers and Area
+  breakdown tables now show a **totals row pinned to the bottom** (sums for the
+  count columns; the rates are recomputed from the totals, not averaged), and each
+  table has a **maximum height** — the column header stays pinned at the top, the
+  total bar at the bottom, and the broker/area rows scroll between them, so a long
+  list no longer stretches the whole page.
+
+Internal: `AnalyticsTable` gained optional `showTotals`, `maxHeight`, and a per-column
+`total` accessor. Only the Report opts in — the dashboard board and drill-down popup
+are unchanged.
+
+Client rebuild only — no server change, no migration.
+
+---
+
 ## [3.31.1] — 2026-09-15
 
 ### Changed

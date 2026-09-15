@@ -20,6 +20,9 @@ export interface Col<T> {
   render: (row: T) => React.ReactNode;
   /** Present ⇒ the header is clickable to sort by this value. Nullish sorts last. */
   sortValue?: (row: T) => number | string | null | undefined;
+  /** The footer "total" cell for this column (e.g. a sum), computed over ALL
+   *  rows. Only shown when the table is asked for totals; absent ⇒ blank cell. */
+  total?: (rows: T[]) => React.ReactNode;
 }
 
 const PINNED_KEY = '__pinned';
@@ -35,10 +38,10 @@ function compare(a: number | string | null | undefined, b: number | string | nul
 }
 
 export function AnalyticsTable<T extends { id: string }>({
-  rows, pinned, columns, prefsKey, empty, defaultVisible, onRowClick, toolbarLeft,
+  rows, pinned, columns, prefsKey, empty, defaultVisible, onRowClick, toolbarLeft, showTotals, maxHeight,
 }: {
   rows: T[];
-  pinned: { label: string; render: (row: T) => React.ReactNode; sortValue?: (row: T) => number | string | null | undefined };
+  pinned: { label: string; render: (row: T) => React.ReactNode; sortValue?: (row: T) => number | string | null | undefined; total?: (rows: T[]) => React.ReactNode };
   columns: Col<T>[];
   prefsKey: string;
   empty: string;
@@ -49,6 +52,11 @@ export function AnalyticsTable<T extends { id: string }>({
   /** Extra controls rendered on the LEFT of the toolbar, in line with the
    *  Columns button (e.g. the drill-down popup's search + filter bar). */
   toolbarLeft?: React.ReactNode;
+  /** Show a totals row pinned to the bottom (uses each column's `total`). */
+  showTotals?: boolean;
+  /** Cap the body height (px): the header stays pinned at the top, the totals row
+   *  at the bottom, and the rows scroll between them. */
+  maxHeight?: number;
 }) {
   const available = columns.map(c => c.key);
   const layout = useTableLayout(available, defaultVisible ?? available, prefsKey);
@@ -79,6 +87,22 @@ export function AnalyticsTable<T extends { id: string }>({
     else { setSortKey(key); setAsc(!rightAligned); } // numeric columns → biggest first
   };
 
+  // When the body is height-capped, the header sticks to the top of the scroll
+  // box. An opaque background + an inset bottom line keep it readable and keep
+  // the divider visible while rows scroll underneath (border-collapse drops the
+  // real border on a sticky cell).
+  const stickyHead: React.CSSProperties = maxHeight
+    ? { position: 'sticky', top: 0, zIndex: 3, background: 'var(--surface)', boxShadow: 'inset 0 -1px 0 var(--border)' }
+    : {};
+  // The totals row: bold, a distinct tinted "bar", with a top divider that
+  // survives border-collapse (via an inset shadow). Pinned to the bottom when
+  // the body is height-capped.
+  const footerTd: React.CSSProperties = {
+    fontWeight: 700, background: 'var(--surface-2)', color: 'var(--text)',
+    boxShadow: 'inset 0 2px 0 -1px var(--border)',
+  };
+  const stickyFoot: React.CSSProperties = maxHeight ? { position: 'sticky', bottom: 0, zIndex: 3 } : {};
+
   const headerCell = (key: string, label: string, rightAligned: boolean, sortable: boolean) => {
     const active = sortKey === key;
     return (
@@ -90,6 +114,7 @@ export function AnalyticsTable<T extends { id: string }>({
           cursor: sortable ? 'pointer' : undefined,
           whiteSpace: 'nowrap',
           color: active ? 'var(--primary)' : undefined,
+          ...stickyHead,
         }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, verticalAlign: 'middle' }}>
           {label}
@@ -121,7 +146,7 @@ export function AnalyticsTable<T extends { id: string }>({
       )}
 
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflowX: 'auto', ...(maxHeight ? { overflowY: 'auto', maxHeight } : {}) }}>
           <table className="data-table">
             <thead>
               <tr>
@@ -146,6 +171,21 @@ export function AnalyticsTable<T extends { id: string }>({
                 </tr>
               ))}
             </tbody>
+            {showTotals && sortedRows.length > 0 && (
+              // The total bar. Stays pinned to the bottom of the scroll box when
+              // the body is height-capped; totals are computed over ALL rows.
+              <tfoot>
+                <tr>
+                  <td style={{ ...footerTd, ...stickyFoot }}>{pinned.total ? pinned.total(rows) : 'Total'}</td>
+                  {visible.map(c => (
+                    <td key={c.key} className={c.align === 'right' ? 'tabular-nums' : undefined}
+                      style={{ ...footerTd, ...stickyFoot, textAlign: c.align === 'right' ? 'right' : undefined }}>
+                      {c.total ? c.total(rows) : null}
+                    </td>
+                  ))}
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>

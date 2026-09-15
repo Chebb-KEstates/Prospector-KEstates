@@ -35,6 +35,7 @@ export function brokerBoardColumns(
   onDrill?: (brokerId: string, metric: string, label: string) => void,
 ): Col<TeamBrokerRow>[] {
   const pct = (num: number, den: number) => (den ? `${Math.round((num / den) * 100)}%` : '—');
+  const sum = (rows: TeamBrokerRow[], f: (b: TeamBrokerRow) => number) => rows.reduce((n, b) => n + (f(b) || 0), 0);
   const drill = (b: TeamBrokerRow, metric: string, label: string) =>
     onDrill ? () => onDrill(b.id, metric, label) : undefined;
   const ts = (iso?: string) => (iso ? new Date(iso).getTime() : undefined);
@@ -47,28 +48,31 @@ export function brokerBoardColumns(
     { key: 'areas', label: 'Areas held', render: b => <HoldingList items={b.areas} /> },
     { key: 'sets', label: 'Data assigned', render: b => <HoldingList items={b.datasets} /> },
     // Portfolio is hidden for now — kept units fold into the Assigned figure.
-    { key: 'assigned', label: 'Assigned', align: 'right', render: b => <DrillNum value={b.assigned + b.portfolio} onClick={drill(b, 'held', 'Assigned')} />, sortValue: b => b.assigned + b.portfolio },
-    { key: 'attempts', label: 'Total call attempts', align: 'right', render: b => <DrillNum value={b.calls} onClick={drill(b, 'called', 'Owners called')} />, sortValue: b => b.calls },
-    { key: 'noAnswer', label: 'No answer', align: 'right', render: b => <DrillNum value={b.noAnswer} onClick={drill(b, 'notReached', 'Not reached')} />, sortValue: b => b.noAnswer },
-    { key: 'answered', label: 'Answered', align: 'right', render: b => <DrillNum value={b.reached} onClick={drill(b, 'reached', 'Owners reached')} />, sortValue: b => b.reached },
+    { key: 'assigned', label: 'Assigned', align: 'right', render: b => <DrillNum value={b.assigned + b.portfolio} onClick={drill(b, 'held', 'Assigned')} />, sortValue: b => b.assigned + b.portfolio, total: rows => fmtInt(sum(rows, b => b.assigned + b.portfolio)) },
+    { key: 'attempts', label: 'Total call attempts', align: 'right', render: b => <DrillNum value={b.calls} onClick={drill(b, 'called', 'Owners called')} />, sortValue: b => b.calls, total: rows => fmtInt(sum(rows, b => b.calls)) },
+    { key: 'noAnswer', label: 'No answer', align: 'right', render: b => <DrillNum value={b.noAnswer} onClick={drill(b, 'notReached', 'Not reached')} />, sortValue: b => b.noAnswer, total: rows => fmtInt(sum(rows, b => b.noAnswer)) },
+    { key: 'answered', label: 'Answered', align: 'right', render: b => <DrillNum value={b.reached} onClick={drill(b, 'reached', 'Owners reached')} />, sortValue: b => b.reached, total: rows => fmtInt(sum(rows, b => b.reached)) },
     {
       key: 'interested', label: 'New interested', align: 'right', sortValue: b => b.interested,
       render: b => <DrillNum value={b.interested} color={b.interested > 0 ? 'var(--success)' : undefined} weight={b.interested > 0 ? 700 : undefined} onClick={drill(b, 'interested', 'New interested')} />,
+      total: rows => fmtInt(sum(rows, b => b.interested)),
     },
-    { key: 'ownersReached', label: 'Owners reached', align: 'right', render: b => <DrillNum value={b.reachedUnits} onClick={drill(b, 'reached', 'Owners reached')} />, sortValue: b => b.reachedUnits },
-    { key: 'answerRate', label: 'Answer rate', align: 'right', render: b => <span title={`${b.reached} of ${b.calls} calls connected`}>{pct(b.reached, b.calls)}</span>, sortValue: b => (b.calls ? b.reached / b.calls : undefined) },
+    { key: 'ownersReached', label: 'Owners reached', align: 'right', render: b => <DrillNum value={b.reachedUnits} onClick={drill(b, 'reached', 'Owners reached')} />, sortValue: b => b.reachedUnits, total: rows => fmtInt(sum(rows, b => b.reachedUnits)) },
+    { key: 'answerRate', label: 'Answer rate', align: 'right', render: b => <span title={`${b.reached} of ${b.calls} calls connected`}>{pct(b.reached, b.calls)}</span>, sortValue: b => (b.calls ? b.reached / b.calls : undefined), total: rows => pct(sum(rows, b => b.reached), sum(rows, b => b.calls)) },
     // Interested owners ÷ owners reached — both distinct units, so the % compares
     // like with like (not interested-units over reached-calls).
-    { key: 'interestRate', label: 'Interested rate', align: 'right', render: b => <span title={`${b.interested} interested of ${b.reachedUnits} owners reached`}>{pct(b.interested, b.reachedUnits)}</span>, sortValue: b => (b.reachedUnits ? b.interested / b.reachedUnits : undefined) },
+    { key: 'interestRate', label: 'Interested rate', align: 'right', render: b => <span title={`${b.interested} interested of ${b.reachedUnits} owners reached`}>{pct(b.interested, b.reachedUnits)}</span>, sortValue: b => (b.reachedUnits ? b.interested / b.reachedUnits : undefined), total: rows => pct(sum(rows, b => b.interested), sum(rows, b => b.reachedUnits)) },
     { key: 'lastAt', label: 'Last call', align: 'right', render: b => (b.lastAt ? timeAgo(b.lastAt) : '—'), sortValue: b => ts(b.lastAt) },
     { key: 'team', label: 'Team', render: b => b.team || '—', sortValue: b => b.team },
     {
       key: 'coverage', label: 'Coverage %', align: 'right', sortValue: b => (b.callableAssigned ? b.callableWorked / b.callableAssigned : undefined),
       render: b => <span title={`${b.callableWorked} of ${b.callableAssigned} callable units worked`}>{pct(b.callableWorked, b.callableAssigned)}</span>,
+      total: rows => pct(sum(rows, b => b.callableWorked), sum(rows, b => b.callableAssigned)),
     },
     {
       key: 'followUps', label: 'Follow-ups due', align: 'right', sortValue: b => b.followUpsDue,
       render: b => <DrillNum value={b.followUpsDue} color={b.followUpsDue > 0 ? 'var(--info)' : undefined} weight={b.followUpsDue > 0 ? 700 : undefined} onClick={drill(b, 'followUpsDue', 'Follow-ups due')} />,
+      total: rows => fmtInt(sum(rows, b => b.followUpsDue)),
     },
     { key: 'idle', label: 'Days since last call', align: 'right', render: b => idleDays(b.lastAt), sortValue: b => (b.lastAt ? Date.now() - new Date(b.lastAt).getTime() : undefined) },
     {
@@ -76,6 +80,7 @@ export function brokerBoardColumns(
       render: b => (days
         ? <span title={`${b.calls} calls ÷ ${days} working day${days === 1 ? '' : 's'} (Mon–Fri)`}>{(b.calls / days).toFixed(1)}</span>
         : '—'),
+      total: rows => (days ? (sum(rows, b => b.calls) / days).toFixed(1) : '—'),
     },
   ];
 }
