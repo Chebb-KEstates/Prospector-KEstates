@@ -101,20 +101,20 @@ export function UnitsDrilldownPopup({ title, subtitle, params, units: given, onC
             <button className="btn btn-sm btn-ghost" onClick={onClose}><Icon name="x" size={14} /> Close</button>
           </div>
 
-          {/* The full filter bar — identical to the data-table pages. */}
-          <div style={{ marginBottom: 10 }}>{bar}</div>
-
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
             {error ? (
               <div style={{ padding: 28, textAlign: 'center', color: 'var(--error)' }}>{error}</div>
             ) : loading ? (
               <div style={{ padding: 28, textAlign: 'center', color: 'var(--text-secondary)' }}>Loading…</div>
             ) : (
+              // The filter bar (search + state + Filters) rides in the table's
+              // toolbar, in line with the Columns button on the right.
               <AnalyticsTable
                 rows={rows} prefsKey="units.popup.v1"
                 pinned={{ label: 'Unit', render: p => p.unitLabel, sortValue: p => p.unitLabel }}
                 columns={columns} defaultVisible={defaultVisible}
                 onRowClick={p => setDetailId(p.id)}
+                toolbarLeft={bar}
                 empty={all.length === 0 ? 'No units to show.' : 'No units match the filter.'} />
             )}
           </div>

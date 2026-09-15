@@ -35,7 +35,7 @@ function compare(a: number | string | null | undefined, b: number | string | nul
 }
 
 export function AnalyticsTable<T extends { id: string }>({
-  rows, pinned, columns, prefsKey, empty, defaultVisible, onRowClick,
+  rows, pinned, columns, prefsKey, empty, defaultVisible, onRowClick, toolbarLeft,
 }: {
   rows: T[];
   pinned: { label: string; render: (row: T) => React.ReactNode; sortValue?: (row: T) => number | string | null | undefined };
@@ -46,6 +46,9 @@ export function AnalyticsTable<T extends { id: string }>({
   defaultVisible?: string[];
   /** When set, each row is clickable (e.g. to open the record). */
   onRowClick?: (row: T) => void;
+  /** Extra controls rendered on the LEFT of the toolbar, in line with the
+   *  Columns button (e.g. the drill-down popup's search + filter bar). */
+  toolbarLeft?: React.ReactNode;
 }) {
   const available = columns.map(c => c.key);
   const layout = useTableLayout(available, defaultVisible ?? available, prefsKey);
@@ -98,8 +101,9 @@ export function AnalyticsTable<T extends { id: string }>({
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-        <button className="btn btn-sm" onClick={() => setShowCols(true)}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+        {toolbarLeft && <div style={{ flex: '1 1 auto', minWidth: 0 }}>{toolbarLeft}</div>}
+        <button className="btn btn-sm" onClick={() => setShowCols(true)} style={{ marginLeft: 'auto', flexShrink: 0 }}>
           <Icon name="columns" size={15} /> Columns
         </button>
       </div>

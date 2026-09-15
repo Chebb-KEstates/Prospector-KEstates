@@ -18,6 +18,18 @@ for what each part means for Prospector.
 
 ---
 
+## [3.31.1] — 2026-09-15
+
+### Changed
+- **Pop-up list: the Columns button now sits in line with Search + Filters** (on
+  the right of the same row), instead of on its own line below. `AnalyticsTable`
+  gained an optional `toolbarLeft` slot; the drill-down popup passes its filter bar
+  into it. The Filters dropdown still opens correctly.
+
+Client rebuild only — no server change, no migration.
+
+---
+
 ## [3.31.0] — 2026-09-15
 
 Report-page refinements — brokers work a 5-day week.
