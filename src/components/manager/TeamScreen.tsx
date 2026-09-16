@@ -116,11 +116,20 @@ export function TeamScreen() {
   // Default view = the nine below (in this order); the rest are available but
   // hidden until toggled on. Call columns follow the selected range.
   const brokerDefault = ['areas', 'assigned', 'attempts', 'noAnswer', 'answered', 'interested', 'answerRate', 'interestRate', 'lastAt'];
-  const brokerCols = brokerBoardColumns(days, (brokerId, metric, label) => setDrill({
-    title: `${label} — ${brokerName(brokerId)}`,
-    subtitle: rangeLabel,
-    params: { metric, brokerId, from: range.from, to: range.to },
-  }));
+  const brokerCols = brokerBoardColumns(
+    days,
+    (brokerId, metric, label) => setDrill({
+      title: `${label} — ${brokerName(brokerId)}`,
+      subtitle: rangeLabel,
+      params: { metric, brokerId, from: range.from, to: range.to },
+    }),
+    // Total row → the same metric across ALL agents (no broker scope).
+    (metric, label) => setDrill({
+      title: `${label} — all agents`,
+      subtitle: rangeLabel,
+      params: { metric, from: range.from, to: range.to },
+    }),
+  );
 
   // ── Area breakdown columns ──────────────────────────────────────────────────
   // One row per area (community + sub-community), with the brokers holding units
@@ -141,18 +150,30 @@ export function TeamScreen() {
       {fmtInt(value)}
     </button>
   );
-  const aSum = (rows: TeamAreaRow[], f: (a: TeamAreaRow) => number) => fmtInt(rows.reduce((n, a) => n + (f(a) || 0), 0));
+  const aSum = (rows: TeamAreaRow[], f: (a: TeamAreaRow) => number) => rows.reduce((n, a) => n + (f(a) || 0), 0);
+  // The total cell opens the same metric across ALL areas (no area scope).
+  const areaTotalNum = (rows: TeamAreaRow[], f: (a: TeamAreaRow) => number, metric: string, label: string) => (
+    <button type="button" title="View these units"
+      onClick={() => setDrill({
+        title: `${label} — all areas`,
+        subtitle: metric === 'interested' ? rangeLabel : 'current status',
+        params: { metric, from: range.from, to: range.to },
+      })}
+      style={{ fontWeight: 700, background: 'none', border: 'none', padding: 0, fontFamily: 'inherit', fontSize: 'inherit', cursor: 'pointer', textDecoration: 'underline dotted var(--border)', textUnderlineOffset: 3 }}>
+      {fmtInt(aSum(rows, f))}
+    </button>
+  );
   const areaCols: Col<TeamAreaRow>[] = [
     { key: 'brokers', label: 'Assigned brokers', render: a => <HoldingList items={a.brokers} /> },
-    { key: 'properties', label: 'Units', align: 'right', render: a => areaNum(a, a.properties, 'properties', 'Units'), sortValue: a => a.properties, total: rows => aSum(rows, a => a.properties) },
-    { key: 'callable', label: 'Callable', align: 'right', render: a => areaNum(a, a.callable, 'callable', 'Callable'), sortValue: a => a.callable, total: rows => aSum(rows, a => a.callable) },
-    { key: 'assigned', label: 'Assigned', align: 'right', render: a => areaNum(a, a.assigned, 'held', 'Assigned'), sortValue: a => a.assigned, total: rows => aSum(rows, a => a.assigned) },
-    { key: 'pool', label: 'In pool', align: 'right', render: a => areaNum(a, a.pool, 'pool', 'In pool'), sortValue: a => a.pool, total: rows => aSum(rows, a => a.pool) },
-    { key: 'untouched', label: 'Untouched', align: 'right', render: a => areaNum(a, a.untouched, 'untouched', 'Untouched', a.untouched > 0 ? 'var(--warning)' : undefined), sortValue: a => a.untouched, total: rows => aSum(rows, a => a.untouched) },
+    { key: 'properties', label: 'Units', align: 'right', render: a => areaNum(a, a.properties, 'properties', 'Units'), sortValue: a => a.properties, total: rows => areaTotalNum(rows, a => a.properties, 'properties', 'Units') },
+    { key: 'callable', label: 'Callable', align: 'right', render: a => areaNum(a, a.callable, 'callable', 'Callable'), sortValue: a => a.callable, total: rows => areaTotalNum(rows, a => a.callable, 'callable', 'Callable') },
+    { key: 'assigned', label: 'Assigned', align: 'right', render: a => areaNum(a, a.assigned, 'held', 'Assigned'), sortValue: a => a.assigned, total: rows => areaTotalNum(rows, a => a.assigned, 'held', 'Assigned') },
+    { key: 'pool', label: 'In pool', align: 'right', render: a => areaNum(a, a.pool, 'pool', 'In pool'), sortValue: a => a.pool, total: rows => areaTotalNum(rows, a => a.pool, 'pool', 'In pool') },
+    { key: 'untouched', label: 'Untouched', align: 'right', render: a => areaNum(a, a.untouched, 'untouched', 'Untouched', a.untouched > 0 ? 'var(--warning)' : undefined), sortValue: a => a.untouched, total: rows => areaTotalNum(rows, a => a.untouched, 'untouched', 'Untouched') },
     {
       key: 'interested', label: 'New interested', align: 'right', sortValue: a => a.interested,
       render: a => areaNum(a, a.interested, 'interested', 'New interested', a.interested > 0 ? 'var(--success)' : undefined),
-      total: rows => aSum(rows, a => a.interested),
+      total: rows => areaTotalNum(rows, a => a.interested, 'interested', 'New interested'),
     },
   ];
 

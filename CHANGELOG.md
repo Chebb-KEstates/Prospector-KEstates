@@ -18,6 +18,20 @@ for what each part means for Prospector.
 
 ---
 
+## [3.34.0] — 2026-09-16
+
+### Added
+- **The Report total bar is now clickable.** Clicking a total figure opens the
+  same units pop-up as the per-row numbers, but aggregated across everyone — e.g.
+  the Agents "Assigned" total → "Assigned — all agents", the Area "New interested"
+  total → "New interested — all areas". Count columns are clickable; the rate
+  columns (answer/interest/coverage/calls-per-day) stay plain, since they aren't a
+  list of units.
+
+Client rebuild only — no server change, no migration.
+
+---
+
 ## [3.33.0] — 2026-09-15
 
 ### Changed
