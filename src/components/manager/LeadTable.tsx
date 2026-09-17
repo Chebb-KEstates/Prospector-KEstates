@@ -193,6 +193,10 @@ export function LeadTable({
         {loading && !initialLoading && (
           <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>updating…</span>
         )}
+        {/* Total also shown at the top, next to Columns (mirrors the footer). */}
+        {!initialLoading && !error && (
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{fmtInt(total)} leads</span>
+        )}
         <button className="btn btn-sm" onClick={() => setShowCols(true)}><Icon name="columns" size={15} /> Columns</button>
         {anyFilter && <button className="btn btn-sm btn-ghost" onClick={clearFilters}><Icon name="x" size={14} /> Clear</button>}
       </div>

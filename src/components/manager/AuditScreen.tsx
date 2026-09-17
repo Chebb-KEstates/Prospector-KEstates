@@ -221,7 +221,7 @@ export function AuditScreen() {
                 return (
                   <tr key={a.id}>
                     <td><span style={{ fontSize: '0.75rem', fontVariant: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmtDateTime(a.at)}</span></td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{userById(a.actorId ?? '')?.name ?? a.actorId ?? '—'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{userById(a.actorId ?? '')?.name ?? (a.actorId ? a.actorId : 'System')}</td>
                     <td><span className="chip" style={{ background: c.bg, color: c.fg }}>{a.displayAction}</span></td>
                     <td>{a.ownerName ?? <span style={{ color: 'var(--text-tertiary)' }}>—</span>}</td>
                     <td>

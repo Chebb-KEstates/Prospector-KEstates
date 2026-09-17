@@ -164,7 +164,7 @@ export function TeamScreen() {
     </button>
   );
   const areaCols: Col<TeamAreaRow>[] = [
-    { key: 'brokers', label: 'Assigned brokers', render: a => <HoldingList items={a.brokers} /> },
+    { key: 'brokers', label: 'Assigned brokers', render: a => <HoldingList items={a.brokers} />, exportValue: a => a.brokers.map(h => `${h.name} (${h.units})`).join('; ') },
     { key: 'properties', label: 'Units', align: 'right', render: a => areaNum(a, a.properties, 'properties', 'Units'), sortValue: a => a.properties, total: rows => areaTotalNum(rows, a => a.properties, 'properties', 'Units') },
     { key: 'callable', label: 'Callable', align: 'right', render: a => areaNum(a, a.callable, 'callable', 'Callable'), sortValue: a => a.callable, total: rows => areaTotalNum(rows, a => a.callable, 'callable', 'Callable') },
     { key: 'assigned', label: 'Assigned', align: 'right', render: a => areaNum(a, a.assigned, 'held', 'Assigned'), sortValue: a => a.assigned, total: rows => areaTotalNum(rows, a => a.assigned, 'held', 'Assigned') },
@@ -220,7 +220,9 @@ export function TeamScreen() {
                 rows={data.brokers ?? []} prefsKey="team.brokers.v4"
                 pinned={{ label: 'Broker', render: b => b.name, sortValue: b => b.name, total: rows => `Total · ${rows.length} broker${rows.length === 1 ? '' : 's'}` }}
                 columns={brokerCols} defaultVisible={brokerDefault} empty="No active brokers."
-                showTotals maxHeight={TABLE_MAX_H} />
+                showTotals maxHeight={TABLE_MAX_H}
+                exportFilename={`Prospector agents report — ${rangeLabel}`}
+                exportTitle={`Agents report · ${rangeLabel}`} />
             </>
           ) : (
             <>
@@ -234,7 +236,9 @@ export function TeamScreen() {
                 rows={data.areas ?? []} prefsKey="team.areas.v1"
                 pinned={{ label: 'Area', render: areaLabel, sortValue: areaLabel, total: rows => `Total · ${rows.length} area${rows.length === 1 ? '' : 's'}` }}
                 columns={areaCols} empty="No areas yet."
-                showTotals maxHeight={TABLE_MAX_H} />
+                showTotals maxHeight={TABLE_MAX_H}
+                exportFilename={`Prospector area report — ${rangeLabel}`}
+                exportTitle={`Area report · ${rangeLabel}`} />
             </>
           )}
 

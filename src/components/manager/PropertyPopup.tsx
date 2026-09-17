@@ -115,6 +115,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
 }) {
   const vault = useVault();
   const { user } = useAuth();
+  const isManager = !!user?.isManager;
   const deps = useMemo(
     () => stopDeps(vault.users, vault.logCall, vault.logLeadCall),
     [vault.users, vault.logCall, vault.logLeadCall],
@@ -347,7 +348,12 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     && (!wantsCallback || !!followUpAt)
     && !saving;
 
-  const locked = revealed && !savedSinceReveal;
+  // Reveal-lock: a broker must log a result before leaving a unit whose number
+  // they revealed (the number is only worth revealing if the call is recorded).
+  // Managers are exempt — they reveal to check/verify a number, not to work the
+  // unit, so they can close or move on without logging a call. Their reveal is
+  // still audited to the journal by the server.
+  const locked = revealed && !savedSinceReveal && !isManager;
   const total = ids.length;
   // The next unit going FORWARD: retrace the breadcrumb if we've stepped back,
   // else pick a fresh one (random prefers unseen so progress can reach 100%).
@@ -567,7 +573,6 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   };
 
   const primaryIsInterested = primary === CallOutcome.interestedSell || primary === CallOutcome.interestedRent;
-  const isManager = !!user?.isManager;
 
   // A manager marking a unit "interested" would silently settle it into a
   // portfolio; instead prompt for who works it (defaulting to the current
@@ -1171,7 +1176,11 @@ function JournalRow({ e, actorName }: { e: PropertyEvent; actorName: (id: string
               : e.action === 'reclaim' ? 'refresh'
                 : e.action === 'update' ? 'refresh'
                   : 'clock';
-  const who = e.kind === 'import' ? undefined : actorName(e.actorId ?? '') ?? undefined;
+  // An audit event with no actor is the system itself (e.g. the auto-reclaim
+  // sweep), so it reads "System" rather than showing no name at all.
+  const who = e.kind === 'import' ? undefined
+    : e.kind === 'audit' && !e.actorId ? 'System'
+      : actorName(e.actorId ?? '') ?? undefined;
   // A call's ticked results are kept in the note as "[Label · Label] free text";
   // show every ticked label as a chip, not just the single strongest outcome.
   const fb = e.kind === 'call' ? splitFeedback(e.note) : { tags: [] as string[], text: '' };

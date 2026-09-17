@@ -473,6 +473,10 @@ export function PropertyTable({
                 background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10,
                 padding: 14, boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
                 display: 'flex', flexDirection: 'column', gap: 10,
+                // Cap to the viewport and scroll inside — on a zoomed-in screen the
+                // full list of filters is taller than the window, so the bottom
+                // fields (and "Clear all filters") must stay reachable.
+                maxHeight: '70vh', overflowY: 'auto',
               }}>
                 {facets.communities.length > 0 && (
                   <FilterField label="Community">
@@ -587,6 +591,11 @@ export function PropertyTable({
             loading state on every keystroke would read as a regression. */}
         {loading && !initialLoading && (
           <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>updating…</span>
+        )}
+        {/* The total count also lives here at the top, next to Columns, so the
+            size of the list is visible without scrolling to the footer. */}
+        {!initialLoading && !error && (
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{fmtInt(total)} properties</span>
         )}
         <button className="btn btn-sm" onClick={() => setShowCols(true)}><Icon name="columns" size={15} /> Columns</button>
         {anyFilter && <button className="btn btn-sm btn-ghost" onClick={clearFilters}><Icon name="x" size={14} /> Clear</button>}

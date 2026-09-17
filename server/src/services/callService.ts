@@ -323,6 +323,9 @@ export async function sweepLapsed(): Promise<{ properties: number; leads: number
 
       const nowDate = new Date(now);
       const future = (d?: string) => d != null && new Date(d) > nowDate;
+      // Groups recycled this sweep — each gets a system audit row (below) so the
+      // record journal shows why the unit went back to the pool.
+      const reclaimedGroups: string[][] = [];
       for (const units of groups.values()) {
         const active = units.some(p =>
           (p.state === PropertyState.assigned || p.state === PropertyState.portfolio) && future(p.assignmentExpiresAt));
@@ -350,9 +353,22 @@ export async function sweepLapsed(): Promise<{ properties: number; leads: number
             p.portfolioSince = undefined; p.assignmentExpiresAt = undefined; p.callAttempts = 0;
             p.updatedAt = now; changedProps.push(p);
           }
+          reclaimedGroups.push(units.map(p => p.id));
         }
       }
       if (changedProps.length > 0) await saveProperties(changedProps, cx);
+
+      // Record the auto-reclaim in the trail with NO actor — this is the system,
+      // not a manager, so the journal reads "System · Auto Reclaimed" rather than
+      // pinning the recycle on whoever happened to trigger the sweep. One row per
+      // owner group, so the activity feed reads one event per abandoned owner.
+      for (const ids of reclaimedGroups) {
+        await writeAudit({
+          actorId: null, action: 'reclaim',
+          detail: 'Auto Reclaimed (Expiry of ownership)',
+          propertyIds: ids,
+        }, cx);
+      }
     }
 
     const [leadRows] = await cx.query<Row[]>(

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Icon } from './Icon';
 import { useTableLayout, ColumnsDialog } from './tableLayout';
+import { downloadAoaXlsx } from '../../logic/exportSheet';
 
 /**
  * A small breakdown table with:
@@ -23,6 +24,10 @@ export interface Col<T> {
   /** The footer "total" cell for this column (e.g. a sum), computed over ALL
    *  rows. Only shown when the table is asked for totals; absent ⇒ blank cell. */
   total?: (rows: T[]) => React.ReactNode;
+  /** Plain value for the Excel export (the `render` output is JSX, not a value).
+   *  Falls back to `sortValue` when omitted — give it explicitly for cells whose
+   *  sort key isn't the readable value (rates, "days since", list columns). */
+  exportValue?: (row: T) => string | number | null | undefined;
 }
 
 const PINNED_KEY = '__pinned';
@@ -39,9 +44,10 @@ function compare(a: number | string | null | undefined, b: number | string | nul
 
 export function AnalyticsTable<T extends { id: string }>({
   rows, pinned, columns, prefsKey, empty, defaultVisible, onRowClick, toolbarLeft, showTotals, maxHeight,
+  exportFilename, exportTitle,
 }: {
   rows: T[];
-  pinned: { label: string; render: (row: T) => React.ReactNode; sortValue?: (row: T) => number | string | null | undefined; total?: (rows: T[]) => React.ReactNode };
+  pinned: { label: string; render: (row: T) => React.ReactNode; sortValue?: (row: T) => number | string | null | undefined; total?: (rows: T[]) => React.ReactNode; exportValue?: (row: T) => string | number | null | undefined };
   columns: Col<T>[];
   prefsKey: string;
   empty: string;
@@ -57,6 +63,12 @@ export function AnalyticsTable<T extends { id: string }>({
   /** Cap the body height (px, or any CSS length like '50vh'): the header stays
    *  pinned at the top, the totals row at the bottom, and rows scroll between. */
   maxHeight?: number | string;
+  /** When set, an "Export" button appears next to Columns and downloads the
+   *  CURRENTLY visible columns (in order) × current rows as this .xlsx file. */
+  exportFilename?: string;
+  /** Optional first line written above the header row in the exported sheet
+   *  (e.g. the active date range), so the file says what it's a snapshot of. */
+  exportTitle?: string;
 }) {
   const available = columns.map(c => c.key);
   const layout = useTableLayout(available, defaultVisible ?? available, prefsKey);
@@ -85,6 +97,28 @@ export function AnalyticsTable<T extends { id: string }>({
     if (!accessorFor(key)) return;
     if (sortKey === key) setAsc(a => !a);
     else { setSortKey(key); setAsc(!rightAligned); } // numeric columns → biggest first
+  };
+
+  // Excel export — the visible columns, in their current order, over the rows as
+  // currently sorted. Values come from each column's `exportValue` (or its
+  // `sortValue` as a fallback); JSX `render` output is never touched.
+  const exportNow = () => {
+    if (!exportFilename) return;
+    const cell = (
+      row: T,
+      acc?: (row: T) => string | number | null | undefined,
+      fallback?: (row: T) => number | string | null | undefined,
+    ): string | number => {
+      const v = acc ? acc(row) : fallback ? fallback(row) : undefined;
+      return v == null ? '' : v;
+    };
+    const header = [pinned.label, ...visible.map(c => c.label)];
+    const body = sortedRows.map(r => [
+      cell(r, pinned.exportValue, pinned.sortValue),
+      ...visible.map(c => cell(r, c.exportValue, c.sortValue)),
+    ]);
+    const aoa = [...(exportTitle ? [[exportTitle], []] : []), header, ...body];
+    downloadAoaXlsx(`${exportFilename}.xlsx`, exportFilename, aoa);
   };
 
   // When the body is height-capped, the header sticks to the top of the scroll
@@ -128,7 +162,14 @@ export function AnalyticsTable<T extends { id: string }>({
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
         {toolbarLeft && <div style={{ flex: '1 1 auto', minWidth: 0 }}>{toolbarLeft}</div>}
-        <button className="btn btn-sm" onClick={() => setShowCols(true)} style={{ marginLeft: 'auto', flexShrink: 0 }}>
+        {exportFilename && (
+          <button className="btn btn-sm" onClick={exportNow} disabled={rows.length === 0}
+            title="Download this table (current columns) as an Excel file"
+            style={{ marginLeft: toolbarLeft ? undefined : 'auto', flexShrink: 0 }}>
+            <Icon name="download" size={15} /> Export
+          </button>
+        )}
+        <button className="btn btn-sm" onClick={() => setShowCols(true)} style={{ marginLeft: exportFilename || toolbarLeft ? undefined : 'auto', flexShrink: 0 }}>
           <Icon name="columns" size={15} /> Columns
         </button>
       </div>

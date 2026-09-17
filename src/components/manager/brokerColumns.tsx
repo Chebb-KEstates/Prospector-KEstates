@@ -49,9 +49,12 @@ export function brokerBoardColumns(
     const d = Math.floor((Date.now() - new Date(lastAt).getTime()) / 86_400_000);
     return d <= 0 ? 'today' : `${d}d`;
   };
+  const holdings = (items: Holding[]) => items.map(h => `${h.name} (${h.units})`).join('; ');
+  const idleNum = (lastAt?: string) =>
+    (lastAt ? Math.max(0, Math.floor((Date.now() - new Date(lastAt).getTime()) / 86_400_000)) : '');
   return [
-    { key: 'areas', label: 'Areas held', render: b => <HoldingList items={b.areas} /> },
-    { key: 'sets', label: 'Data assigned', render: b => <HoldingList items={b.datasets} /> },
+    { key: 'areas', label: 'Areas held', render: b => <HoldingList items={b.areas} />, exportValue: b => holdings(b.areas) },
+    { key: 'sets', label: 'Data assigned', render: b => <HoldingList items={b.datasets} />, exportValue: b => holdings(b.datasets) },
     // Portfolio is hidden for now — kept units fold into the Assigned figure.
     { key: 'assigned', label: 'Assigned', align: 'right', render: b => <DrillNum value={b.assigned + b.portfolio} onClick={drill(b, 'held', 'Assigned')} />, sortValue: b => b.assigned + b.portfolio, total: rows => totalNum(rows, b => b.assigned + b.portfolio, 'held', 'Assigned') },
     { key: 'attempts', label: 'Total call attempts', align: 'right', render: b => <DrillNum value={b.calls} onClick={drill(b, 'called', 'Owners called')} />, sortValue: b => b.calls, total: rows => totalNum(rows, b => b.calls, 'called', 'Owners called') },
@@ -63,15 +66,16 @@ export function brokerBoardColumns(
       total: rows => totalNum(rows, b => b.interested, 'interested', 'New interested'),
     },
     { key: 'ownersReached', label: 'Owners reached', align: 'right', render: b => <DrillNum value={b.reachedUnits} onClick={drill(b, 'reached', 'Owners reached')} />, sortValue: b => b.reachedUnits, total: rows => totalNum(rows, b => b.reachedUnits, 'reached', 'Owners reached') },
-    { key: 'answerRate', label: 'Answer rate', align: 'right', render: b => <span title={`${b.reached} of ${b.calls} calls connected`}>{pct(b.reached, b.calls)}</span>, sortValue: b => (b.calls ? b.reached / b.calls : undefined), total: rows => pct(sum(rows, b => b.reached), sum(rows, b => b.calls)) },
+    { key: 'answerRate', label: 'Answer rate', align: 'right', render: b => <span title={`${b.reached} of ${b.calls} calls connected`}>{pct(b.reached, b.calls)}</span>, sortValue: b => (b.calls ? b.reached / b.calls : undefined), exportValue: b => pct(b.reached, b.calls), total: rows => pct(sum(rows, b => b.reached), sum(rows, b => b.calls)) },
     // Interested owners ÷ owners reached — both distinct units, so the % compares
     // like with like (not interested-units over reached-calls).
-    { key: 'interestRate', label: 'Interested rate', align: 'right', render: b => <span title={`${b.interested} interested of ${b.reachedUnits} owners reached`}>{pct(b.interested, b.reachedUnits)}</span>, sortValue: b => (b.reachedUnits ? b.interested / b.reachedUnits : undefined), total: rows => pct(sum(rows, b => b.interested), sum(rows, b => b.reachedUnits)) },
-    { key: 'lastAt', label: 'Last call', align: 'right', render: b => (b.lastAt ? timeAgo(b.lastAt) : '—'), sortValue: b => ts(b.lastAt) },
-    { key: 'team', label: 'Team', render: b => b.team || '—', sortValue: b => b.team },
+    { key: 'interestRate', label: 'Interested rate', align: 'right', render: b => <span title={`${b.interested} interested of ${b.reachedUnits} owners reached`}>{pct(b.interested, b.reachedUnits)}</span>, sortValue: b => (b.reachedUnits ? b.interested / b.reachedUnits : undefined), exportValue: b => pct(b.interested, b.reachedUnits), total: rows => pct(sum(rows, b => b.interested), sum(rows, b => b.reachedUnits)) },
+    { key: 'lastAt', label: 'Last call', align: 'right', render: b => (b.lastAt ? timeAgo(b.lastAt) : '—'), sortValue: b => ts(b.lastAt), exportValue: b => (b.lastAt ? new Date(b.lastAt).toISOString().slice(0, 10) : '') },
+    { key: 'team', label: 'Team', render: b => b.team || '—', sortValue: b => b.team, exportValue: b => b.team || '' },
     {
       key: 'coverage', label: 'Coverage %', align: 'right', sortValue: b => (b.callableAssigned ? b.callableWorked / b.callableAssigned : undefined),
       render: b => <span title={`${b.callableWorked} of ${b.callableAssigned} callable units worked`}>{pct(b.callableWorked, b.callableAssigned)}</span>,
+      exportValue: b => pct(b.callableWorked, b.callableAssigned),
       total: rows => pct(sum(rows, b => b.callableWorked), sum(rows, b => b.callableAssigned)),
     },
     {
@@ -79,13 +83,16 @@ export function brokerBoardColumns(
       render: b => <DrillNum value={b.followUpsDue} color={b.followUpsDue > 0 ? 'var(--info)' : undefined} weight={b.followUpsDue > 0 ? 700 : undefined} onClick={drill(b, 'followUpsDue', 'Follow-ups due')} />,
       total: rows => totalNum(rows, b => b.followUpsDue, 'followUpsDue', 'Follow-ups due'),
     },
-    { key: 'idle', label: 'Days since last call', align: 'right', render: b => idleDays(b.lastAt), sortValue: b => (b.lastAt ? Date.now() - new Date(b.lastAt).getTime() : undefined) },
+    { key: 'idle', label: 'Days since last call', align: 'right', render: b => idleDays(b.lastAt), sortValue: b => (b.lastAt ? Date.now() - new Date(b.lastAt).getTime() : undefined), exportValue: b => idleNum(b.lastAt) },
     {
       key: 'perDay', label: 'Calls/day', align: 'right', sortValue: b => (days ? b.calls / days : undefined),
       render: b => (days
         ? <span title={`${b.calls} calls ÷ ${days} working day${days === 1 ? '' : 's'} (Mon–Fri)`}>{(b.calls / days).toFixed(1)}</span>
         : '—'),
-      total: rows => (days ? (sum(rows, b => b.calls) / days).toFixed(1) : '—'),
+      exportValue: b => (days ? Number((b.calls / days).toFixed(1)) : ''),
+      // The AVERAGE calls/day across the listed brokers, not the sum of their
+      // per-day rates: total calls ÷ working days ÷ number of brokers.
+      total: rows => (days && rows.length ? (sum(rows, b => b.calls) / days / rows.length).toFixed(1) : '—'),
     },
   ];
 }

@@ -18,6 +18,48 @@ for what each part means for Prospector.
 
 ---
 
+## [3.35.0] — 2026-09-17
+
+### Added
+- **Export the Report to Excel.** Both the Agents and Area reports now have an
+  **Export** button next to Columns. It downloads exactly what's on screen — the
+  columns you've chosen, in the order shown, the current sort, and the active date
+  range — as an `.xlsx` file (the range is written at the top of the sheet).
+- **Total units count at the top of data lists.** The properties and leads tables
+  now show the total (e.g. "1,240 properties") at the top next to the Columns
+  button, as well as in the footer, so the size of the list is visible without
+  scrolling down.
+
+### Changed
+- **Managers can reveal a number without logging a call.** On the manager portal,
+  revealing an owner's number no longer locks the record — a manager can reveal to
+  check a number and then close or move to the next unit without being forced to
+  log a result. (Brokers still must log a result after revealing.) The reveal is
+  still recorded in the record journal and the audit trail exactly as before.
+- **Manager calls no longer count towards the calling metrics.** Calls made by a
+  manager are excluded from every performance figure (calls, answered, calls/day,
+  answer/interest rates, units called/reached, the funnels and their drill-downs)
+  so those numbers reflect the brokers' effort only. Manager calls are still stored
+  and still shown in the record journal and audit trail.
+- **Report "Calls/day" total is now the average, not the sum.** The Agents report's
+  total row shows the average calls/day across the listed brokers (total calls ÷
+  working days ÷ number of brokers), instead of adding up each broker's rate.
+- **The Database "Filters" menu now scrolls.** When zoomed in, the full list of
+  filters no longer runs off the bottom of the screen — the menu caps to the
+  window height and scrolls inside, keeping every field (and "Clear all filters")
+  reachable.
+
+### Security
+- **Ownership expiry now shows in the journal as a system action.** When a unit's
+  hold runs out of time and it's auto-returned to the pool, the record journal now
+  records **"Auto Reclaimed (Expiry of ownership)"** attributed to **System** — not
+  to a manager. Unattributed audit events read as "System" everywhere they appear.
+
+Client + server rebuild — **no migration** (uses the existing audit trail and the
+existing user role).
+
+---
+
 ## [3.34.0] — 2026-09-16
 
 ### Added

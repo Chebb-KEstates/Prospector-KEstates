@@ -1,5 +1,6 @@
 import { pool, Row } from '../db/pool';
 import { kOrgId } from '../../../src/types/models';
+import { notManagerCalls } from './callRepo';
 
 /**
  * Analytics aggregates for the manager's Team screen.
@@ -73,7 +74,7 @@ export async function datasetBreakdown(): Promise<Map<string, DatasetStat>> {
      FROM calls c
      JOIN call_properties cp ON cp.call_id = c.id
      JOIN properties p       ON p.id = cp.property_id
-     WHERE c.org_id = ? AND p.dataset_id IS NOT NULL
+     WHERE c.org_id = ? AND p.dataset_id IS NOT NULL AND ${notManagerCalls('c')}
      GROUP BY p.dataset_id`,
     [kOrgId],
   );

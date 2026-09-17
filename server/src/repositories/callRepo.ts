@@ -29,6 +29,24 @@ function toCall(r: Row, propertyIds: string[], leadIds: string[]): CallLog {
 const COLS = 'id, org_id, broker_id, at, outcome, note, follow_up_at, owner_name';
 const C_COLS = 'c.id, c.org_id, c.broker_id, c.at, c.outcome, c.note, c.follow_up_at, c.owner_name';
 
+/**
+ * Manager-authored calls are excluded from every analytics/call metric — those
+ * numbers measure the BROKERS' calling effort, and a manager revealing or
+ * spot-logging a call from the manager portal must not inflate them. The calls
+ * are still stored and still appear in the record's history journal and the
+ * audit trail; only the derived COUNTS skip them, so analytics reads as pure
+ * broker activity while the journal stays the complete truth.
+ *
+ * Param-free (the role is a literal), so it appends to any WHERE clause without
+ * disturbing the query's params array.
+ *   notManagerCalls()    → "broker_id NOT IN (…)"    (no table alias)
+ *   notManagerCalls('c') → "c.broker_id NOT IN (…)"  (aliased calls table)
+ */
+export function notManagerCalls(alias = ''): string {
+  const col = alias ? `${alias}.broker_id` : 'broker_id';
+  return `${col} NOT IN (SELECT id FROM users WHERE role = 'manager')`;
+}
+
 function groupLinks(rows: Row[], keyCol: string, valueCol: string): Map<string, string[]> {
   const out = new Map<string, string[]>();
   for (const r of rows) {
@@ -156,7 +174,7 @@ export async function brokerCallStats(): Promise<BrokerCallStats[]> {
             SUM(outcome NOT IN ('noAnswer', 'unreachable')) AS reached,
             SUM(outcome = 'noAnswer') AS no_answer,
             MAX(at) AS last_at
-     FROM calls WHERE org_id = ?
+     FROM calls WHERE org_id = ? AND ${notManagerCalls()}
      GROUP BY broker_id`,
     [kOrgId],
   );
@@ -178,7 +196,7 @@ export async function lifetimeStats(): Promise<{ calls: number; reached: number 
   const [rows] = await pool.query<Row[]>(
     `SELECT COUNT(*) AS calls,
             SUM(outcome NOT IN ('noAnswer', 'unreachable')) AS reached
-     FROM calls WHERE org_id = ?`,
+     FROM calls WHERE org_id = ? AND ${notManagerCalls()}`,
     [kOrgId],
   );
   return {
@@ -190,7 +208,7 @@ export async function lifetimeStats(): Promise<{ calls: number; reached: number 
 /** Outcome mix over a window — the manager home's outcomes panel. */
 export async function outcomeCounts(since: Date): Promise<Record<string, number>> {
   const [rows] = await pool.query<Row[]>(
-    'SELECT outcome, COUNT(*) AS n FROM calls WHERE org_id = ? AND at >= ? GROUP BY outcome',
+    `SELECT outcome, COUNT(*) AS n FROM calls WHERE org_id = ? AND at >= ? AND ${notManagerCalls()} GROUP BY outcome`,
     [kOrgId, since],
   );
   const out: Record<string, number> = {};
@@ -202,7 +220,7 @@ export async function outcomeCounts(since: Date): Promise<Record<string, number>
 export async function callsPerDay(since: Date): Promise<{ day: string; n: number }[]> {
   const [rows] = await pool.query<Row[]>(
     `SELECT DATE(at) AS day, COUNT(*) AS n
-     FROM calls WHERE org_id = ? AND at >= ?
+     FROM calls WHERE org_id = ? AND at >= ? AND ${notManagerCalls()}
      GROUP BY DATE(at) ORDER BY day`,
     [kOrgId, since],
   );
@@ -213,7 +231,9 @@ export async function callsPerDay(since: Date): Promise<{ day: string; n: number
 }
 
 export async function countCallsTotal(): Promise<number> {
-  const [rows] = await pool.query<Row[]>('SELECT COUNT(*) AS n FROM calls WHERE org_id = ?', [kOrgId]);
+  const [rows] = await pool.query<Row[]>(
+    `SELECT COUNT(*) AS n FROM calls WHERE org_id = ? AND ${notManagerCalls()}`, [kOrgId],
+  );
   return Number(rows[0].n);
 }
 
@@ -239,12 +259,12 @@ export async function statsBetween(from: Date, to: Date): Promise<WindowStats> {
   const [totals] = await pool.query<Row[]>(
     `SELECT COUNT(*) AS calls,
             SUM(${CONNECTED_SQL}) AS reached
-     FROM calls WHERE org_id = ? AND at >= ? AND at < ?`,
+     FROM calls WHERE org_id = ? AND at >= ? AND at < ? AND ${notManagerCalls()}`,
     [kOrgId, from, to],
   );
   const [byOutcome] = await pool.query<Row[]>(
     `SELECT outcome, COUNT(*) AS n FROM calls
-     WHERE org_id = ? AND at >= ? AND at < ? GROUP BY outcome`,
+     WHERE org_id = ? AND at >= ? AND at < ? AND ${notManagerCalls()} GROUP BY outcome`,
     [kOrgId, from, to],
   );
   const outcomes: Record<string, number> = {};
@@ -270,7 +290,7 @@ export async function brokerStatsBetween(from: Date, to: Date): Promise<Map<stri
     `SELECT broker_id,
             COUNT(*) AS calls,
             SUM(${CONNECTED_SQL}) AS reached
-     FROM calls WHERE org_id = ? AND at >= ? AND at < ?
+     FROM calls WHERE org_id = ? AND at >= ? AND at < ? AND ${notManagerCalls()}
      GROUP BY broker_id`,
     [kOrgId, from, to],
   );
@@ -307,7 +327,7 @@ export async function newInterestedUnitsByBroker(from?: Date, to?: Date): Promis
               LAG(c.outcome) OVER (PARTITION BY cp.property_id ORDER BY c.at, c.id) AS prev_outcome
          FROM calls c
          JOIN call_properties cp ON cp.call_id = c.id
-        WHERE c.org_id = ?
+        WHERE c.org_id = ? AND ${notManagerCalls('c')}
      )
      SELECT broker_id, COUNT(DISTINCT unit_id) AS n
        FROM uc
@@ -341,7 +361,7 @@ export async function newInterestedUnitsCount(from?: Date, to?: Date, brokerId?:
               LAG(c.outcome) OVER (PARTITION BY cp.property_id ORDER BY c.at, c.id) AS prev_outcome
          FROM calls c
          JOIN call_properties cp ON cp.call_id = c.id
-        WHERE c.org_id = ?
+        WHERE c.org_id = ? AND ${notManagerCalls('c')}
      )
      SELECT COUNT(DISTINCT unit_id) AS n
        FROM uc
@@ -377,7 +397,7 @@ export async function distinctUnitsCount(
     `SELECT COUNT(DISTINCT cp.property_id) AS n
        FROM calls c
        JOIN call_properties cp ON cp.call_id = c.id
-      WHERE c.org_id = ?
+      WHERE c.org_id = ? AND ${notManagerCalls('c')}
         ${brokerClause}
         ${connectedClause}
         ${windowClause}`,
@@ -398,7 +418,7 @@ export async function distinctUnitsByBroker(
     `SELECT c.broker_id, COUNT(DISTINCT cp.property_id) AS n
        FROM calls c
        JOIN call_properties cp ON cp.call_id = c.id
-      WHERE c.org_id = ?
+      WHERE c.org_id = ? AND ${notManagerCalls('c')}
         ${connectedClause}
         ${windowClause}
       GROUP BY c.broker_id`,
@@ -457,7 +477,7 @@ export async function metricUnitIds(
            FROM calls c
            JOIN call_properties cp ON cp.call_id = c.id
            JOIN properties p ON p.id = cp.property_id
-          WHERE c.org_id = ?
+          WHERE c.org_id = ? AND ${notManagerCalls('c')}
        )
        SELECT DISTINCT uc.unit_id
          FROM uc
@@ -476,7 +496,7 @@ export async function metricUnitIds(
        FROM calls c
        JOIN call_properties cp ON cp.call_id = c.id
        JOIN properties p ON p.id = cp.property_id
-      WHERE c.org_id = ?
+      WHERE c.org_id = ? AND ${notManagerCalls('c')}
         ${connectedClause}
         ${s.sql}`,
     [kOrgId, ...s.params],
@@ -517,7 +537,7 @@ export async function newInterestedUnitsByArea(from?: Date, to?: Date): Promise<
          FROM calls c
          JOIN call_properties cp ON cp.call_id = c.id
          JOIN properties p ON p.id = cp.property_id
-        WHERE c.org_id = ?
+        WHERE c.org_id = ? AND ${notManagerCalls('c')}
      )
      SELECT community, cluster, COUNT(DISTINCT unit_id) AS n
        FROM uc
@@ -549,7 +569,7 @@ export async function brokerFunnelWindow(brokerId: string, from: Date, to: Date)
   const [rows] = await pool.query<Row[]>(
     `SELECT COUNT(*) AS calls,
             SUM(${CONNECTED_SQL}) AS reached
-     FROM calls WHERE org_id = ? AND broker_id = ? AND at >= ? AND at < ?`,
+     FROM calls WHERE org_id = ? AND broker_id = ? AND at >= ? AND at < ? AND ${notManagerCalls()}`,
     [kOrgId, brokerId, from, to],
   );
   const r = rows[0];
