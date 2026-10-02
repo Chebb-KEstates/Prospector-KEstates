@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from './Icon';
 import { useTableLayout, ColumnsDialog } from './tableLayout';
 import { downloadAoaXlsx } from '../../logic/exportSheet';
@@ -30,6 +30,16 @@ export interface Col<T> {
   exportValue?: (row: T) => string | number | null | undefined;
 }
 
+/** Opt-in row checkboxes (e.g. the request popup's approve/deny selection). */
+export interface RowSelection<T> {
+  selected: ReadonlySet<string>;
+  onChange: (next: Set<string>) => void;
+  /** Rows that can't be picked show a disabled box. Defaults to every row. */
+  canSelect?: (row: T) => boolean;
+  /** Freeze every box (e.g. while a decision is being saved). */
+  disabled?: boolean;
+}
+
 const PINNED_KEY = '__pinned';
 
 function compare(a: number | string | null | undefined, b: number | string | null | undefined): number {
@@ -44,7 +54,7 @@ function compare(a: number | string | null | undefined, b: number | string | nul
 
 export function AnalyticsTable<T extends { id: string }>({
   rows, pinned, columns, prefsKey, empty, defaultVisible, onRowClick, toolbarLeft, showTotals, maxHeight,
-  exportFilename, exportTitle,
+  exportFilename, exportTitle, selection,
 }: {
   rows: T[];
   pinned: { label: string; render: (row: T) => React.ReactNode; sortValue?: (row: T) => number | string | null | undefined; total?: (rows: T[]) => React.ReactNode; exportValue?: (row: T) => string | number | null | undefined };
@@ -69,6 +79,9 @@ export function AnalyticsTable<T extends { id: string }>({
   /** Optional first line written above the header row in the exported sheet
    *  (e.g. the active date range), so the file says what it's a snapshot of. */
   exportTitle?: string;
+  /** When set, a checkbox column leads the table. The header box selects /
+   *  clears the rows currently shown (after filters), never hidden ones. */
+  selection?: RowSelection<T>;
 }) {
   const available = columns.map(c => c.key);
   const layout = useTableLayout(available, defaultVisible ?? available, prefsKey);
@@ -92,6 +105,34 @@ export function AnalyticsTable<T extends { id: string }>({
       return c === 0 ? 0 : c * dir;
     });
   }, [rows, sortKey, asc, byKey, pinned]);
+
+  // Selection: the header box acts on the rows SHOWN (after filters) that can be
+  // picked — selecting all never reaches rows a filter is hiding.
+  const canSelect = (row: T) => !!selection && (selection.canSelect?.(row) ?? true);
+  const pickable = selection ? sortedRows.filter(canSelect) : [];
+  const shownPicked = selection ? pickable.filter(r => selection.selected.has(r.id)).length : 0;
+  const allShownPicked = pickable.length > 0 && shownPicked === pickable.length;
+  const headBox = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (headBox.current) headBox.current.indeterminate = shownPicked > 0 && !allShownPicked;
+  }, [shownPicked, allShownPicked]);
+
+  const toggleAllShown = () => {
+    if (!selection || selection.disabled) return;
+    const next = new Set(selection.selected);
+    for (const r of pickable) {
+      if (allShownPicked) next.delete(r.id); else next.add(r.id);
+    }
+    selection.onChange(next);
+  };
+  const toggleRow = (row: T) => {
+    if (!selection || selection.disabled || !canSelect(row)) return;
+    const next = new Set(selection.selected);
+    if (next.has(row.id)) next.delete(row.id); else next.add(row.id);
+    selection.onChange(next);
+  };
+  const checkCell: React.CSSProperties = { width: 36, textAlign: 'center', padding: '0 8px' };
+  const colCount = visible.length + 1 + (selection ? 1 : 0);
 
   const onSort = (key: string, rightAligned: boolean) => {
     if (!accessorFor(key)) return;
@@ -191,17 +232,38 @@ export function AnalyticsTable<T extends { id: string }>({
           <table className="data-table">
             <thead>
               <tr>
+                {selection && (
+                  <th style={{ ...checkCell, ...stickyHead }}>
+                    <input ref={headBox} type="checkbox" aria-label="Select all shown"
+                      checked={allShownPicked}
+                      disabled={selection.disabled || pickable.length === 0}
+                      onChange={toggleAllShown}
+                      title={allShownPicked ? 'Clear the rows shown' : 'Select the rows shown'} />
+                  </th>
+                )}
                 {headerCell(PINNED_KEY, pinned.label, false, !!pinned.sortValue)}
                 {visible.map(c => headerCell(c.key, c.label, c.align === 'right', !!c.sortValue))}
               </tr>
             </thead>
             <tbody>
               {sortedRows.length === 0 ? (
-                <tr><td colSpan={visible.length + 1} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 24 }}>{empty}</td></tr>
+                <tr><td colSpan={colCount} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 24 }}>{empty}</td></tr>
               ) : sortedRows.map(r => (
                 <tr key={r.id}
+                  className={selection?.selected.has(r.id) ? 'selected' : undefined}
                   onClick={onRowClick ? () => onRowClick(r) : undefined}
                   style={onRowClick ? { cursor: 'pointer' } : undefined}>
+                  {selection && (
+                    // The whole cell toggles (a bigger target than the box) and
+                    // never bubbles to the row's click, which opens the record.
+                    <td style={{ ...checkCell, cursor: canSelect(r) && !selection.disabled ? 'pointer' : undefined }}
+                      onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) toggleRow(r); }}>
+                      <input type="checkbox" aria-label="Select row"
+                        checked={selection.selected.has(r.id)}
+                        disabled={selection.disabled || !canSelect(r)}
+                        onChange={() => toggleRow(r)} />
+                    </td>
+                  )}
                   <td style={{ fontWeight: 500 }}>{pinned.render(r)}</td>
                   {visible.map(c => (
                     <td key={c.key} className={c.align === 'right' ? 'tabular-nums' : undefined}
@@ -217,6 +279,7 @@ export function AnalyticsTable<T extends { id: string }>({
               // the body is height-capped; totals are computed over ALL rows.
               <tfoot>
                 <tr>
+                  {selection && <td style={{ ...footerTd, ...stickyFoot }} />}
                   <td style={{ ...footerTd, ...stickyFoot }}>{pinned.total ? pinned.total(rows) : 'Total'}</td>
                   {visible.map(c => (
                     <td key={c.key} className={c.align === 'right' ? 'tabular-nums' : undefined}

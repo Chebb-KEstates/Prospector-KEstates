@@ -3,7 +3,7 @@ import * as api from '../../data/api';
 import { Property } from '../../types/models';
 import { Icon } from '../common/Icon';
 import { StateChip, OutcomeChip } from '../common/StateChip';
-import { AnalyticsTable, Col } from '../common/AnalyticsTable';
+import { AnalyticsTable, Col, RowSelection } from '../common/AnalyticsTable';
 import { useClientPropertyFilters } from '../common/propertyFilters';
 import { fmtInt, fmtArea, timeAgo } from '../../utils/format';
 import { ApiError } from '../../data/apiClient';
@@ -25,8 +25,14 @@ export interface DrillParams {
  * columns (remembered), and the SAME full "Filters" button the data tables carry
  * (search + state inline, everything else behind one button), applied to the
  * loaded list. A row opens the unit's full record, layered above this popup.
+ *
+ * Optionally (the Requests screen) it carries row checkboxes, extra leading
+ * columns, a notice above the table and action buttons bottom-right.
  */
-export function UnitsDrilldownPopup({ title, subtitle, params, units: given, onClose }: {
+export function UnitsDrilldownPopup({
+  title, subtitle, params, units: given, onClose,
+  prefsKey = 'units.popup.v1', leadColumns, selection, notice, actions,
+}: {
   title: string;
   /** e.g. "Sara · Last 30 days" or "8 no-answer calls" — the number's context. */
   subtitle?: string;
@@ -35,6 +41,17 @@ export function UnitsDrilldownPopup({ title, subtitle, params, units: given, onC
   /** …or pass an already-loaded list (e.g. the reassign conflict units). */
   units?: Property[];
   onClose: () => void;
+  /** Where the column layout is remembered — give a variant with extra columns its own. */
+  prefsKey?: string;
+  /** Columns placed first and shown by default (e.g. a request's per-unit decision). */
+  leadColumns?: Col<Property>[];
+  /** Row checkboxes. */
+  selection?: RowSelection<Property>;
+  /** A message shown above the table (e.g. the result of a decision). */
+  notice?: React.ReactNode;
+  /** Buttons at the bottom-right of the popup. A function receives the rows
+   *  currently shown (after filters), e.g. to say how many selected are hidden. */
+  actions?: React.ReactNode | ((shown: Property[]) => React.ReactNode);
 }) {
   const [fetched, setFetched] = useState<Property[]>([]);
   const [loading, setLoading] = useState(!!params);
@@ -74,6 +91,7 @@ export function UnitsDrilldownPopup({ title, subtitle, params, units: given, onC
   }, [detailId, onClose]);
 
   const columns: Col<Property>[] = [
+    ...(leadColumns ?? []),
     { key: 'community', label: 'Community', render: p => p.community || '—', sortValue: p => p.community },
     { key: 'cluster', label: 'Sub-community', render: p => p.cluster || '—', sortValue: p => p.cluster },
     { key: 'beds', label: 'Beds', align: 'right', render: p => p.beds ?? '—', sortValue: p => p.beds },
@@ -83,7 +101,10 @@ export function UnitsDrilldownPopup({ title, subtitle, params, units: given, onC
     { key: 'owner', label: 'Owner', render: p => p.owner.name || '—', sortValue: p => p.owner.name },
     { key: 'lastCall', label: 'Last call', align: 'right', render: p => p.lastCalledAt ? timeAgo(p.lastCalledAt) : '—', sortValue: p => (p.lastCalledAt ? new Date(p.lastCalledAt).getTime() : undefined) },
   ];
-  const defaultVisible = ['community', 'cluster', 'beds', 'size', 'state', 'outcome', 'owner'];
+  const defaultVisible = [
+    ...(leadColumns ?? []).map(c => c.key),
+    'community', 'cluster', 'beds', 'size', 'state', 'outcome', 'owner',
+  ];
 
   return (
     <>
@@ -101,6 +122,8 @@ export function UnitsDrilldownPopup({ title, subtitle, params, units: given, onC
             <button className="btn btn-sm btn-ghost" onClick={onClose}><Icon name="x" size={14} /> Close</button>
           </div>
 
+          {notice && <div style={{ marginBottom: 10 }}>{notice}</div>}
+
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
             {error ? (
               <div style={{ padding: 28, textAlign: 'center', color: 'var(--error)' }}>{error}</div>
@@ -110,15 +133,25 @@ export function UnitsDrilldownPopup({ title, subtitle, params, units: given, onC
               // The filter bar (search + state + Filters) rides in the table's
               // toolbar, in line with the Columns button on the right.
               <AnalyticsTable
-                rows={rows} prefsKey="units.popup.v1"
+                rows={rows} prefsKey={prefsKey}
                 pinned={{ label: 'Unit', render: p => p.unitLabel, sortValue: p => p.unitLabel }}
                 columns={columns} defaultVisible={defaultVisible}
                 onRowClick={p => setDetailId(p.id)}
                 toolbarLeft={bar}
+                selection={selection}
                 empty={all.length === 0 ? 'No units to show.' : 'No units match the filter.'} />
             )}
           </div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: 8 }}>Tip: click a unit to open its full record.</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', flex: '1 1 auto' }}>
+              Tip: click a unit to open its full record.
+            </div>
+            {actions && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {typeof actions === 'function' ? actions(rows) : actions}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

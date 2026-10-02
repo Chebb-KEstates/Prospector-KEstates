@@ -382,17 +382,50 @@ export const requests = {
     return rows.map(Property.fromJson);
   },
 
-  async approve(id: string): Promise<{ granted: number; request: BatchRequest }> {
-    const r = await post<{ granted: number; request: Record<string, unknown> }>(
+  /** One request, fresh (its per-unit decisions as they stand now). */
+  async get(id: string): Promise<BatchRequest> {
+    return BatchRequest.fromJson(await get<Record<string, unknown>>(`/api/requests/${id}`));
+  },
+
+  /** Approve the whole request — for a hand-picked one, every unit still undecided.
+   *  `considered` is how many units it acted on (read `granted` against it). */
+  async approve(id: string): Promise<{ granted: number; considered: number; request: BatchRequest }> {
+    const r = await post<{ granted: number; considered?: number; request: Record<string, unknown> }>(
       `/api/requests/${id}/approve`,
     );
-    return { granted: r.granted, request: BatchRequest.fromJson(r.request) };
+    const request = BatchRequest.fromJson(r.request);
+    return { granted: r.granted, considered: r.considered ?? request.count, request };
   },
 
   async deny(id: string): Promise<BatchRequest> {
     return BatchRequest.fromJson(await post(`/api/requests/${id}/deny`));
   },
+
+  /** Approve or deny SOME units of a hand-picked request; the rest stay pending. */
+  async decideUnits(id: string, action: 'approve' | 'deny', unitIds: string[]): Promise<UnitDecisionResult> {
+    const r = await post<Omit<UnitDecisionResult, 'request'> & { request: Record<string, unknown> }>(
+      `/api/requests/${id}/units/decide`, { action, unitIds },
+    );
+    return { ...r, request: BatchRequest.fromJson(r.request) };
+  },
 };
+
+/** What one approve/deny of a request's selected units did. */
+export interface UnitDecisionResult {
+  request: BatchRequest;
+  /** Units decided by this call. */
+  decided: number;
+  /** Of those: granted to the broker. */
+  granted: number;
+  /** Of those: approved but no longer grantable (left the pool / owner held elsewhere). */
+  unavailable: number;
+  /** Of those: denied. */
+  denied: number;
+  /** Other units of the same request granted along with them (same owner, same area). */
+  linkedInRequest: number;
+  /** Units outside the request assigned along with them (same owner, same area). */
+  ownerLinkedExtra: number;
+}
 
 // ── Data sets ──────────────────────────────────────────────────────────────
 

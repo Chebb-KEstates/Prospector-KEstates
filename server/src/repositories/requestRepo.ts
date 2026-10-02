@@ -1,11 +1,13 @@
 import type { PoolConnection } from 'mysql2/promise';
 import { pool, Row, toDb, fromDb } from '../db/pool';
-import { BatchRequest, RequestStatus, kOrgId } from '../../../src/types/models';
+import { BatchRequest, RequestStatus, UnitDecision, kOrgId } from '../../../src/types/models';
 
 /**
  * Broker requests for pool data.
  *
- * `unitIds` (the hand-picked case) lives in `request_units`. Note the whole
+ * `unitIds` (the hand-picked case) lives in `request_units`, each with its own
+ * `decision` (NULL = undecided) so a manager can decide some units now and the
+ * rest later. Note the whole
  * request flow was dead in the reference implementation until late: submitRequest
  * existed but nothing called it, so the manager's Requests tab could never
  * populate.
@@ -36,18 +38,28 @@ async function hydrate(rows: Row[], db: PoolConnection | typeof pool): Promise<B
   if (rows.length === 0) return [];
   const ids = rows.map(r => r.id as string);
   const [links] = await db.query<Row[]>(
-    `SELECT request_id, property_id FROM request_units
+    `SELECT request_id, property_id, decision FROM request_units
      WHERE request_id IN (${ids.map(() => '?').join(', ')})`,
     ids,
   );
   const byRequest = new Map<string, string[]>();
+  const decisionsByRequest = new Map<string, Record<string, UnitDecision>>();
   for (const l of links) {
     const key = l.request_id as string;
     let list = byRequest.get(key);
     if (!list) { list = []; byRequest.set(key, list); }
     list.push(l.property_id as string);
+    if (l.decision) {
+      let d = decisionsByRequest.get(key);
+      if (!d) { d = {}; decisionsByRequest.set(key, d); }
+      d[l.property_id as string] = l.decision as UnitDecision;
+    }
   }
-  return rows.map(r => toRequest(r, byRequest.get(r.id as string) ?? []));
+  return rows.map(r => {
+    const req = toRequest(r, byRequest.get(r.id as string) ?? []);
+    req.unitDecisions = decisionsByRequest.get(r.id as string) ?? {};
+    return req;
+  });
 }
 
 export async function insertRequest(req: BatchRequest, cx?: PoolConnection): Promise<void> {
@@ -90,14 +102,30 @@ export async function lockRequestForDecision(
   return hydrated[0];
 }
 
+/**
+ * Persist a request's status + granted count. `decidedBy` is null while a
+ * hand-picked request is still pending (some of its units undecided).
+ */
 export async function markDecided(
-  req: BatchRequest, decidedBy: string, cx?: PoolConnection,
+  req: BatchRequest, decidedBy: string | null, cx?: PoolConnection,
 ): Promise<void> {
   const db = cx ?? pool;
   await db.query(
     `UPDATE requests SET status = ?, decided_at = ?, decided_by = ?, granted_count = ?
      WHERE id = ?`,
     [req.status, toDb(req.decidedAt), decidedBy, req.grantedCount, req.id],
+  );
+}
+
+/** Record one decision for a set of a request's units. */
+export async function setUnitDecisions(
+  requestId: string, propertyIds: string[], decision: UnitDecision, cx: PoolConnection,
+): Promise<void> {
+  if (propertyIds.length === 0) return;
+  await cx.query(
+    `UPDATE request_units SET decision = ?
+     WHERE request_id = ? AND property_id IN (${propertyIds.map(() => '?').join(', ')})`,
+    [decision, requestId, ...propertyIds],
   );
 }
 

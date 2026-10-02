@@ -80,8 +80,13 @@ interface VaultContextValue {
     community: string; cluster?: string; count: number;
     unitIds?: string[]; note?: string;
   }) => Promise<void>;
-  approveRequest: (req: BatchRequest) => Promise<number>;
+  /** Approve the whole request (a hand-picked one: every unit still undecided). */
+  approveRequest: (req: BatchRequest) => Promise<{ granted: number; considered: number }>;
   denyRequest: (req: BatchRequest) => Promise<void>;
+  /** Approve or deny SOME units of a hand-picked request; the rest stay pending. */
+  decideRequestUnits: (req: BatchRequest, action: 'approve' | 'deny', unitIds: string[]) => Promise<api.UnitDecisionResult>;
+  /** Re-read one request and swap it into the list; returns the fresh copy. */
+  refreshRequest: (id: string) => Promise<BatchRequest>;
 
   deleteDataset: (d: DataSet) => Promise<{ removedUnits: number; removedLeads: number }>;
   updateDataset: (id: string, patch: {
@@ -296,7 +301,7 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
     const r = await api.requests.approve(req.id);
     setRequests(prev => prev.map(x => (x.id === req.id ? r.request : x)));
     bump();
-    return r.granted;
+    return { granted: r.granted, considered: r.considered };
   }, [bump]);
 
   const denyRequest = useCallback(async (req: BatchRequest) => {
@@ -304,6 +309,19 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
     setRequests(prev => prev.map(x => (x.id === req.id ? decided : x)));
     bump();
   }, [bump]);
+
+  const decideRequestUnits = useCallback(async (req: BatchRequest, action: 'approve' | 'deny', unitIds: string[]) => {
+    const r = await api.requests.decideUnits(req.id, action, unitIds);
+    setRequests(prev => prev.map(x => (x.id === req.id ? r.request : x)));
+    bump();
+    return r;
+  }, [bump]);
+
+  const refreshRequest = useCallback(async (id: string) => {
+    const fresh = await api.requests.get(id);
+    if (mounted.current) setRequests(prev => prev.map(x => (x.id === id ? fresh : x)));
+    return fresh;
+  }, []);
 
   // ── Data sets ────────────────────────────────────────────────────────────
 
@@ -371,7 +389,7 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
     reload, reloadRequests, reloadDatasets,
     saveUser, setUserActive, deactivateBroker, resetUserPassword, saveSettings,
     assign, reclaim, assignLeads, reclaimLeads,
-    submitRequest, approveRequest, denyRequest,
+    submitRequest, approveRequest, denyRequest, decideRequestUnits, refreshRequest,
     deleteDataset, updateDataset,
     undoDnc, undoDncLead,
     logCall, logLeadCall,

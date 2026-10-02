@@ -152,7 +152,12 @@ export function PoolTab() {
             <div key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: '0.8125rem', padding: '3px 0' }}>
               <Icon name="clock" size={14} style={{ color: 'var(--warning)' }} />
               <span>{r.summary}</span>
-              <span style={{ color: 'var(--text-tertiary)' }}>· awaiting approval</span>
+              <span style={{ color: 'var(--text-tertiary)' }}>
+                {r.isHandPicked && r.decidedUnitCount > 0
+                  ? `· ${r.pendingUnitIds.length} of ${r.unitIds.length} awaiting approval` +
+                    (r.grantedCount > 0 ? ` · ${r.grantedCount} granted so far` : '')
+                  : '· awaiting approval'}
+              </span>
             </div>
           ))}
         </div>

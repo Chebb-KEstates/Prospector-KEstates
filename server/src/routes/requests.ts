@@ -3,11 +3,48 @@ import { Permission } from '../../../src/types/user';
 import { BatchRequest, RequestArea, RequestStatus, kOrgId } from '../../../src/types/models';
 import { insertRequest, listRequests, countPending, findRequestById } from '../repositories/requestRepo';
 import { findPropertiesByIds } from '../repositories/propertyRepo';
-import { approveRequest, denyRequest } from '../services/assignmentService';
+import { approveRequest, denyRequest, decideRequestUnits } from '../services/assignmentService';
 import { writeAudit } from '../repositories/auditRepo';
 import { serializeRequest, serializeProperty } from '../http/serializers';
 import { newRequestId } from '../domain/ids';
 import { forbidden, notFound } from '../http/errors';
+
+/**
+ * Resolve each request's hand-picked units into a per-area breakdown
+ * (community · sub-community + count). One query for every unit across the
+ * batch; bulk requests (no unitIds) fall back to their single stated area.
+ * Every response that returns a request goes through this, so a row keeps its
+ * breakdown after a decision instead of collapsing to the summary label.
+ */
+async function withAreas(rows: BatchRequest[]): Promise<BatchRequest[]> {
+  const allIds = Array.from(new Set(rows.flatMap(r => r.unitIds)));
+  const areaById = new Map<string, { community: string; cluster: string }>();
+  if (allIds.length > 0) {
+    const props = await findPropertiesByIds(allIds);
+    for (const p of props) areaById.set(p.id, { community: p.community, cluster: p.cluster ?? '' });
+  }
+  for (const r of rows) {
+    if (r.unitIds.length > 0) {
+      const m = new Map<string, RequestArea>();
+      for (const id of r.unitIds) {
+        const a = areaById.get(id);
+        if (!a) continue; // unit no longer exists
+        const key = `${a.community}\u001f${a.cluster}`; // unit separator: no collisions
+        const e = m.get(key) ?? { community: a.community, cluster: a.cluster, count: 0 };
+        e.count += 1;
+        m.set(key, e);
+      }
+      r.areas = Array.from(m.values()).sort((x, y) => y.count - x.count);
+    } else {
+      r.areas = [{ community: r.community, cluster: r.cluster ?? '', count: r.count }];
+    }
+  }
+  return rows;
+}
+
+const idParams = {
+  type: 'object', required: ['id'], properties: { id: { type: 'string', maxLength: 64 } },
+} as const;
 
 /**
  * Broker requests for pool data.
@@ -77,42 +114,25 @@ export default async function requestRoutes(app: FastifyInstance) {
     }
 
     const rows = await listRequests({ status: q.status, brokerId });
+    return (await withAreas(rows)).map(serializeRequest);
+  });
 
-    // Resolve each request's hand-picked units into a per-area breakdown
-    // (community · sub-community + count). One query for every unit across the
-    // page; bulk requests (no unitIds) fall back to their single stated area.
-    const allIds = Array.from(new Set(rows.flatMap(r => r.unitIds)));
-    const areaById = new Map<string, { community: string; cluster: string }>();
-    if (allIds.length > 0) {
-      const props = await findPropertiesByIds(allIds);
-      for (const p of props) areaById.set(p.id, { community: p.community, cluster: p.cluster ?? '' });
-    }
-    for (const r of rows) {
-      if (r.unitIds.length > 0) {
-        const m = new Map<string, RequestArea>();
-        for (const id of r.unitIds) {
-          const a = areaById.get(id);
-          if (!a) continue; // unit no longer exists
-          const key = `${a.community}${a.cluster}`;
-          const e = m.get(key) ?? { community: a.community, cluster: a.cluster, count: 0 };
-          e.count += 1;
-          m.set(key, e);
-        }
-        r.areas = Array.from(m.values()).sort((x, y) => y.count - x.count);
-      } else {
-        r.areas = [{ community: r.community, cluster: r.cluster ?? '', count: r.count }];
-      }
-    }
-
-    return rows.map(serializeRequest);
+  /** One request, fresh — the units popup re-reads it so its per-unit
+   *  decisions are current even if another manager decided meanwhile. */
+  app.get('/api/requests/:id', {
+    preHandler: [app.authenticate, app.requirePermission(Permission.assignData)],
+    schema: { params: idParams },
+  }, async (req) => {
+    const { id } = req.params as { id: string };
+    const request = await findRequestById(id);
+    if (!request) throw notFound('That request no longer exists.');
+    return serializeRequest((await withAreas([request]))[0]);
   });
 
   /** The individual units of one request — the manager's "view units" popup. */
   app.get('/api/requests/:id/units', {
     preHandler: [app.authenticate, app.requirePermission(Permission.assignData)],
-    schema: {
-      params: { type: 'object', required: ['id'], properties: { id: { type: 'string', maxLength: 64 } } },
-    },
+    schema: { params: idParams },
   }, async (req) => {
     const { id } = req.params as { id: string };
     const request = await findRequestById(id);
@@ -127,24 +147,53 @@ export default async function requestRoutes(app: FastifyInstance) {
     preHandler: [app.authenticate, app.requirePermission(Permission.assignData)],
   }, async () => ({ count: await countPending() }));
 
+  /** Approve/deny the whole request — for a hand-picked one, every unit still undecided. */
   app.post('/api/requests/:id/approve', {
     preHandler: [app.authenticate, app.requirePermission(Permission.assignData)],
-    schema: {
-      params: { type: 'object', required: ['id'], properties: { id: { type: 'string', maxLength: 64 } } },
-    },
+    schema: { params: idParams },
   }, async (req) => {
     const { id } = req.params as { id: string };
     const result = await approveRequest(id, req.currentUser!.id);
-    return { granted: result.granted, request: serializeRequest(result.request) };
+    const [request] = await withAreas([result.request]);
+    return { granted: result.granted, considered: result.considered, request: serializeRequest(request) };
   });
 
   app.post('/api/requests/:id/deny', {
     preHandler: [app.authenticate, app.requirePermission(Permission.assignData)],
+    schema: { params: idParams },
+  }, async (req) => {
+    const { id } = req.params as { id: string };
+    const [request] = await withAreas([await denyRequest(id, req.currentUser!.id)]);
+    return serializeRequest(request);
+  });
+
+  /**
+   * Approve or deny SOME units of a hand-picked request (the units popup's
+   * checkboxes). The rest stay pending; the request closes when none are left.
+   */
+  app.post('/api/requests/:id/units/decide', {
+    preHandler: [app.authenticate, app.requirePermission(Permission.assignData)],
     schema: {
-      params: { type: 'object', required: ['id'], properties: { id: { type: 'string', maxLength: 64 } } },
+      params: idParams,
+      body: {
+        type: 'object', required: ['action', 'unitIds'], additionalProperties: false,
+        properties: {
+          action: { type: 'string', enum: ['approve', 'deny'] },
+          unitIds: {
+            type: 'array', minItems: 1, maxItems: 5000, items: { type: 'string', minLength: 1, maxLength: 64 },
+          },
+        },
+      },
     },
   }, async (req) => {
     const { id } = req.params as { id: string };
-    return serializeRequest(await denyRequest(id, req.currentUser!.id));
+    const body = req.body as { action: 'approve' | 'deny'; unitIds: string[] };
+    const r = await decideRequestUnits(id, body.unitIds, body.action, req.currentUser!.id);
+    const [request] = await withAreas([r.request]);
+    return {
+      request: serializeRequest(request),
+      decided: r.decided, granted: r.granted, unavailable: r.unavailable, denied: r.denied,
+      linkedInRequest: r.linkedInRequest, ownerLinkedExtra: r.ownerLinkedExtra,
+    };
   });
 }

@@ -18,6 +18,43 @@ for what each part means for Prospector.
 
 ---
 
+## [3.36.0] — 2026-10-02
+
+### Added
+- **Approve or deny some units of a request.** In Database → Requests, opening a
+  broker's requested units now shows a checkbox on every undecided unit and
+  **Approve / Deny** at the bottom-right of the pop-up (enabled only once units are
+  selected). The rest of the request stays pending for later. A new **Decision**
+  column shows each unit as Pending, Granted, Denied or Unavailable, and the pop-up
+  says what each decision did (e.g. "2 units granted · 1 no longer available").
+  The header checkbox selects only the units currently shown, and the footer warns
+  when a filter is hiding selected units.
+- The Requests table shows progress on a partly-decided request ("5 of 10
+  decided"); its row buttons become **Approve rest / Deny rest** and act only on
+  the undecided units. A request closes when its last unit is decided — as
+  **partly approved** when only some units were granted. Brokers see the same
+  progress in "Your pending requests".
+
+### Changed
+- Approving still follows the owner rule: approving one unit also grants that
+  owner's other units in the same area, including any in the same request (they
+  are marked Granted). A unit that has left the pool, or whose owner is with
+  another broker, is marked **Unavailable** — never taken from that broker.
+- If two managers decide the same unit at once, the second is refused with a
+  clear message and the pop-up refreshes; nothing is decided twice.
+
+### Fixed
+- After approving or denying a request, its row no longer loses the per-area
+  breakdown in "Requested areas".
+
+### Data
+- **Migration 015** adds a nullable `decision` column to `request_units`. Additive
+  only: no row changes, and every existing unit reads as undecided — which is what
+  a pending request's units are. **Run `npm run migrate` (in `server/`) before
+  starting the new server.**
+
+---
+
 ## [3.35.0] — 2026-09-17
 
 ### Added

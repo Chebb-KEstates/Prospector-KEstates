@@ -448,6 +448,17 @@ export enum RequestStatus {
   denied = 'denied',
 }
 
+/**
+ * The manager's decision on ONE unit of a hand-picked request. A unit with no
+ * entry is still undecided. `unavailable` = approved, but it could not be granted
+ * (it had left the pool, or its owner is held by another broker in that area).
+ */
+export enum UnitDecision {
+  granted = 'granted',
+  denied = 'denied',
+  unavailable = 'unavailable',
+}
+
 /** One area within a request: how many of the requested units are in it. */
 export interface RequestArea { community: string; cluster: string; count: number; }
 
@@ -459,6 +470,13 @@ export class BatchRequest {
    * Server-computed on the list response; empty until then.
    */
   areas: RequestArea[] = [];
+
+  /**
+   * Per-unit decisions on a hand-picked request, keyed by unit id. Only decided
+   * units appear. A hand-picked request stays `pending` while any unit is
+   * undecided, so a manager can approve/deny some units now and the rest later.
+   */
+  unitDecisions: Record<string, UnitDecision> = {};
 
   constructor(
     public id: string,
@@ -477,6 +495,21 @@ export class BatchRequest {
 
   get isHandPicked(): boolean { return this.unitIds.length > 0; }
 
+  /** Hand-picked units the manager has not decided yet. */
+  get pendingUnitIds(): string[] {
+    return this.unitIds.filter(id => !this.unitDecisions[id]);
+  }
+
+  /** How many hand-picked units carry a decision. */
+  get decidedUnitCount(): number {
+    return this.unitIds.length - this.pendingUnitIds.length;
+  }
+
+  /** How many hand-picked units carry the given decision. */
+  unitCountWith(d: UnitDecision): number {
+    return this.unitIds.reduce((n, id) => n + (this.unitDecisions[id] === d ? 1 : 0), 0);
+  }
+
   get summary(): string {
     return this.isHandPicked
       ? `${this.count} hand-picked units — ${this.cluster ?? this.community}`
@@ -484,11 +517,14 @@ export class BatchRequest {
   }
 
   decided(s: RequestStatus, granted = 0): BatchRequest {
-    return new BatchRequest(
+    const r = new BatchRequest(
       this.id, this.orgId, this.brokerId, this.community,
       this.cluster, this.count, this.unitIds, this.note,
       this.at, s, new Date().toISOString(), granted,
     );
+    r.areas = this.areas;
+    r.unitDecisions = { ...this.unitDecisions };
+    return r;
   }
 
   toJson(): Record<string, unknown> {
@@ -497,7 +533,7 @@ export class BatchRequest {
       community: this.community, cluster: this.cluster, count: this.count,
       unitIds: this.unitIds, note: this.note, at: this.at,
       status: this.status, decidedAt: this.decidedAt, grantedCount: this.grantedCount,
-      areas: this.areas,
+      areas: this.areas, unitDecisions: this.unitDecisions,
     };
   }
 
@@ -519,6 +555,13 @@ export class BatchRequest {
       cluster: String(a.cluster ?? ''),
       count: Number(a.count ?? 0),
     }));
+    // Defensive like the enums elsewhere: unknown decision values are dropped
+    // (the unit reads as undecided) rather than thrown on.
+    const decisions = (j.unitDecisions ?? {}) as Record<string, unknown>;
+    const known = Object.values(UnitDecision) as string[];
+    for (const [id, d] of Object.entries(decisions)) {
+      if (typeof d === 'string' && known.includes(d)) r.unitDecisions[id] = d as UnitDecision;
+    }
     return r;
   }
 }

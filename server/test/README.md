@@ -31,6 +31,7 @@ its own `org_id` — `kOrgId` is a shared constant in the domain layer.
 | `propertyRepo.test.ts` | dedupe by `unit_key`, `owner_key` parity with the shared `ownerKeyOf()`, generated `callable`, filter/sort/paginate semantics, facets over the whole scope |
 | `importService.test.ts` | staging, server-side dry run, the dataset-id regression, re-import updating in place, staged rows dropped at commit, cross-user access |
 | `revealService.test.ts` | the single door a real phone leaves by: cap enforcement, manager exemption, per-local-day reset, and that a *blocked* reveal is still audited |
+| `requestDecisions.test.ts` | per-unit approve/deny on a hand-picked request: partial decisions keep it pending, closing rules, owner-linked grants, never taking a unit from another broker, stale/duplicate/invalid selections, whole-request Approve/Deny after partial decisions, two managers racing, audit lines |
 
 Three of these are regression tests for bugs that existed in the reference
 implementation; one (`a blocked reveal is still audited`) is for a bug

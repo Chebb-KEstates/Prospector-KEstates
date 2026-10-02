@@ -1,0 +1,14 @@
+-- Per-unit decisions on a hand-picked request, so a manager can approve or deny
+-- SOME of a broker's requested units and leave the rest for later.
+--
+--   NULL          — undecided (still awaiting the manager)
+--   'granted'     — approved and assigned to the requesting broker
+--   'denied'      — the manager declined this unit
+--   'unavailable' — approved, but no longer grantable (left the pool, or its
+--                   owner is held by another broker in that area)
+--
+-- A request stays 'pending' while any of its units is undecided, and closes when
+-- the last one is decided. Additive and nullable: every existing row reads as
+-- undecided, which is exactly what a pending request's units are; units of an
+-- already-decided request are never read for a decision again. No row changes.
+ALTER TABLE request_units ADD COLUMN decision ENUM('granted','denied','unavailable') NULL;
