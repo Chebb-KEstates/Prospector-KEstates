@@ -1,7 +1,7 @@
 import { AppUser } from '../../../src/types/user';
 import { Property, Lead, CallLog, BatchRequest, DataSet, AuditEntry, VaultSettings } from '../../../src/types/models';
 import { maskedPhone, prettyPhone } from '../../../src/utils/format';
-import { isOpenAccess } from '../domain/access';
+import { isOpenView } from '../domain/access';
 
 /**
  * The wire format — and the last line of defence for the data rules.
@@ -15,14 +15,14 @@ import { isOpenAccess } from '../domain/access';
  * Field names mirror the frontend's `toJson()` so the existing `fromJson`
  * constructors keep working unchanged.
  *
- * OPEN ACCESS (src/config.ts): with assignments switched off, every number is
- * shown to everyone, so `listPhone` sends it in full (formatted like a reveal).
- * Switched back on, it masks again — this is the only place that decides.
+ * OPEN VIEW (src/config.ts): every user may see every owner's number, so
+ * `listPhone` sends it in full (formatted like a reveal). Switched off, it masks
+ * again — this is the only place that decides.
  */
 
 /** A phone number as a list/detail response carries it. */
 function listPhone(phone?: string): string {
-  return isOpenAccess() ? prettyPhone(phone) : maskedPhone(phone);
+  return isOpenView() ? prettyPhone(phone) : maskedPhone(phone);
 }
 
 /** A user as the client may see them. Never includes password material. */

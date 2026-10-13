@@ -493,6 +493,17 @@ export enum UnitDecision {
   unavailable = 'unavailable',
 }
 
+/**
+ * What a request asks for. `units`: pooled units for the broker (the Pool tab,
+ * "Request this unit"). `takeover`: a unit that belongs to ANOTHER broker —
+ * approving it moves the unit (with that owner's other units in the same area)
+ * from its current broker to the requester.
+ */
+export enum RequestKind {
+  units = 'units',
+  takeover = 'takeover',
+}
+
 /** One area within a request: how many of the requested units are in it. */
 export interface RequestArea { community: string; cluster: string; count: number; }
 
@@ -511,6 +522,11 @@ export class BatchRequest {
    * undecided, so a manager can approve/deny some units now and the rest later.
    */
   unitDecisions: Record<string, UnitDecision> = {};
+
+  /** Pooled units, or a take-over of another broker's unit. */
+  kind: RequestKind = RequestKind.units;
+
+  get isTakeover(): boolean { return this.kind === RequestKind.takeover; }
 
   constructor(
     public id: string,
@@ -545,6 +561,7 @@ export class BatchRequest {
   }
 
   get summary(): string {
+    if (this.isTakeover) return `Take-over — ${this.cluster ?? this.community}`;
     return this.isHandPicked
       ? `${this.count} hand-picked units — ${this.cluster ?? this.community}`
       : `${this.count} units — ${this.cluster ?? this.community}`;
@@ -558,6 +575,7 @@ export class BatchRequest {
     );
     r.areas = this.areas;
     r.unitDecisions = { ...this.unitDecisions };
+    r.kind = this.kind;
     return r;
   }
 
@@ -567,7 +585,7 @@ export class BatchRequest {
       community: this.community, cluster: this.cluster, count: this.count,
       unitIds: this.unitIds, note: this.note, at: this.at,
       status: this.status, decidedAt: this.decidedAt, grantedCount: this.grantedCount,
-      areas: this.areas, unitDecisions: this.unitDecisions,
+      areas: this.areas, unitDecisions: this.unitDecisions, kind: this.kind,
     };
   }
 
@@ -596,6 +614,7 @@ export class BatchRequest {
     for (const [id, d] of Object.entries(decisions)) {
       if (typeof d === 'string' && known.includes(d)) r.unitDecisions[id] = d as UnitDecision;
     }
+    r.kind = j.kind === RequestKind.takeover ? RequestKind.takeover : RequestKind.units;
     return r;
   }
 }

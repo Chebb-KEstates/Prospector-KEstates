@@ -4,7 +4,6 @@ import { useAuth } from '../../state/AuthContext';
 import { VaultSettings } from '../../types/models';
 import { ApiError } from '../../data/apiClient';
 import * as api from '../../data/api';
-import { OPEN_ACCESS } from '../../config';
 
 export function SettingsScreen() {
   const { settings, saveSettings } = useVault();
@@ -99,9 +98,7 @@ export function SettingsScreen() {
 
         {/* The assignment timer — how long a broker keeps a unit before it
             returns to the pool for someone else. These drive the countdown in
-            the tables and the automatic recycling sweep. Hidden under open access,
-            where nothing is assigned; the saved values are kept as they are. */}
-        {!OPEN_ACCESS && (
+            the tables and the automatic recycling sweep. */}
         <div className="card">
           <h3 style={{ fontWeight: 600, marginBottom: 4 }}>Assignment timer</h3>
           <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginBottom: 16 }}>
@@ -116,7 +113,6 @@ export function SettingsScreen() {
             {field('"Running out of time" alert (hours)', 'expiringSoonHours', 'number', 'When a unit turns amber and appears on the home screen', true)}
           </div>
         </div>
-        )}
 
         <div className="card">
           <h3 style={{ fontWeight: 600, marginBottom: 16 }}>Office-network lock</h3>

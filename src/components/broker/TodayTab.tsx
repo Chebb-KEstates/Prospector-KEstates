@@ -12,7 +12,7 @@ import { CallStop } from '../../state/callTypes';
 import { PropertyPopup } from '../manager/PropertyPopup';
 import { ApiError } from '../../data/apiClient';
 import { useMyLeads } from '../../data/hooks';
-import { LEADS_ENABLED, OPEN_ACCESS } from '../../config';
+import { LEADS_ENABLED, OPEN_VIEW } from '../../config';
 import { useStickyHeader, stickyHeaderStyle } from '../common/useStickyHeader';
 
 /**
@@ -23,15 +23,17 @@ import { useStickyHeader, stickyHeaderStyle } from '../common/useStickyHeader';
  * with ← / → from there. Buyer leads use a simple table + single-call dialog.
  */
 
-type Quick = 'toCall' | 'all' | 'due' | 'fresh' | 'noAnswer' | 'callback' | 'text' | 'interested' | 'expiring';
+type Quick = 'toCall' | 'all' | 'everyone' | 'due' | 'fresh' | 'noAnswer' | 'callback' | 'text' | 'interested' | 'expiring';
 const QUICKS: { key: Quick; label: string }[] = [
   // "To call" is the actionable working list (assigned + portfolio). "All" also
   // shows the units the broker still holds but that dropped off — cooled-off and
   // do-not-call — so nothing silently disappears after it's dispositioned.
   { key: 'toCall', label: 'To call' },
   { key: 'all', label: 'All' },
-  // Open access: no assignment timers, so nothing can expire.
-  ...(OPEN_ACCESS ? [] : [{ key: 'expiring' as Quick, label: '⏰ Expiring soon' }]),
+  // Open view: every unit in the vault, whoever holds it — read-only unless it's
+  // yours, with "Take over ownership" on the record.
+  ...(OPEN_VIEW ? [{ key: 'everyone' as Quick, label: 'All units' }] : []),
+  { key: 'expiring', label: '⏰ Expiring soon' },
   { key: 'due', label: 'Follow-up due' },
   { key: 'fresh', label: 'Never called' },
   // These filter on the unit's CURRENT status (its last outcome), not activity in
@@ -41,9 +43,6 @@ const QUICKS: { key: Quick; label: string }[] = [
   { key: 'text', label: 'Awaiting text' },
   { key: 'interested', label: 'Interested (now)' },
 ];
-
-/** Open access: the shared working list — who to call, and where each unit stands. */
-const OPEN_WORKING_COLUMNS = ['owner', 'mobile', 'beds', 'size', 'stage', 'outcome', 'calledAt', 'followUp', 'state'];
 
 /**
  * Maps a quick chip onto server filters. `dueOnly` and `interestedOnly` are
@@ -57,6 +56,7 @@ function quickToQuery(quick: Quick): {
 } {
   switch (quick) {
     case 'all': return { includeInactive: true };
+    case 'everyone': return { includeInactive: true };
     case 'fresh': return { forcedOutcome: 'none' };
     case 'noAnswer': return { forcedOutcome: CallOutcome.noAnswer };
     case 'callback': return { forcedOutcome: CallOutcome.callbackLater };
@@ -68,11 +68,17 @@ function quickToQuery(quick: Quick): {
   }
 }
 
+/** Open view: the broker's own list — who to call, and where each unit stands. */
+const OWN_COLUMNS = ['owner', 'mobile', 'beds', 'size', 'stage', 'outcome', 'calledAt', 'followUp', 'state'];
+/** Open view, "All units": the same plus who holds each one. */
+const ALL_UNITS_COLUMNS = ['owner', 'mobile', 'beds', 'size', 'stage', 'outcome', 'calledAt', 'state', 'assignee'];
+
 export function TodayTab() {
   const { user } = useAuth();
   const vault = useVault();
   const [buyers, setBuyers] = useState(false);
   const [quick, setQuick] = useState<Quick>('toCall');
+  const everyone = quick === 'everyone';
   // Row click opens the record popup (an audited owner view).
   const [detailId, setDetailId] = useState<string | null>(null);
   const [pageIds, setPageIds] = useState<string[]>([]);
@@ -120,14 +126,17 @@ export function TodayTab() {
       )}
 
       {!buyers ? (
-        // Open access: "mine" is the whole vault on the server (every workable
-        // unit; "All" adds cooled-off and do-not-call), with owner + number shown.
-        // Its own layout key, so the old owner-less column set doesn't carry over.
+        // "All units" (open view) is the whole vault with who holds each unit;
+        // every other chip is the broker's own list. Owner details show in both
+        // under open view. A separate instance (key) per view so each keeps its
+        // own column layout.
         <PropertyTable
-          prefsKey={OPEN_ACCESS ? 'broker_today_open' : 'broker_today'}
-          hideOwner={!OPEN_ACCESS}
-          defaultColumns={OPEN_ACCESS ? OPEN_WORKING_COLUMNS : undefined}
-          scope="mine"
+          key={everyone ? 'everyone' : 'mine'}
+          prefsKey={everyone ? 'broker_all_units' : 'broker_today'}
+          hideOwner={!OPEN_VIEW}
+          showAssignee={everyone}
+          defaultColumns={OPEN_VIEW ? (everyone ? ALL_UNITS_COLUMNS : OWN_COLUMNS) : undefined}
+          scope={everyone ? 'all' : 'mine'}
           stickyTop={headerH}
           onSelect={openDetail}
           {...quickToQuery(quick)}

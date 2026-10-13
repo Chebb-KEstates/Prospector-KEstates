@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Property, PropertyState, PropertyStage, PropertyStageLabel, PROPERTY_STAGES, CallOutcomeLabel } from '../../types/models';
-import { StateChip, OutcomeChip, CountdownBadge, StageChip, stateFilterOptions } from '../common/StateChip';
-import { OPEN_ACCESS } from '../../config';
+import { Property, PropertyState, PropertyStateLabel, PropertyStage, PropertyStageLabel, PROPERTY_STAGES, CallOutcomeLabel } from '../../types/models';
+import { StateChip, OutcomeChip, CountdownBadge, StageChip } from '../common/StateChip';
 import { Icon } from '../common/Icon';
 import { useTableLayout, ColumnsDialog } from '../common/tableLayout';
 import { FilterField, NumberRange, CalledPeriod, CALLED_PERIODS, calledRange } from '../common/propertyFilters';
@@ -114,10 +113,7 @@ function baseCols(soonHours: number): ColDef[] {
     { key: 'calledAt', label: 'Last call', flex: 2, sortable: true, render: p => <span style={{ color: 'var(--text-secondary)' }}>{fmtDateTime(p.lastCalledAt)}</span> },
     { key: 'followUp', label: 'Follow-up', flex: 2, sortable: true, render: p => <span style={{ color: 'var(--text-secondary)' }}>{fmtDate(p.nextFollowUpAt)}</span> },
     { key: 'attempts', label: 'Attempts', flex: 1, numeric: true, sortable: true, render: p => p.callAttempts || <span style={{ color: 'var(--text-tertiary)' }}>—</span> },
-    // Open access: nothing is assigned, so "Assigned on" is not offered.
-    ...(OPEN_ACCESS ? [] : [
-      { key: 'assignedAt', label: 'Assigned on', flex: 2, sortable: true, render: (p: Property) => <span style={{ color: 'var(--text-secondary)' }}>{fmtDate(p.assignedAt)}</span> },
-    ]),
+    { key: 'assignedAt', label: 'Assigned on', flex: 2, sortable: true, render: p => <span style={{ color: 'var(--text-secondary)' }}>{fmtDate(p.assignedAt)}</span> },
     { key: 'createdAt', label: 'Added', flex: 2, sortable: true, render: p => <span style={{ color: 'var(--text-secondary)' }}>{fmtDate(p.createdAt)}</span> },
     {
       // Broker/manager notes can name the owner, so this rides with the owner
@@ -206,12 +202,10 @@ export function PropertyTable({
   scope, assignedTo, datasetId, fixedState,
   forcedOutcome, dueOnly, interestedOnly, expiringSoon, includeInactive,
   onSelect, selectedId, teaser, hideOwner, prefsKey,
-  checkedIds, onCheckedChanged, onFiltersChange, headerExtra, stickyTop = 0, showAssignee: showAssigneeProp, allowColumns,
+  checkedIds, onCheckedChanged, onFiltersChange, headerExtra, stickyTop = 0, showAssignee, allowColumns,
   defaultColumns,
 }: Props) {
   const ownerHidden = !!teaser || !!hideOwner;
-  // Open access: nobody is assigned anything, so no "Assigned to" column or filter.
-  const showAssignee = !!showAssigneeProp && !OPEN_ACCESS;
   const selectable = !!checkedIds && !!onCheckedChanged;
   const { brokers, userById, settings } = useVault();
 
@@ -472,8 +466,8 @@ export function PropertyTable({
         </div>
         {!fixedState && facets.states.length > 1 && (
           <select className="input" style={sel} value={state} onChange={e => setState(e.target.value as PropertyState | '')}>
-            {/* Same words as the State chips (see stateFilterOptions). */}
-            <option value="">All states</option>{stateFilterOptions(facets.states).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {/* Portfolio is hidden for now — those units read as "Assigned". */}
+            <option value="">All states</option>{facets.states.filter(s => s !== PropertyState.portfolio).map(s => <option key={s} value={s}>{PropertyStateLabel[s]}</option>)}
           </select>
         )}
         <div style={{ position: 'relative' }}>

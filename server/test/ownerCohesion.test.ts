@@ -11,7 +11,7 @@ import { AppUser, UserRole } from '../../src/types/user';
 import { DataModule, DataSetType, kOrgId, PropertyState, CallOutcome } from '../../src/types/models';
 import { ColumnSpec, ImportField } from '../../src/logic/importModels';
 import { newUserId } from '../src/domain/ids';
-import { setOpenAccessForTests } from '../src/domain/access';
+import { setOpenViewForTests } from '../src/domain/access';
 
 /**
  * Owner-in-area cohesion: an owner's units in ONE area (community) are one
@@ -36,9 +36,9 @@ const COLUMNS = [
 
 let manager: string, brokerX: string, brokerY: string;
 
-// These guard the ASSIGNED model (OPEN_ACCESS = false) — the path a revert relies on.
+// These run with open view OFF (masked, assigned-only) — the path a revert relies on.
 test.before(async () => {
-  setOpenAccessForTests(false);
+  setOpenViewForTests(false);
   manager = newUserId(); brokerX = newUserId(); brokerY = newUserId();
   const mk = (id: string, name: string, role: UserRole) => insertUser({
     user: new AppUser(id, name, `${id}@test.local`, role, true, 'QA', undefined, new Date().toISOString()),
@@ -171,4 +171,4 @@ test('manager handoff: assign the group to a broker, then an interested call →
   assert.equal(after.at('102', 'Marina').assignedTo, brokerX, 'the owner\'s same-area sibling moved to that broker too');
 });
 
-test.after(async () => { setOpenAccessForTests(null); await closePool(); });
+test.after(async () => { setOpenViewForTests(null); await closePool(); });

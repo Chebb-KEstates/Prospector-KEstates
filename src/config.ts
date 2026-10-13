@@ -11,27 +11,23 @@
 export const LEADS_ENABLED = false;
 
 /**
- * `OPEN_ACCESS` — every unit is open to everyone, with no assignments.
+ * `OPEN_VIEW` — everyone can SEE every unit; only its owner can WORK it.
  *
  * ON (true):
- *  - Every user (broker or manager) sees, opens and works every unit. Nobody is
- *    assigned anything and nobody requests access: the Pool tab, the Requests
- *    tab, Assign / Reclaim / Reassign and the assignment timers are all hidden,
- *    and the server refuses the assignment/request endpoints.
- *  - Owner numbers are sent and shown in full. The "Reveal number" step is gone
- *    (opening a record is still written to the audit trail).
- *  - The expiry sweep no longer returns held units to the pool. A unit that was
- *    marked "not interested" / "already listed" still comes back after its cooldown.
+ *  - Every user can open any unit and see its owner details, including the
+ *    full number. There is no "Reveal" step, so there is no reveal-lock.
+ *  - Working a unit (logging a call, notes, updates, listing info, stage) still
+ *    belongs to the broker it is assigned to, or a manager. Anyone else sees it
+ *    read-only, with "This unit belongs to X" and a "Take over ownership" button
+ *    (or "Request this unit" for a pooled unit). Either one sends a request the
+ *    manager approves or denies; approving a take-over moves the unit (with that
+ *    owner's other units in the same area) to the requester.
+ *  - A broker's history journal shows only real work. Stage changes, record
+ *    opens and number reveals are for managers' eyes only (enforced by the API).
+ *  - Assignments, requests, the Pool and the assignment timers work as before.
  *
- * OFF (false) restores the assigned, masked, request-driven model as it was.
- *
- * This is a CODE switch only. No database column was dropped or rewritten:
- * `assigned_to`, the timers, `requests` and `request_units` stay exactly as they
- * were, so flipping this back needs no data migration. One thing to know before
- * flipping it back: units still held from before carry their old timers, so the
- * first sweep afterwards returns any long-expired ones to the pool.
- *
- * The server compiles this same file (see server/tsconfig.json), so the client
- * and the API can never disagree about which mode they are in.
+ * OFF (false) restores masked numbers and assigned-only visibility, with no data
+ * migration. The server compiles this same file (see server/tsconfig.json), so
+ * the client and the API always agree on the mode.
  */
-export const OPEN_ACCESS = true;
+export const OPEN_VIEW = true;

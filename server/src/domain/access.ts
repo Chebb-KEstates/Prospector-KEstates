@@ -1,34 +1,34 @@
-import { OPEN_ACCESS } from '../../../src/config';
+import { OPEN_VIEW } from '../../../src/config';
 import type { AppUser } from '../../../src/types/user';
-import { ApiError } from '../http/errors';
 
 /**
- * Open access vs the assigned model — the server side of `OPEN_ACCESS`
- * (src/config.ts). Every route that used to ask "is this unit assigned to the
- * caller?" asks `canWorkUnit` instead, so the switch lives in one place.
+ * Who may SEE a unit and who may WORK it — the server side of `OPEN_VIEW`
+ * (src/config.ts). Routes ask these two questions instead of comparing
+ * `assignedTo` themselves, so the rule lives in one place.
  */
 
-// Tests flip the mode to exercise both models; production never calls the setter.
+// Tests flip the mode to exercise both; production never calls the setter.
 let override: boolean | null = null;
 
-export function isOpenAccess(): boolean {
-  return override ?? OPEN_ACCESS;
+export function isOpenView(): boolean {
+  return override ?? OPEN_VIEW;
 }
 
 /** TEST-ONLY: force a mode (null = back to the config value). */
-export function setOpenAccessForTests(open: boolean | null): void {
+export function setOpenViewForTests(open: boolean | null): void {
   override = open;
 }
 
-/** May this user open / call / annotate a unit held by `assignedTo`? */
-export function canWorkUnit(me: AppUser, assignedTo?: string | null): boolean {
-  return isOpenAccess() || me.isManager || assignedTo === me.id;
+/** May this user open / read a unit held by `assignedTo` (its record, owner, number, history)? */
+export function canViewUnit(me: AppUser, assignedTo?: string | null): boolean {
+  return isOpenView() || canWorkUnit(me, assignedTo);
 }
 
-/** Refuse an assignment or request action while open access is on. */
-export function assertAssignmentsEnabled(): void {
-  if (isOpenAccess()) {
-    throw new ApiError(409, 'assignments_off',
-      'Assignments are switched off — every unit is open to everyone, so there is nothing to assign or request.');
-  }
+/**
+ * May this user WORK a unit held by `assignedTo` — log a call, write notes or an
+ * update, edit listing info, change the stage? Only its broker or a manager,
+ * whatever the view mode.
+ */
+export function canWorkUnit(me: AppUser, assignedTo?: string | null): boolean {
+  return me.isManager || (!!assignedTo && assignedTo === me.id);
 }

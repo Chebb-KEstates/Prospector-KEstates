@@ -28,7 +28,6 @@ import { listDatasets } from '../repositories/datasetRepo';
 import { assignmentMatrix, areaBreakdown, areaAssignmentMatrix } from '../repositories/statsRepo';
 import { loadSettings } from '../repositories/settingsRepo';
 import { serializeAudit, serializeProperty } from '../http/serializers';
-import { isOpenAccess } from '../domain/access';
 
 /**
  * Dashboard aggregates.
@@ -166,9 +165,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
         lastAt: lifetime?.lastAt,
         // "Has data but hasn't called today" — the board's amber dot and the
         // idle-broker alert are the same condition, computed once.
-        // Open access: nobody holds a list, so it's simply an active broker with
-        // no calls today.
-        quiet: (isOpenAccess() ? b.active : onList > 0) && (t?.calls ?? 0) === 0,
+        quiet: onList > 0 && (t?.calls ?? 0) === 0,
       };
     });
 

@@ -114,11 +114,25 @@ export function RequestsScreen() {
                   const partial = req.status === RequestStatus.pending && req.isHandPicked && req.decidedUnitCount > 0;
                   return (
                     <tr key={req.id}>
-                      <td style={{ fontWeight: 500 }}>{userById(req.brokerId)?.name ?? req.brokerId}</td>
+                      <td style={{ fontWeight: 500 }}>
+                        {userById(req.brokerId)?.name ?? req.brokerId}
+                        {/* A take-over asks for a unit another broker holds —
+                            approving moves it (and that owner's same-area units). */}
+                        {req.isTakeover && (
+                          <div>
+                            <span className="chip" style={{ marginTop: 4, background: 'color-mix(in srgb, var(--info) 16%, transparent)', color: 'var(--info)', fontSize: '0.68rem' }}>
+                              Take-over
+                            </span>
+                          </div>
+                        )}
+                      </td>
                       <td>
                         <AreaSummary areas={list} loading={openingId === req.id}
                           title={req.status === RequestStatus.pending ? 'View the requested units — approve or deny some of them' : 'View the requested units'}
                           onClick={clickable ? () => void openUnits(req) : undefined} />
+                        {req.note && (
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 4 }}>{req.note}</div>
+                        )}
                       </td>
                       <td className="tabular-nums" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtInt(req.count)}</td>
                       <td>
@@ -199,7 +213,7 @@ function RequestUnitsPopup({ initialRequest, initialUnits, brokerName, onClose }
   brokerName: string;
   onClose: () => void;
 }) {
-  const { decideRequestUnits, refreshRequest } = useVault();
+  const { decideRequestUnits, refreshRequest, userById } = useVault();
   const [request, setRequest] = useState(initialRequest);
   const [units, setUnits] = useState(initialUnits);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -266,18 +280,26 @@ function RequestUnitsPopup({ initialRequest, initialUnits, brokerName, onClose }
     }
   };
 
+  // A take-over: who holds each unit right now (approving moves it from them).
+  const holderCol: Col<Property> = {
+    key: 'holder', label: 'Currently with',
+    render: p => p.assignedTo ? (userById(p.assignedTo)?.name ?? '—') : <span style={{ color: 'var(--text-tertiary)' }}>In the pool</span>,
+    sortValue: p => (p.assignedTo ? userById(p.assignedTo)?.name : '') ?? '',
+    exportValue: p => (p.assignedTo ? userById(p.assignedTo)?.name : 'In the pool') ?? '',
+  };
+
   const decidedCount = request.decidedUnitCount;
   const subtitle = `${brokerName} · ${fmtInt(request.count)} requested` +
     (decidedCount > 0 ? ` · ${fmtInt(decidedCount)} decided` : '');
 
   return (
     <UnitsDrilldownPopup
-      title="Requested units"
+      title={request.isTakeover ? 'Take-over request' : 'Requested units'}
       subtitle={subtitle}
       units={units}
       onClose={onClose}
       prefsKey="units.popup.requests.v1"
-      leadColumns={[decisionCol]}
+      leadColumns={request.isTakeover ? [decisionCol, holderCol] : [decisionCol]}
       selection={open ? {
         selected,
         onChange: setSelected,

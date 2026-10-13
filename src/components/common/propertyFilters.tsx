@@ -1,8 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Property, PropertyState, CallOutcome, CallOutcomeLabel } from '../../types/models';
+import { Property, PropertyState, PropertyStateLabel, CallOutcome, CallOutcomeLabel } from '../../types/models';
 import { Icon } from './Icon';
 import { useVault } from '../../state/VaultContext';
-import { stateFilterOptions, stateMatches } from './StateChip';
 
 /**
  * Shared filter building-blocks for the property tables.
@@ -169,7 +168,7 @@ export function useClientPropertyFilters(all: Property[]): {
     };
 
     return all.filter(p => {
-      if (state && !stateMatches(p.state, state)) return false;
+      if (state && p.state !== state) return false;
       if (community && p.community !== community) return false;
       if (cluster && (p.cluster ?? '') !== cluster) return false;
       if (beds && p.beds !== parseInt(beds, 10)) return false;
@@ -249,9 +248,9 @@ export function useClientPropertyFilters(all: Property[]): {
       </div>
       {facets.states.length > 1 && (
         <select className="input" style={sel} value={state} onChange={e => setState(e.target.value as PropertyState | '')}>
-          {/* Same words as the State chips (see stateFilterOptions). */}
+          {/* Portfolio is hidden for now — those units read as "Assigned". */}
           <option value="">All states</option>
-          {stateFilterOptions(facets.states).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {facets.states.filter(s => s !== PropertyState.portfolio).map(s => <option key={s} value={s}>{PropertyStateLabel[s]}</option>)}
         </select>
       )}
       <div style={{ position: 'relative' }}>

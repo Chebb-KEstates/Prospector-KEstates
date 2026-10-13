@@ -283,6 +283,12 @@ export const properties = {
     await post(`/api/properties/${id}/note`, { note });
   },
 
+  /** Ask a manager for this unit: a take-over if another broker holds it,
+   *  otherwise an ordinary request for a pooled unit. */
+  async requestOwnership(id: string): Promise<BatchRequest> {
+    return BatchRequest.fromJson(await post(`/api/properties/${id}/request-ownership`, {}));
+  },
+
   /** Set a unit's listing stage; returns the updated unit. */
   async setStage(id: string, stage: PropertyStage): Promise<Property> {
     return Property.fromJson(await patch(`/api/properties/${id}/stage`, { stage }));

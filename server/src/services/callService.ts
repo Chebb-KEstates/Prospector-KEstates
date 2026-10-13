@@ -9,7 +9,6 @@ import { loadSettings } from '../repositories/settingsRepo';
 import { writeAudit } from '../repositories/auditRepo';
 import { newCallId } from '../domain/ids';
 import { notFound, forbidden } from '../http/errors';
-import { isOpenAccess } from '../domain/access';
 
 /**
  * Logging a call.
@@ -70,7 +69,7 @@ export async function logCall(input: LogCallInput): Promise<CallLog> {
 
     // A broker may only log against units assigned to them. The client never
     // checked — it simply didn't show other brokers' units.
-    if (!input.isManager && !isOpenAccess()) {
+    if (!input.isManager) {
       const foreign = properties.filter(p => p.assignedTo !== input.brokerId);
       if (foreign.length > 0) {
         throw forbidden('Those units are not assigned to you.');
@@ -191,7 +190,7 @@ export async function logLeadCall(input: LogLeadCallInput): Promise<CallLog> {
     if (rows.length === 0) throw notFound('That lead no longer exists.');
     const lead = toLead(rows[0]);
 
-    if (!input.isManager && !isOpenAccess() && lead.assignedTo !== input.brokerId) {
+    if (!input.isManager && lead.assignedTo !== input.brokerId) {
       throw forbidden('That lead is not assigned to you.');
     }
 
@@ -284,11 +283,7 @@ export async function undoDncLead(leadId: string, actorId: string): Promise<Lead
 export async function sweepLapsed(): Promise<{ properties: number; leads: number }> {
   const settings = await loadSettings();
   const now = new Date().toISOString();
-  // Open access: nobody holds a unit, so an assignment deadline means nothing and
-  // is never acted on — only a finished cooldown (not interested / already
-  // listed) brings a unit back. The deadlines stay stored, untouched.
-  const open = isOpenAccess();
-  const expiredHold = open ? '' : `
+  const expiredHold = `
            OR (state IN ('assigned', 'portfolio')
                AND assignment_expires_at IS NOT NULL
                AND assignment_expires_at < UTC_TIMESTAMP(3))`;
@@ -309,10 +304,10 @@ export async function sweepLapsed(): Promise<{ properties: number; leads: number
     // record journal shows why the unit went back to the pool.
     const reclaimedGroups: { ids: string[]; detail: string }[] = [];
 
-    // A unit nobody holds (always, under open access) has no group to wait for:
+    // A unit nobody holds (e.g. a manager cooled a pooled unit) has no group to wait for:
     // it returns to the pool on its own. Grouping these by broker would also put
     // an empty list into the `assigned_to IN (…)` below, which is invalid SQL.
-    const solo = open ? all : all.filter(p => !p.assignedTo);
+    const solo = all.filter(p => !p.assignedTo);
     for (const p of solo) {
       const detail = p.state === PropertyState.cooling
         ? 'Back in the pool (cooldown ended)'
@@ -325,7 +320,7 @@ export async function sweepLapsed(): Promise<{ properties: number; leads: number
       reclaimedGroups.push({ ids: [p.id], detail });
     }
 
-    const candidates = open ? [] : all.filter(p => !!p.assignedTo);
+    const candidates = all.filter(p => !!p.assignedTo);
     if (candidates.length > 0) {
       const ownerKeys = Array.from(new Set(candidates.map(ownerKeyOf)));
       const brokers = Array.from(new Set(candidates.map(p => p.assignedTo).filter((b): b is string => !!b)));

@@ -7,7 +7,6 @@ import { fmtInt, timeAgo } from '../../utils/format';
 import { ApiError } from '../../data/apiClient';
 import * as api from '../../data/api';
 import { DeactivateBrokerDialog } from './DeactivateBrokerDialog';
-import { OPEN_ACCESS } from '../../config';
 
 /**
  * User administration.
@@ -148,9 +147,8 @@ export function UsersScreen() {
       return;
     }
     // Deactivating: if they still hold units, ask what to do with them first.
-    // Open access: nobody holds units, so there is nothing to ask.
     try {
-      const units = OPEN_ACCESS ? [] : await api.users.heldUnits(u.id);
+      const units = await api.users.heldUnits(u.id);
       if (units.length > 0) { setDeacError(null); setDeac({ broker: u, units }); return; }
       if (!window.confirm(`Deactivate ${u.name}? They keep their history, are signed out immediately, and can no longer sign in.`)) return;
       await setUserActive(u, false);

@@ -1,4 +1,4 @@
-import { DataSet, DataSetType, DataModule, BatchRequest, RequestStatus, UnitDecision, Property, PropertyStage, PropertyStageLabel, PROPERTY_STAGES, toPropertyStage } from './models';
+import { DataSet, DataSetType, DataModule, BatchRequest, RequestKind, RequestStatus, UnitDecision, Property, PropertyStage, PropertyStageLabel, PROPERTY_STAGES, toPropertyStage } from './models';
 
 describe('DataSet round-trip', () => {
   it('carries lastUpdatedAt + updateCount through toJson/fromJson', () => {
@@ -92,5 +92,20 @@ describe('Property stage', () => {
     const old = p.toJson();
     delete old.stage;
     expect(Property.fromJson(old).stage).toBe(PropertyStage.none);
+  });
+});
+
+describe('BatchRequest kind', () => {
+  it('defaults to units, round-trips a take-over, and reads unknown kinds as units', () => {
+    const r = new BatchRequest('r', 'org', 'b', 'Maple', 'Maple 3', 1, ['u1'], 'Take over from Omar');
+    expect(r.kind).toBe(RequestKind.units);
+    expect(r.isTakeover).toBe(false);
+    r.kind = RequestKind.takeover;
+    const back = BatchRequest.fromJson(r.toJson());
+    expect(back.isTakeover).toBe(true);
+    expect(back.summary).toBe('Take-over — Maple 3');
+    expect(back.decided(RequestStatus.approved, 1).kind).toBe(RequestKind.takeover);
+    const j = r.toJson(); j.kind = 'steal';
+    expect(BatchRequest.fromJson(j).kind).toBe(RequestKind.units);
   });
 });

@@ -13,7 +13,7 @@ import {
 import { AppUser, UserRole } from '../../src/types/user';
 import { ImportPipeline } from '../../src/logic/importPipeline';
 import { newPropertyId, newRequestId, newUserId } from '../src/domain/ids';
-import { setOpenAccessForTests } from '../src/domain/access';
+import { setOpenViewForTests } from '../src/domain/access';
 import { ApiError } from '../src/http/errors';
 
 /**
@@ -25,9 +25,9 @@ import { ApiError } from '../src/http/errors';
 
 let manager: string, brokerX: string, brokerY: string;
 
-// These guard the ASSIGNED model (OPEN_ACCESS = false) — the path a revert relies on.
+// These run with open view OFF (masked, assigned-only) — the path a revert relies on.
 test.before(async () => {
-  setOpenAccessForTests(false);
+  setOpenViewForTests(false);
   manager = newUserId(); brokerX = newUserId(); brokerY = newUserId();
   const mk = (id: string, name: string, role: UserRole) => insertUser({
     user: new AppUser(id, name, `${id}@test.local`, role, true, 'QA', undefined, new Date().toISOString()),
@@ -38,7 +38,7 @@ test.before(async () => {
   await mk(brokerY, 'Broker Y', UserRole.broker);
 });
 
-test.after(async () => { setOpenAccessForTests(null); await closePool(); });
+test.after(async () => { setOpenViewForTests(null); await closePool(); });
 
 async function wipe() {
   await pool.query('DELETE FROM requests WHERE org_id = ?', [kOrgId]);

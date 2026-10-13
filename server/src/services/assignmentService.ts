@@ -11,6 +11,7 @@ import { lockRequestForDecision, markDecided, setUnitDecisions } from '../reposi
 import { loadSettings } from '../repositories/settingsRepo';
 import { writeAudit } from '../repositories/auditRepo';
 import { findUserById } from '../repositories/userRepo';
+import type { AppUser } from '../../../src/types/user';
 import { badRequest, conflict, notFound } from '../http/errors';
 
 /**
@@ -104,7 +105,19 @@ export async function assignProperties(
   }
   const settings = await loadSettings();
 
-  return transaction(async (cx) => {
+  return transaction(cx => assignPropertiesTx(cx, propertyIds, broker, actorId, settings, note, skipConflictOwners));
+}
+
+/**
+ * The body of `assignProperties`, run inside a caller's transaction — so approving
+ * a take-over request reassigns the owner group with exactly the same rules
+ * (whole same-area group, DNC left alone, timers reset) under the same locks.
+ */
+export async function assignPropertiesTx(
+  cx: PoolConnection, propertyIds: string[], broker: AppUser, actorId: string,
+  settings: Awaited<ReturnType<typeof loadSettings>>, note?: string, skipConflictOwners = false,
+): Promise<AssignResult> {
+    const brokerId = broker.id;
     // 1. Lock the explicitly chosen rows.
     const [chosenRows] = await cx.query<Row[]>(
       `SELECT ${ASSIGNABLE_COLS} FROM properties
@@ -186,7 +199,6 @@ export async function assignProperties(
     }, cx);
 
     return { assigned: expanded.length, ownerLinkedExtra: extra, skippedOwners, skippedUnits };
-  });
 }
 
 /**
@@ -436,6 +448,40 @@ async function decideUnitsLocked(
     await setUnitDecisions(req.id, unitIds, UnitDecision.denied, cx);
     for (const id of unitIds) req.unitDecisions[id] = UnitDecision.denied;
     out.denied = unitIds.length;
+  } else if (unitIds.length > 0 && req.isTakeover) {
+    // Take-over: give the unit to the requester, whoever holds it now — the
+    // exact reassignment a manager's Reassign does (the owner's whole same-area
+    // group moves together, timers reset). A unit that has since gone
+    // do-not-call is not handed over.
+    const broker = await findUserById(req.brokerId);
+    if (!broker || !broker.active) {
+      throw notFound('The broker who asked no longer has an active account.');
+    }
+    const [stateRows] = await cx.query<Row[]>(
+      `SELECT id, state FROM properties WHERE id IN (${unitIds.map(() => '?').join(', ')}) FOR UPDATE`,
+      unitIds,
+    );
+    const movable = stateRows.filter(r => r.state !== PropertyState.dnc).map(r => r.id as string);
+    let moved = 0;
+    if (movable.length > 0) {
+      moved = (await assignPropertiesTx(cx, movable, broker, actorId, settings, 'Taken over (request approved)')).assigned;
+    }
+    const [after] = await cx.query<Row[]>(
+      `SELECT id, assigned_to, state FROM properties WHERE id IN (${unitIds.map(() => '?').join(', ')})`,
+      unitIds,
+    );
+    const nowTheirs = new Set(after
+      .filter(r => r.assigned_to === req.brokerId && r.state !== PropertyState.dnc)
+      .map(r => r.id as string));
+    const grantedSel = unitIds.filter(id => nowTheirs.has(id));
+    const unavailableSel = unitIds.filter(id => !nowTheirs.has(id));
+    await setUnitDecisions(req.id, grantedSel, UnitDecision.granted, cx);
+    await setUnitDecisions(req.id, unavailableSel, UnitDecision.unavailable, cx);
+    for (const id of grantedSel) req.unitDecisions[id] = UnitDecision.granted;
+    for (const id of unavailableSel) req.unitDecisions[id] = UnitDecision.unavailable;
+    out.granted = grantedSel.length;
+    out.unavailable = unavailableSel.length;
+    out.ownerLinkedExtra = Math.max(0, moved - grantedSel.length);
   } else if (unitIds.length > 0) {
     // Lock the selected units; only those still in the pool can be granted.
     const [rows] = await cx.query<Row[]>(

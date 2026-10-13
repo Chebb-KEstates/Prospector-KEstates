@@ -10,7 +10,6 @@ import { HomeScreen } from './HomeScreen';
 import { DatabaseScreen } from './DatabaseScreen';
 import { TeamScreen } from './TeamScreen';
 import { ControlScreen } from './ControlScreen';
-import { OPEN_ACCESS } from '../../config';
 
 type Tab = 'home' | 'database' | 'team' | 'control';
 
@@ -25,7 +24,7 @@ export function ManagerShell() {
   const tabs: { key: Tab; label: string; permission?: Permission; anyOf?: Permission[]; badge?: number }[] = [
     { key: 'home', label: 'Dashboard' },
     // Data Vault + Assignments, merged. Visible to anyone who could see either.
-    { key: 'database', label: 'Database', anyOf: [Permission.manageData, Permission.assignData], badge: OPEN_ACCESS ? undefined : pendingRequests.length },
+    { key: 'database', label: 'Database', anyOf: [Permission.manageData, Permission.assignData], badge: pendingRequests.length },
     { key: 'team', label: 'Report', permission: Permission.viewReports },
     { key: 'control', label: 'Control' },
   ];

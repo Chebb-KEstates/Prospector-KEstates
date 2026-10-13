@@ -18,6 +18,45 @@ for what each part means for Prospector.
 
 ---
 
+## [4.1.0] — 2026-10-13
+
+Assignments are back. 4.0.0's "everyone works everything" becomes **"everyone
+can see everything; only the owner works it"**. The switch is renamed
+`OPEN_VIEW` (in `src/config.ts`, on).
+
+### Changed
+- **Ownership is back.** Assign / Reclaim, Reassign, Requests, the Pool tab, the
+  assignment timers and the "Expiring soon" chips all return, exactly as in 3.36.
+  Only a unit's broker or a manager can work it: log a call, write notes, add an
+  update, edit listing info or change the stage. The server enforces this.
+- **Everyone can still see every unit.** A broker's Database has a new **All
+  units** chip showing the whole vault with an **Assigned to** column. Owner
+  details and full numbers show for every unit (no Reveal step).
+- A unit that isn't yours opens **read-only**, under **"This unit belongs to X"**
+  with a **Take over ownership** button. A pooled unit shows **Request this
+  unit**. Once asked, the button reads "Requested — waiting for a manager". Your
+  own unit reads "Assigned to you"; a manager sees who holds it.
+- **History journal:** stage changes, record opens and number reveals are shown
+  to **managers only**. The API leaves them out of a broker's journal. Managers
+  see opens as "Opened the record". The 4.0.0 "last activity" hint is replaced by
+  the ownership banner.
+
+### Added
+- **Take-over requests.** "Take over ownership" sends the manager a request
+  tagged **Take-over** (note: "Take over from X"). Its units pop-up has a
+  **Currently with** column. Approving it moves the unit, with that owner's other
+  units in the same area, from the current broker to the requester, the same way
+  a manager's Reassign does. Denying it leaves the unit where it is. Duplicate
+  requests, do-not-call units and requests by managers are refused.
+
+### Data
+- **Migration 017** adds `requests.kind` (`units` / `takeover`, default `units`).
+  Additive: every existing request reads as `units`. **Run `npm run migrate` (in
+  `server/`) before starting the new server.** It also applies 016 (stage) if
+  4.0.0 never ran there.
+
+---
+
 ## [4.0.0] — 2026-10-13
 
 **MAJOR** — changes who can see and work which units, and relaxes number masking.

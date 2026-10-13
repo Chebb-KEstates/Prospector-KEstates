@@ -1,12 +1,12 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { Permission } from '../../../src/types/user';
-import { PropertyState, PropertyStage, PropertyStageLabel, PROPERTY_STAGES } from '../../../src/types/models';
+import { PropertyState, PropertyStage, PropertyStageLabel, PROPERTY_STAGES, BatchRequest, RequestKind, kOrgId } from '../../../src/types/models';
 import {
   queryProperties, propertyFacets, findPropertyById, findAssignedTo,
   updatePropertyNotes, updateListingInfo, findByOwnerKey, updatePropertyStage,
 } from '../repositories/propertyRepo';
 import { transaction } from '../db/pool';
-import { canWorkUnit, isOpenAccess, assertAssignmentsEnabled } from '../domain/access';
+import { canViewUnit, canWorkUnit, isOpenView } from '../domain/access';
 import { ownerKeyOf } from '../../../src/logic/ownerGrouping';
 import { callsForProperties } from '../repositories/callRepo';
 import { listAuditForProperty, writeAudit } from '../repositories/auditRepo';
@@ -17,8 +17,11 @@ import {
 } from '../services/assignmentService';
 import { undoDnc } from '../services/callService';
 import { revealOwnerPhone, recordView, ownerUnitsFor } from '../services/revealService';
-import { serializeProperty, serializeCall } from '../http/serializers';
-import { forbidden, notFound, badRequest } from '../http/errors';
+import { serializeProperty, serializeCall, serializeRequest } from '../http/serializers';
+import { forbidden, notFound, badRequest, conflict } from '../http/errors';
+import { insertRequest, findOpenRequestForUnit } from '../repositories/requestRepo';
+import { findUserById } from '../repositories/userRepo';
+import { newRequestId } from '../domain/ids';
 
 /**
  * Properties.
@@ -32,9 +35,11 @@ import { forbidden, notFound, badRequest } from '../http/errors';
  *    client simply didn't render other brokers' units, `scopeFor()` narrows the
  *    query, so asking for them directly returns nothing rather than everything.
  *
- * With OPEN ACCESS on (src/config.ts) both rules are relaxed on purpose: every
- * unit is open to every user (`canWorkUnit`), list responses carry full numbers
- * (see serializers), and the assign / reclaim endpoints are refused.
+ * With OPEN VIEW on (src/config.ts) both are relaxed for READING only: every user
+ * may open any unit (`canViewUnit`) and list responses carry full numbers (see
+ * serializers). WRITING — calls, notes, updates, listing, stage — still needs
+ * `canWorkUnit`: the unit's broker or a manager. Anyone else asks for ownership
+ * (POST /api/properties/:id/request-ownership).
  */
 
 // Matches the largest option in the table's page-size selector
@@ -110,27 +115,13 @@ interface ListQuery {
 /** A broker's own units span these states; "To call" drops the last two. */
 const MINE_TO_CALL = [PropertyState.assigned, PropertyState.portfolio];
 const MINE_ALL = [PropertyState.assigned, PropertyState.portfolio, PropertyState.cooling, PropertyState.dnc];
-/** Open access: the workable units across the whole vault ("To call" drops the
- *  cooled-off and do-not-call ones, exactly like a broker's own list did). */
-const OPEN_TO_CALL = [PropertyState.pool, PropertyState.assigned, PropertyState.portfolio];
 
 /**
- * The State filter, combined with the caller's scope. Open access shows "In pool"
- * and "Assigned" as one "Open" state, so filtering by `pool` means both there —
- * narrowed to the scope's states when it has any. Otherwise passed through as is.
+ * Journal entries that are for managers' eyes only: stage changes, record opens
+ * and number reveals (both 'view'). They are oversight, not work — a broker's
+ * journal shows calls, updates and the record's own events.
  */
-function openStateFilter(
-  state: PropertyState | '' | undefined, scopeStates: PropertyState[] | undefined,
-): { state?: PropertyState; states?: PropertyState[] } {
-  if (isOpenAccess() && state === PropertyState.pool) {
-    const open = [PropertyState.pool, PropertyState.assigned];
-    const states = scopeStates ? scopeStates.filter(s => open.includes(s)) : open;
-    // An empty list would mean "no state filter" downstream — keep the AND of
-    // both instead, which correctly matches nothing.
-    return states.length > 0 ? { states } : { state, states: scopeStates };
-  }
-  return { state: state || undefined, states: scopeStates };
-}
+const MANAGER_ONLY_ACTIONS = new Set(['stage', 'view']);
 
 export default async function propertyRoutes(app: FastifyInstance) {
   /**
@@ -141,8 +132,10 @@ export default async function propertyRoutes(app: FastifyInstance) {
    * owner data stripped, so `ownerHidden` is forced on and owner-derived
    * filters are refused rather than silently ignored.
    *
-   * Open access: nobody owns anything, so "mine" means the whole vault (the
-   * workable units, or every unit with `includeInactive`) and nothing is hidden.
+   * Open view (src/config.ts): everyone may SEE every unit, so a broker's
+   * `scope=all` is the whole vault (filterable by broker) and the pool shows
+   * owner details. `scope=mine` is still their own units. Seeing is not working:
+   * the write routes below still require `canWorkUnit`.
    */
   function scopeFor(req: FastifyRequest, q: ListQuery): {
     assignedTo?: string; states?: PropertyState[]; ownerHidden: boolean;
@@ -150,12 +143,9 @@ export default async function propertyRoutes(app: FastifyInstance) {
     const me = req.currentUser!;
     const scope = q.scope ?? (me.isManager ? 'all' : 'mine');
 
-    if (isOpenAccess()) {
+    if (isOpenView() && !me.isManager) {
       if (scope === 'pool') return { states: [PropertyState.pool], ownerHidden: false };
-      if (scope === 'mine' || !me.isManager) {
-        return { states: q.includeInactive ? undefined : OPEN_TO_CALL, ownerHidden: false };
-      }
-      return { assignedTo: q.assignedTo, ownerHidden: false };
+      if (scope === 'all') return { assignedTo: q.assignedTo, ownerHidden: false };
     }
 
     if (scope === 'mine') {
@@ -194,7 +184,6 @@ export default async function propertyRoutes(app: FastifyInstance) {
   }, async (req) => {
     const q = req.query as ListQuery;
     const scope = scopeFor(req, q);
-    const stateFilter = openStateFilter(q.state, scope.states);
 
     // A broker in the teaser pool must not filter by owner nationality — that
     // would let them probe hidden owner data one query at a time.
@@ -215,7 +204,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
       search: q.search,
       community: q.community,
       cluster: q.cluster,
-      state: stateFilter.state,
+      state: q.state,
       beds: q.beds,
       nationality: scope.ownerHidden ? undefined : q.nationality,
       outcome: q.outcome,
@@ -242,7 +231,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
       tenancy: q.tenancy,
       datasetId: q.datasetId,
       assignedTo: scope.assignedTo,
-      states: stateFilter.states,
+      states: scope.states,
       ownerHidden: scope.ownerHidden,
       sortKey: q.sortKey,
       asc: q.asc,
@@ -299,7 +288,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
     if (!p) throw notFound('That unit no longer exists.');
 
     const me = req.currentUser!;
-    if (!canWorkUnit(me, p.assignedTo)) {
+    if (!canViewUnit(me, p.assignedTo)) {
       throw forbidden('That unit is not assigned to you.');
     }
     return serializeProperty(p);
@@ -319,7 +308,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
     const me = req.currentUser!;
     const units = await ownerUnitsFor(id);
 
-    if (!me.isManager && !isOpenAccess()) {
+    if (!me.isManager && !isOpenView()) {
       const mine = units.filter(u => u.assignedTo === me.id);
       if (mine.length === 0) throw forbidden('That owner is not assigned to you.');
       return mine.map(serializeProperty);
@@ -340,7 +329,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
     const p = await findPropertyById(id);
     if (!p) throw notFound('That unit no longer exists.');
     const me = req.currentUser!;
-    if (!canWorkUnit(me, p.assignedTo)) {
+    if (!canViewUnit(me, p.assignedTo)) {
       throw forbidden('That unit is not assigned to you.');
     }
     const calls = await callsForProperties([id]);
@@ -370,7 +359,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
     const p = await findPropertyById(id);
     if (!p) throw notFound('That unit no longer exists.');
     const me = req.currentUser!;
-    if (!canWorkUnit(me, p.assignedTo)) {
+    if (!canViewUnit(me, p.assignedTo)) {
       throw forbidden('That unit is not assigned to you.');
     }
 
@@ -401,6 +390,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
       // gives the richer event, so drop the audit twin to avoid duplication.
       ...auditRows
         .filter(a => a.action !== 'call')
+        .filter(a => me.isManager || !MANAGER_ONLY_ACTIONS.has(a.action))
         .map(a => ({
           kind: 'audit' as const,
           at: a.at, action: a.action, detail: a.detail, actorId: a.actorId ?? undefined,
@@ -437,7 +427,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
     const me = req.currentUser!;
     const p = await findPropertyById(id);
     if (!p) throw notFound('That unit no longer exists.');
-    if (!canWorkUnit(me, p.assignedTo)) {
+    if (!canViewUnit(me, p.assignedTo)) {
       throw forbidden('That unit is not assigned to you.');
     }
 
@@ -475,7 +465,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
 
     const p = await findPropertyById(id);
     if (!p) throw notFound('That unit no longer exists.');
-    if (!canWorkUnit(me, p.assignedTo)) {
+    if (!canViewUnit(me, p.assignedTo)) {
       throw forbidden('That unit is not assigned to you.');
     }
 
@@ -695,6 +685,65 @@ export default async function propertyRoutes(app: FastifyInstance) {
     return serializeProperty(updated!);
   });
 
+  /**
+   * Ask for this unit — the record popup's "Take over ownership" / "Request this
+   * unit". One unit, one request, decided by a manager like any other:
+   *  - held by ANOTHER broker → a take-over request (open view only: a broker
+   *    can't otherwise see someone else's unit). Approving moves the unit, with
+   *    that owner's other units in the same area, to the requester;
+   *  - in the pool → an ordinary request for it.
+   * Refused for a unit that is already yours, a do-not-call unit, a manager (they
+   * reassign directly), or when you already have a pending request for it.
+   */
+  app.post('/api/properties/:id/request-ownership', {
+    preHandler: [app.authenticate, app.requirePermission(Permission.requestData)],
+    schema: {
+      params: {
+        type: 'object', required: ['id'],
+        properties: { id: { type: 'string', maxLength: 64 } },
+      },
+      body: {
+        type: 'object', additionalProperties: false,
+        properties: { note: { type: 'string', maxLength: 500 } },
+      },
+    },
+  }, async (req) => {
+    const { id } = req.params as { id: string };
+    const body = (req.body ?? {}) as { note?: string };
+    const me = req.currentUser!;
+
+    const p = await findPropertyById(id);
+    if (!p) throw notFound('That unit no longer exists.');
+    if (me.isManager) throw badRequest('Managers assign units directly — use Reassign on the record.');
+    if (p.state === PropertyState.dnc) {
+      throw badRequest('This owner asked not to be contacted, so the unit can’t be requested.');
+    }
+    const held = p.state !== PropertyState.pool && !!p.assignedTo;
+    if (held && p.assignedTo === me.id) throw badRequest('This unit is already yours.');
+    const takeover = held;
+    if (takeover && !isOpenView()) throw forbidden('That unit is not assigned to you.');
+    if (await findOpenRequestForUnit(me.id, id)) {
+      throw conflict('You have already asked for this unit — it is waiting for a manager.');
+    }
+
+    const holder = takeover ? await findUserById(p.assignedTo!) : null;
+    const holderName = holder?.name ?? 'another broker';
+    const note = body.note?.trim()
+      || (takeover ? `Take over from ${holderName}` : 'Requested from the record popup');
+    const request = new BatchRequest(
+      newRequestId(), kOrgId, me.id, p.community, p.cluster,
+      1, [id], note, new Date().toISOString(),
+    );
+    request.kind = takeover ? RequestKind.takeover : RequestKind.units;
+    await insertRequest(request);
+    await writeAudit({
+      actorId: me.id, action: 'request',
+      detail: takeover ? `Asked to take over ${p.unitLabel} from ${holderName}` : `Asked for ${p.unitLabel}`,
+      propertyIds: [id],
+    });
+    return serializeRequest(request);
+  });
+
   app.post('/api/properties/assign', {
     preHandler: [app.authenticate, app.requirePermission(Permission.assignData)],
     schema: {
@@ -715,7 +764,6 @@ export default async function propertyRoutes(app: FastifyInstance) {
       },
     },
   }, async (req) => {
-    assertAssignmentsEnabled();
     const body = req.body as { propertyIds: string[]; brokerId: string; note?: string; skipConflictOwners?: boolean };
     return assignProperties(body.propertyIds, body.brokerId, req.currentUser!.id, body.note, body.skipConflictOwners);
   });
@@ -740,7 +788,6 @@ export default async function propertyRoutes(app: FastifyInstance) {
       },
     },
   }, async (req) => {
-    assertAssignmentsEnabled();
     const body = req.body as { propertyIds: string[]; brokerId: string };
     const { conflictUnits, conflictOwners } = await previewAssignConflicts(body.propertyIds, body.brokerId);
     return { conflictOwners, units: conflictUnits.map(serializeProperty) };
@@ -760,7 +807,6 @@ export default async function propertyRoutes(app: FastifyInstance) {
       },
     },
   }, async (req) => {
-    assertAssignmentsEnabled();
     const body = req.body as { propertyIds: string[] };
     const reclaimed = await reclaimProperties(body.propertyIds, req.currentUser!.id);
     return { reclaimed };

@@ -72,11 +72,15 @@ as a deliberate MAJOR decision (see §9) with the director's sign-off.
   that emits a real number. The only way to a real number is the **single-record
   reveal**, which checks the rules and writes the audit entry **in the same
   database transaction**. There is no bulk reveal and no number export.
-  - **Exception — open access (v4.0.0, a deliberate MAJOR decision).** While
-    `OPEN_ACCESS` in `src/config.ts` is `true`, assignments are switched off and
-    every user sees every number in full. The one serializer function
-    (`listPhone`) still decides, so setting the flag to `false` restores masking
-    with no other change. Opening a record stays audited, linked to the unit.
+  - **Exception — open view (v4.0.0 / v4.1.0, a deliberate MAJOR decision).**
+    While `OPEN_VIEW` in `src/config.ts` is `true`, every user can SEE every unit
+    and its owner's number in full. Working a unit (calls, notes, updates,
+    listing, stage) still belongs to its broker or a manager, and anyone else
+    asks for it (a take-over request). One serializer function (`listPhone`)
+    decides on masking, so setting the flag to `false` restores masked,
+    assigned-only visibility with no other change. Opening a record stays
+    audited and is linked to the unit; managers see it in the journal, brokers
+    don't.
 - **An identity watermark** (the signed-in person's name + email + date) tiles
   every screen, so a leaked screenshot is traceable to a person. Never weaken it
   to a fixed label.

@@ -1,6 +1,6 @@
 import type { PoolConnection } from 'mysql2/promise';
 import { pool, Row, toDb, fromDb } from '../db/pool';
-import { BatchRequest, RequestStatus, UnitDecision, kOrgId } from '../../../src/types/models';
+import { BatchRequest, RequestKind, RequestStatus, UnitDecision, kOrgId } from '../../../src/types/models';
 
 /**
  * Broker requests for pool data.
@@ -31,7 +31,7 @@ function toRequest(r: Row, unitIds: string[]): BatchRequest {
 }
 
 const COLS = `
-  id, org_id, broker_id, community, cluster, \`count\`, note, at,
+  id, org_id, broker_id, kind, community, cluster, \`count\`, note, at,
   status, decided_at, granted_count`;
 
 async function hydrate(rows: Row[], db: PoolConnection | typeof pool): Promise<BatchRequest[]> {
@@ -58,6 +58,7 @@ async function hydrate(rows: Row[], db: PoolConnection | typeof pool): Promise<B
   return rows.map(r => {
     const req = toRequest(r, byRequest.get(r.id as string) ?? []);
     req.unitDecisions = decisionsByRequest.get(r.id as string) ?? {};
+    req.kind = r.kind === RequestKind.takeover ? RequestKind.takeover : RequestKind.units;
     return req;
   });
 }
@@ -66,11 +67,11 @@ export async function insertRequest(req: BatchRequest, cx?: PoolConnection): Pro
   const db = cx ?? pool;
   await db.query(
     `INSERT INTO requests
-       (id, org_id, broker_id, community, cluster, \`count\`, note, at, status,
+       (id, org_id, broker_id, kind, community, cluster, \`count\`, note, at, status,
         decided_at, decided_by, granted_count)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      req.id, kOrgId, req.brokerId, req.community, req.cluster ?? null,
+      req.id, kOrgId, req.brokerId, req.kind, req.community, req.cluster ?? null,
       req.count, req.note ?? null, toDb(req.at), req.status,
       toDb(req.decidedAt), null, req.grantedCount,
     ],
@@ -157,4 +158,20 @@ export async function countPending(): Promise<number> {
     `SELECT COUNT(*) AS n FROM requests WHERE org_id = ? AND status = 'pending'`, [kOrgId],
   );
   return Number(rows[0].n);
+}
+
+/** The broker's pending request that still has this unit undecided, if any —
+ *  so the same unit can't be requested twice while the first is waiting. */
+export async function findOpenRequestForUnit(
+  brokerId: string, propertyId: string,
+): Promise<string | null> {
+  const [rows] = await pool.query<Row[]>(
+    `SELECT r.id FROM requests r
+       JOIN request_units ru ON ru.request_id = r.id
+      WHERE r.org_id = ? AND r.broker_id = ? AND r.status = 'pending'
+        AND ru.property_id = ? AND ru.decision IS NULL
+      LIMIT 1`,
+    [kOrgId, brokerId, propertyId],
+  );
+  return rows.length ? (rows[0].id as string) : null;
 }

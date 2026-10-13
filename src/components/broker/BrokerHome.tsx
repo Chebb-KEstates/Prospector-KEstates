@@ -16,7 +16,6 @@ import { Icon } from '../common/Icon';
 import { CountdownBadge } from '../common/StateChip';
 import { useNow } from '../../utils/useNow';
 import { useMyProperties, useBrokerDashboard } from '../../data/hooks';
-import { OPEN_ACCESS } from '../../config';
 
 /**
  * A broker's home — funnel-led, the same shape as manager mission control.
@@ -29,11 +28,6 @@ import { OPEN_ACCESS } from '../../config';
  *  - their own assigned units (bounded — loads whole, groups locally)
  *  - team comparisons and the pool snapshot (aggregates, from the server: a
  *    broker cannot see the team's calls, so they can't compute the average).
- *
- * Open access: nobody has a list of their own, so everything built on "my
- * assigned units" (My list, Running out of time, pipeline, Due next, the pool)
- * is left out. The funnel and tips run on the broker's own CALLS, which still mean
- * exactly what they did.
  */
 
 const STEEL = 'var(--text-tertiary)';
@@ -116,9 +110,7 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
     params: windowed ? { metric, from: funnelWin.from, to: funnelWin.to } : { metric },
   });
   const funnelStages: FunnelStage[] = [
-    ...(OPEN_ACCESS ? [] : [
-      { label: 'My list', value: mine.length, color: 'var(--primary)', onClick: () => openFunnel('held', 'My list', false) },
-    ]),
+    { label: 'My list', value: mine.length, color: 'var(--primary)', onClick: () => openFunnel('held', 'My list', false) },
     { label: `Called (${short})`, value: f.calls, color: STEEL, onClick: () => openFunnel('called', 'Owners I called', true) },
     { label: 'Reached', value: f.reached, color: 'var(--info)', onClick: () => openFunnel('reached', 'Owners I reached', true) },
     { label: 'Interested', value: f.interested, color: 'var(--success)', onClick: () => openFunnel('interested', 'New interested', true) },
@@ -139,23 +131,15 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
 
   // Coach's corner — rule-based tips, unchanged.
   const tips: string[] = [];
-  if (OPEN_ACCESS) {
-    // No list of my own to count — nudge on activity, and on reading first.
-    if (callsToday === 0) {
-      tips.push('No calls yet today — open the Database and start working the list.');
-    }
-    tips.push('Everyone works the same units — read a unit’s history before you act on it.');
-  } else {
-    const callableOwners = new Set(callable.map(p => p.owner.phone)).size;
-    if (callable.length > 0 && callsToday === 0) {
-      tips.push(`You have ${callableOwners} callable owners and no calls yet today — open your Database and start working the list.`);
-    }
-    if (dueNext.length > 0) {
-      tips.push(`${dueNext.length} follow-up${dueNext.length === 1 ? '' : 's'} are due now — these are your warmest contacts.`);
-    }
-    if (freshOwners > 0) {
-      tips.push(`${freshOwners} owner${freshOwners === 1 ? '' : 's'} have never been called — fresh data converts best.`);
-    }
+  const callableOwners = new Set(callable.map(p => p.owner.phone)).size;
+  if (callable.length > 0 && callsToday === 0) {
+    tips.push(`You have ${callableOwners} callable owners and no calls yet today — open your Database and start working the list.`);
+  }
+  if (dueNext.length > 0) {
+    tips.push(`${dueNext.length} follow-up${dueNext.length === 1 ? '' : 's'} are due now — these are your warmest contacts.`);
+  }
+  if (freshOwners > 0) {
+    tips.push(`${freshOwners} owner${freshOwners === 1 ? '' : 's'} have never been called — fresh data converts best.`);
   }
   const reachedUnitsToday = dash?.myReachedUnitsToday ?? 0;
   if (callsToday > 0 && reachedUnitsToday > 0 && (dash?.myInterestedToday ?? 0) / reachedUnitsToday < 0.15) {
@@ -177,7 +161,7 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
         actions={
           <>
             <SlabAction icon="table" label="Open database" onClick={() => onGo?.('today')} />
-            {!OPEN_ACCESS && <SlabAction icon="layers" label="Browse pool" onClick={() => onGo?.('pool')} />}
+            <SlabAction icon="layers" label="Browse pool" onClick={() => onGo?.('pool')} />
           </>
         }
       />
@@ -190,11 +174,7 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
           </select>
         }>
         <Funnel stages={funnelStages} />
-        <StatRow tiles={OPEN_ACCESS ? [
-          { value: fmtInt(f.noAnswer), label: `not reached (${short})`, color: f.noAnswer ? 'var(--warning)' : undefined },
-          { value: fmtInt(callsToday), label: 'calls today' },
-          { value: fmtInt(interestedTotal), label: 'interested (all-time)', color: interestedTotal ? 'var(--success)' : undefined },
-        ] : [
+        <StatRow tiles={[
           { value: fmtInt(f.noAnswer), label: `not reached (${short})`, color: f.noAnswer ? 'var(--warning)' : undefined },
           { value: fmtInt(callable.length), label: 'callable' },
           { value: `${groups.length}`, label: 'owners', icon: 'user' },
@@ -208,7 +188,6 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
 
       {/* Uniform grid of metric cards — all one height; content scrolls if longer. */}
       <DashColumns>
-        {!OPEN_ACCESS && (<>
         <DashCard title="Running out of time" icon="clock" flush height={CARD_H}
           trailing={<button className="btn btn-ghost btn-sm" onClick={() => onGo?.('today')}>Work list</button>}>
           {expiringSoon.length === 0 ? (
@@ -246,7 +225,6 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
           </div>
           <SegmentBar segments={pipeline} />
         </DashCard>
-        </>)}
 
         <DashCard title="You vs the team" icon="team" height={CARD_H}>
           <ProgressLine label="Your interested" fraction={interestedTotal / teamMax} trailing={`${interestedTotal}`} color="var(--success)" />
@@ -255,7 +233,6 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
             trailing={callsToday ? `${Math.round(reachedToday / callsToday * 100)}%` : '—'} color="var(--info)" />
         </DashCard>
 
-        {!OPEN_ACCESS && (<>
         <DashCard title="Due next" icon="clock" flush height={CARD_H}
           trailing={<button className="btn btn-ghost btn-sm" onClick={() => onGo?.('today')}>Open</button>}>
           {dueNext.length === 0 ? (
@@ -281,7 +258,6 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
             Request more data from the pool when your list runs low.
           </div>
         </DashCard>
-        </>)}
 
         <DashCard title="Coach's corner" icon="sparkles" height={CARD_H}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

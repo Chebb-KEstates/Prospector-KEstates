@@ -89,6 +89,8 @@ interface VaultContextValue {
   refreshRequest: (id: string) => Promise<BatchRequest>;
   /** Set a unit's listing stage; tables refetch so the Stage column follows. */
   setPropertyStage: (id: string, stage: PropertyStage) => Promise<Property>;
+  /** Ask a manager for a unit (take-over, or a pooled unit); adds it to `requests`. */
+  requestOwnership: (id: string) => Promise<BatchRequest>;
 
   deleteDataset: (d: DataSet) => Promise<{ removedUnits: number; removedLeads: number }>;
   updateDataset: (id: string, patch: {
@@ -319,6 +321,13 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
     return r;
   }, [bump]);
 
+  const requestOwnership = useCallback(async (id: string) => {
+    const req = await api.properties.requestOwnership(id);
+    setRequests(prev => [req, ...prev]);
+    bump();
+    return req;
+  }, [bump]);
+
   const setPropertyStage = useCallback(async (id: string, stage: PropertyStage) => {
     const p = await api.properties.setStage(id, stage);
     bump();
@@ -397,7 +406,7 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
     reload, reloadRequests, reloadDatasets,
     saveUser, setUserActive, deactivateBroker, resetUserPassword, saveSettings,
     assign, reclaim, assignLeads, reclaimLeads,
-    submitRequest, approveRequest, denyRequest, decideRequestUnits, refreshRequest, setPropertyStage,
+    submitRequest, approveRequest, denyRequest, decideRequestUnits, refreshRequest, setPropertyStage, requestOwnership,
     deleteDataset, updateDataset,
     undoDnc, undoDncLead,
     logCall, logLeadCall,

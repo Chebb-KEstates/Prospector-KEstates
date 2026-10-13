@@ -2,11 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useVault } from '../../state/VaultContext';
 import { useAuth } from '../../state/AuthContext';
 import { CallStop, CallUnit, CallHistoryEntry, OwnerNumbers } from '../../state/callTypes';
-import { CallOutcome, PropertyState, Property, PropertyStage, PropertyStageLabel, PROPERTY_STAGES } from '../../types/models';
+import { CallOutcome, PropertyState, Property, PropertyStage, PropertyStageLabel, PROPERTY_STAGES, RequestStatus } from '../../types/models';
 import { AssignConflictDialog } from './AssignConflictDialog';
 import type { PhoneEntry } from '../../types/models';
 import { StateChip, CountdownBadge, OutcomeChip, stageColors } from '../common/StateChip';
-import { OPEN_ACCESS } from '../../config';
+import { OPEN_VIEW } from '../../config';
 import { Icon } from '../common/Icon';
 import { ApiError } from '../../data/apiClient';
 import { sectionLabel, outcomeColor, splitFeedback, FeedbackChips } from '../broker/callVisuals';
@@ -106,13 +106,15 @@ function interestPreset(u?: CallUnit): string[] {
  * Reveal-lock: once a number is revealed, a result must be saved before the tab
  * can be closed or advanced.
  *
- * Open access (src/config.ts): the numbers arrive in full and show straight
- * away — no Reveal step, so no reveal-lock — the manager reclaim / reassign bar
- * and the "request this unit" buttons are gone, and a hint asks the user to read
- * the history first, naming the last person who touched the unit.
+ * Open view (src/config.ts): anyone may open any unit, and the numbers arrive in
+ * full and show straight away — no Reveal step, so no reveal-lock. Working it
+ * (logging a call, notes, updates, listing info, stage) is for its broker or a
+ * manager; anyone else gets it read-only under "This unit belongs to X" with a
+ * "Take over ownership" button (or "Request this unit" when it's pooled).
  *
- * The Stage row (None → Listed online) sits under the header for every user;
- * picking one saves straight away and lands on the journal.
+ * The Stage row (None → Listed online) sits under the header; picking one saves
+ * straight away. Stage changes, record opens and reveals reach the journal for
+ * managers only (the API leaves them out of a broker's).
  */
 export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   propertyId: string;
@@ -210,7 +212,12 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   const [updateSaving, setUpdateSaving] = useState(false);
   const [updateErr, setUpdateErr] = useState<string | null>(null);
 
-  // The owner's other units (across areas / brokers / pool) — cross-area coordination.
+  // Who holds the focused unit — loaded with it and re-read after any change.
+  // Decides whether this user may WORK it or only view it (open view).
+  const [holding, setHolding] = useState<{ assignedTo?: string; state: PropertyState } | null>(null);
+  const [askBusy, setAskBusy] = useState(false);
+  const [askErr, setAskErr] = useState<string | null>(null);
+
   // The focused unit's listing stage — loaded with its listing info, saved on click.
   const [stage, setStage] = useState<PropertyStage>(PropertyStage.none);
   const [stageSaving, setStageSaving] = useState(false);
@@ -284,7 +291,10 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   // A different unit starts with no stale stage error, and shows "None" until its
   // own stage loads rather than the previous unit's. Declared BEFORE the load
   // below on purpose: effects run in order, so the load captures the new seq.
-  useEffect(() => { setStageErr(null); setStage(PropertyStage.none); stageSeq.current += 1; }, [focusedId]);
+  useEffect(() => {
+    setStageErr(null); setStage(PropertyStage.none); stageSeq.current += 1;
+    setHolding(null); setAskErr(null);
+  }, [focusedId]);
 
   // The focused unit's listing Information — loaded per unit (and after a save).
   useEffect(() => {
@@ -300,15 +310,44 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
           setAskingRent(p.askingRent != null ? String(p.askingRent) : '');
           setListingNote(p.listingNote ?? '');
           if (stageSeq.current === seq) setStage(p.stage);
+          setHolding({ assignedTo: p.assignedTo, state: p.state });
         }
       } catch { /* leave blank */ }
     })();
     return () => { cancelled = true; };
   }, [focusedId, eventsKey]);
 
+  // May this user WORK the focused unit (call, notes, updates, listing, stage)?
+  // Its broker or a manager. Everyone else views it read-only (open view) and can
+  // ask for it. Until the unit has loaded, nobody gets the write controls.
+  const canWork = isManager || (!!holding && !!user && holding.assignedTo === user.id);
+  const holderName = holding?.assignedTo ? (vault.userById(holding.assignedTo)?.name ?? 'another broker') : undefined;
+  // An undecided request of mine for this unit is already with a manager.
+  const askPending = !!user && vault.requests.some(r =>
+    r.brokerId === user.id && r.status === RequestStatus.pending
+    && r.unitIds.includes(focusedId) && !r.unitDecisions[focusedId]);
+
+  /** "Take over ownership" / "Request this unit" — a request for a manager. */
+  const askForUnit = async () => {
+    if (askBusy) return;
+    setAskBusy(true); setAskErr(null);
+    try {
+      await vault.requestOwnership(focusedId);
+    } catch (e) {
+      setAskErr(e instanceof ApiError ? e.message : 'Could not send that request. Try again.');
+      // Already asked (another tab) or the unit changed hands: re-read both.
+      if (e instanceof ApiError && (e.isConflict || e.status === 400)) {
+        void vault.reloadRequests().catch(() => undefined);
+        setEventsKey(k => k + 1);
+      }
+    } finally {
+      setAskBusy(false);
+    }
+  };
+
   /** Pick a stage: shown at once, saved, then confirmed from the server. */
   const changeStage = async (next: PropertyStage) => {
-    if (next === stage || stageSaving) return;
+    if (next === stage || stageSaving || !canWork) return;
     const unitId = focusedId;
     const before = stage;
     const seq = ++stageSeq.current;
@@ -624,8 +663,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   // holder) or to keep it in the pool. Brokers save straight through.
   const attemptSave = async () => {
     if (!canSave) return;
-    // Open access: nothing is assigned, so there is no one to hand off to.
-    if (isManager && primaryIsInterested && !OPEN_ACCESS) {
+    if (isManager && primaryIsInterested) {
       let current = '';
       try { current = (await api.properties.byId(focusedId)).assignedTo ?? ''; } catch { /* default blank */ }
       setHandoffBroker(current);
@@ -682,14 +720,14 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
     : [{ name: stop?.name ?? 'Owner', nationality: stop?.nationality, nums: (revealed ? phones : (stop?.phonesMasked ?? [])) }];
   // Any number on record (masked before reveal) — gates the Reveal button.
   const anyNumber = ownerBlocks.some(o => o.nums.length > 0);
-  // The journal as shown: every event except plain record opens ("Viewed owner
-  // detail …"), which would bury the real history — the history hint reads those.
-  // Reveals are also 'view' rows and stay visible.
-  const journal = events.filter(e => !isPlainOpen(e));
+  // The journal as the server sent it: a broker's has no stage changes, record
+  // opens or reveals (managers' eyes only, filtered by the API); a manager's has
+  // everything.
+  const journal = events;
 
-  // The numbers are shown in full: after a Reveal, or — under open access —
-  // from the start (the server already sent them unmasked; there is no Reveal).
-  const numbersShown = revealed || OPEN_ACCESS;
+  // The numbers are shown in full: after a Reveal, or — under open view — from
+  // the start (the server already sent them unmasked; there is no Reveal).
+  const numbersShown = revealed || OPEN_VIEW;
 
   const answerRate = session.made > 0 ? Math.round((session.answered / session.made) * 100) : 0;
 
@@ -755,11 +793,16 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
               <button className="btn btn-icon btn-sm" onClick={() => void tryClose()} aria-label="Close"><Icon name="x" size={16} /></button>
             </div>
 
-            {/* Open access: everyone can work this unit, so before acting, read
-                what's already happened — and who touched it last. */}
-            {OPEN_ACCESS && <HistoryHint events={events} loading={eventsLoading} meId={user?.id} actorName={id => vault.userById(id)?.name} />}
+            {/* Who this unit belongs to — and, for anyone who may only view it,
+                the button that asks a manager for it. */}
+            {holding && (
+              <OwnershipBanner holderName={holderName} mine={!!user && holding.assignedTo === user.id}
+                isManager={isManager} state={holding.state} canWork={canWork}
+                pending={askPending} busy={askBusy} error={askErr} onRequest={() => void askForUnit()} />
+            )}
 
-            {/* Stage — the listing journey. One click sets it for the focused unit. */}
+            {/* Stage — the listing journey. One click sets it for the focused unit
+                (its broker or a manager; read-only for anyone else). */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flexShrink: 0 }}>
               <span style={{ ...boxTitle, fontSize: '0.68rem' }}>Stage{multiUnit ? ` — ${focusedUnit?.label ?? ''}` : ''}</span>
               <div role="radiogroup" aria-label="Stage" style={{
@@ -771,11 +814,13 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   const c = stageColors[s];
                   return (
                     <button key={s} type="button" role="radio" aria-checked={sel}
-                      disabled={stageSaving} onClick={() => void changeStage(s)}
+                      disabled={stageSaving || !canWork} onClick={() => void changeStage(s)}
+                      title={canWork ? undefined : 'Only this unit’s broker or a manager can change the stage'}
                       style={{
                         border: `1px solid ${sel ? c : 'transparent'}`, borderRadius: 8, padding: '5px 12px',
                         fontSize: '0.78rem', fontWeight: sel ? 700 : 500, fontFamily: 'inherit', whiteSpace: 'nowrap',
-                        cursor: stageSaving ? 'wait' : sel ? 'default' : 'pointer',
+                        cursor: !canWork ? 'not-allowed' : stageSaving ? 'wait' : sel ? 'default' : 'pointer',
+                        opacity: !canWork && !sel ? 0.55 : 1,
                         color: sel ? c : 'var(--text-secondary)',
                         background: sel ? `color-mix(in srgb, ${c} 14%, var(--surface))` : 'transparent',
                         transition: 'background .15s, color .15s',
@@ -792,7 +837,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
             {/* Manager actions — reclaim / reassign this record's owner group. Shown
                 in place of the dialer progress bar a broker would see. Gone under
                 open access: there is nothing to assign or reclaim. */}
-            {isManager && !OPEN_ACCESS && (
+            {isManager && (
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flexShrink: 0,
                 padding: '9px 12px', borderRadius: 12, background: 'var(--surface-2)', border: '1px solid var(--border-light)',
@@ -855,7 +900,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   <div style={{ marginBottom: 14 }}>
                     <div style={sectionLabel}>This owner’s other properties ({otherUnits.length})</div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 6 }}>
-                      {OPEN_ACCESS ? 'Same owner, in other areas.' : 'Same owner, not assigned to you.'}
+                      Same owner, not assigned to you.
                     </div>
                     <div style={{ maxHeight: 160, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, paddingRight: 4 }}>
                       {otherUnits.map(u => {
@@ -874,10 +919,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                               {area && <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>{area}</div>}
                             </div>
                             <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                              {/* Open access: no holders and nothing to request — just where it stands. */}
-                              {OPEN_ACCESS ? (
-                                <StateChip state={u.state} />
-                              ) : holder ? (
+                              {holder ? (
                                 <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>With {holder}</span>
                               ) : requested ? (
                                 <span style={{ fontSize: '0.72rem', color: 'var(--success)', fontWeight: 600, whiteSpace: 'nowrap' }}>Requested ✓</span>
@@ -958,17 +1000,17 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                         {showSale && (
                           <label style={{ flex: 1, minWidth: 140, fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
                             Asking price (AED — sale)
-                            <input className="input" type="number" min={0} value={askingPrice} onChange={onPrice(setAskingPrice)} style={{ marginTop: 4 }} placeholder="e.g. 3500000" />
+                            <input className="input" type="number" min={0} value={askingPrice} disabled={!canWork} onChange={onPrice(setAskingPrice)} style={{ marginTop: 4 }} placeholder="e.g. 3500000" />
                           </label>
                         )}
                         {showRent && (
                           <label style={{ flex: 1, minWidth: 140, fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
                             Asking rent (AED / year)
-                            <input className="input" type="number" min={0} value={askingRent} onChange={onPrice(setAskingRent)} style={{ marginTop: 4 }} placeholder="e.g. 180000" />
+                            <input className="input" type="number" min={0} value={askingRent} disabled={!canWork} onChange={onPrice(setAskingRent)} style={{ marginTop: 4 }} placeholder="e.g. 180000" />
                           </label>
                         )}
                       </div>
-                      <textarea className="input" value={listingNote} rows={3} style={{ resize: 'vertical', marginTop: 10 }}
+                      <textarea className="input" value={listingNote} rows={3} readOnly={!canWork} style={{ resize: 'vertical', marginTop: 10 }}
                         placeholder="Listing notes — condition, availability, vendor expectations…"
                         onChange={e => { setListingNote(e.target.value); setListingDirty(true); setListingSaved(false); }} />
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, minHeight: 28 }}>
@@ -988,7 +1030,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   <span>Stays on the property — saved automatically when you close, move on, or log a call.</span>
                   {notesSaved && !notesDirty && <span style={{ color: 'var(--success)', fontWeight: 600, whiteSpace: 'nowrap' }}>Saved ✓</span>}
                 </div>
-                <textarea className="input" value={notes} rows={4} style={{ resize: 'vertical' }}
+                <textarea className="input" value={notes} rows={4} readOnly={!canWork} style={{ resize: 'vertical' }}
                   placeholder="Anything worth keeping on this unit permanently…"
                   onChange={e => { setNotes(e.target.value); setNotesDirty(true); setNotesSaved(false); }} />
               </Column>
@@ -1048,6 +1090,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   </div>
                 )}
 
+                {canWork ? (<>
                 <div style={sectionLabel}>
                   Log the outcome{multiUnit ? ` — ${focusedUnit?.label ?? ''}` : ''}
                 </div>
@@ -1110,6 +1153,11 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                 )}
                 {justSaved && <div style={{ color: 'var(--success)', fontSize: '0.8rem', marginTop: 6, fontWeight: 600 }}>✓ Call logged to the record.</div>}
                 {saveError && <ErrorBox>{saveError}</ErrorBox>}
+                </>) : (
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', padding: '10px 12px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border-light)' }}>
+                    View only — calls, notes and updates on this unit belong to {holderName ?? 'its broker'} or a manager.
+                  </div>
+                )}
 
                 <div style={{ marginTop: 'auto', paddingTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button className="btn" onClick={() => void tryClose()} disabled={locked} style={{ opacity: locked ? 0.5 : 1 }}>Close</button>
@@ -1137,7 +1185,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
               <Column>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
                   <div style={{ ...sectionLabel, marginBottom: 0, flex: 1 }}>History journal{multiUnit ? ` — ${focusedUnit?.label ?? ''}` : ''}</div>
-                  {!addingUpdate && (
+                  {!addingUpdate && canWork && (
                     <button className="btn btn-sm" onClick={() => { setAddingUpdate(true); setUpdateErr(null); }}
                       style={{
                         flexShrink: 0, fontWeight: 600, borderColor: 'var(--gold)', borderWidth: 1.5,
@@ -1225,61 +1273,78 @@ function isPlainOpen(e: PropertyEvent): boolean {
   return e.kind === 'audit' && e.action === 'view' && !/^Revealed/i.test(e.detail);
 }
 
-/** What another person's journal event amounts to, in a few words. */
-function activityPhrase(e: PropertyEvent): string {
-  if (e.kind === 'call') return 'logged a call';
-  if (e.kind !== 'audit') return 'worked on this unit';
-  switch (e.action) {
-    case 'view': return isPlainOpen(e) ? 'opened this record' : 'revealed the number';
-    case 'note': return 'added an update';
-    case 'stage': return 'changed the stage';
-    case 'listing': return 'edited the listing info';
-    default: return 'updated this record';
-  }
-}
-
-const RECENT_MS = 24 * 3_600_000;
-
 /**
- * Open access: anyone may be working this unit, so before acting, read its
- * history. Names the latest person OTHER than you who touched it (opened it,
- * called, added an update, changed the stage…) and how long ago — amber when that
- * was within the last day, i.e. someone is likely on it right now.
+ * Who this unit belongs to, at the top of the record. Its broker or a manager
+ * gets a quiet line ("Assigned to you" / "Assigned to Sara"). Anyone else can SEE
+ * the unit but not work it, so they get "This unit belongs to X" and a button
+ * that asks a manager for it — "Take over ownership", or "Request this unit" when
+ * it's in the pool. Once asked, the button gives way to "waiting for a manager".
  */
-function HistoryHint({ events, loading, meId, actorName }: {
-  events: PropertyEvent[];
-  loading: boolean;
-  meId?: string;
-  actorName: (id: string) => string | undefined;
+function OwnershipBanner({ holderName, mine, isManager, state, canWork, pending, busy, error, onRequest }: {
+  holderName?: string;
+  mine: boolean;
+  isManager: boolean;
+  state: PropertyState;
+  canWork: boolean;
+  pending: boolean;
+  busy: boolean;
+  error: string | null;
+  onRequest: () => void;
 }) {
-  // Newest first already; system rows (no actor) and imports don't count.
-  const other = events.find((e): e is Exclude<PropertyEvent, { kind: 'import' }> =>
-    e.kind !== 'import' && !!e.actorId && e.actorId !== meId);
-  const recent = !!other && Date.now() - new Date(other.at).getTime() < RECENT_MS;
-  const tone = recent ? 'var(--warning)' : 'var(--info)';
+  const held = !!holderName && state !== PropertyState.pool;
+  if (canWork) {
+    const text = mine ? 'Assigned to you.'
+      : held ? <>Assigned to <b>{holderName}</b>.</>
+        : isManager ? 'In the pool — not assigned to anyone.' : '';
+    if (!text) return null;
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+        <Icon name="user" size={14} /> <span>{text}</span>
+      </div>
+    );
+  }
+
+  const dnc = state === PropertyState.dnc;
+  const tone = 'var(--warning)';
   return (
     <div role="note" style={{
-      display: 'flex', alignItems: 'flex-start', gap: 10, flexShrink: 0,
+      display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', flexShrink: 0,
       padding: '9px 12px', borderRadius: 10, fontSize: '0.8rem', lineHeight: 1.45,
       border: `1px solid color-mix(in srgb, ${tone} 45%, transparent)`,
       background: `color-mix(in srgb, ${tone} 9%, transparent)`,
     }}>
-      <Icon name="alert" size={15} style={{ color: tone, marginTop: 2, flexShrink: 0 }} />
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontWeight: 600 }}>
-          Before taking any action, make sure you've read this unit's history — someone else may already be working on it.
-        </div>
-        {!loading && (
-          <div style={{ color: 'var(--text-secondary)', marginTop: 1 }}>
-            {other
-              ? <>Last activity by someone else: <b style={{ color: recent ? tone : 'var(--text)' }}>{actorName(other.actorId!) ?? 'another user'}</b> {activityPhrase(other)} · {timeAgo(other.at)}.</>
-              : 'No one else has worked on this unit yet.'}
-          </div>
+      <Icon name="ban" size={15} style={{ color: tone, flexShrink: 0 }} />
+      <div style={{ flex: 1, minWidth: 220 }}>
+        {held ? (
+          <>
+            <div style={{ fontWeight: 600 }}>This unit belongs to {holderName}.</div>
+            <div style={{ color: 'var(--text-secondary)' }}>
+              You can view it, but only {holderName} or a manager can call, note or change it.
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ fontWeight: 600 }}>This unit isn’t assigned to anyone.</div>
+            <div style={{ color: 'var(--text-secondary)' }}>You can view it — to work on it, ask a manager for it.</div>
+          </>
         )}
+        {error && <div style={{ color: 'var(--error)', marginTop: 2 }}>{error}</div>}
       </div>
+      {dnc ? (
+        <span style={{ fontSize: '0.76rem', color: 'var(--error)', fontWeight: 600 }}>Do not call — can’t be requested</span>
+      ) : pending ? (
+        <span className="chip" style={{ background: 'color-mix(in srgb, var(--info) 14%, transparent)', color: 'var(--info)', fontWeight: 600 }}>
+          Requested — waiting for a manager
+        </span>
+      ) : (
+        <button className="btn btn-sm btn-primary" disabled={busy} onClick={onRequest} style={{ flexShrink: 0 }}>
+          <Icon name="user" size={13} /> {busy ? 'Sending…' : held ? 'Take over ownership' : 'Request this unit'}
+        </button>
+      )}
     </div>
   );
 }
+
 
 function Column({ children }: { children: React.ReactNode }) {
   return <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>{children}</div>;
@@ -1350,7 +1415,7 @@ function JournalRow({ e, actorName }: { e: PropertyEvent; actorName: (id: string
             ? <FeedbackChips tags={fb.tags} color={outcomeColor(e.outcome)} />
             : <OutcomeChip outcome={e.outcome} />)}
           <span style={{ fontWeight: 600, fontSize: '0.82rem' }}>
-            {e.kind === 'call' ? (e.ownerName ? `Call · ${e.ownerName}` : 'Call') : isNote ? 'Update' : isListing ? 'Listing info' : e.detail}
+            {e.kind === 'call' ? (e.ownerName ? `Call · ${e.ownerName}` : 'Call') : isNote ? 'Update' : isListing ? 'Listing info' : isPlainOpen(e) ? 'Opened the record' : e.detail}
           </span>
           {/* Which of the owner's units the call was about — so a note left on
               another unit is clearly attributed. */}
