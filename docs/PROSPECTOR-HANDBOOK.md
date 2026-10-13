@@ -72,6 +72,11 @@ as a deliberate MAJOR decision (see §9) with the director's sign-off.
   that emits a real number. The only way to a real number is the **single-record
   reveal**, which checks the rules and writes the audit entry **in the same
   database transaction**. There is no bulk reveal and no number export.
+  - **Exception — open access (v4.0.0, a deliberate MAJOR decision).** While
+    `OPEN_ACCESS` in `src/config.ts` is `true`, assignments are switched off and
+    every user sees every number in full. The one serializer function
+    (`listPhone`) still decides, so setting the flag to `false` restores masking
+    with no other change. Opening a record stays audited, linked to the unit.
 - **An identity watermark** (the signed-in person's name + email + date) tiles
   every screen, so a leaked screenshot is traceable to a person. Never weaken it
   to a fixed label.

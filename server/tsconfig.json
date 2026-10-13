@@ -28,6 +28,7 @@
   "include": [
     "src/**/*.ts",
     "test/**/*.ts",
+    "../src/config.ts",
     "../src/types/models.ts",
     "../src/types/user.ts",
     "../src/logic/dispositions.ts",

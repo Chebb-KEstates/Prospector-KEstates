@@ -1,4 +1,4 @@
-import { DataSet, DataSetType, DataModule, BatchRequest, RequestStatus, UnitDecision } from './models';
+import { DataSet, DataSetType, DataModule, BatchRequest, RequestStatus, UnitDecision, Property, PropertyStage, PropertyStageLabel, PROPERTY_STAGES, toPropertyStage } from './models';
 
 describe('DataSet round-trip', () => {
   it('carries lastUpdatedAt + updateCount through toJson/fromJson', () => {
@@ -65,5 +65,32 @@ describe('BatchRequest per-unit decisions', () => {
     expect(d.areas).toEqual(r.areas);
     d.unitDecisions.u2 = UnitDecision.granted;
     expect(r.unitDecisions.u2).toBeUndefined();
+  });
+});
+
+describe('Property stage', () => {
+  it('lists the five stages in journey order with their labels', () => {
+    expect(PROPERTY_STAGES).toEqual([
+      PropertyStage.none, PropertyStage.prospecting, PropertyStage.marketAppraisal,
+      PropertyStage.listedOffline, PropertyStage.listedOnline,
+    ]);
+    expect(PROPERTY_STAGES.map(s => PropertyStageLabel[s]))
+      .toEqual(['None', 'Prospecting', 'Market appraisal', 'Listed offline', 'Listed online']);
+  });
+
+  it('reads unknown or missing values as None rather than throwing', () => {
+    expect(toPropertyStage('listedOnline')).toBe(PropertyStage.listedOnline);
+    expect(toPropertyStage('sold')).toBe(PropertyStage.none);
+    expect(toPropertyStage(undefined)).toBe(PropertyStage.none);
+    expect(toPropertyStage(3)).toBe(PropertyStage.none);
+  });
+
+  it('round-trips through toJson/fromJson, and an older payload reads as None', () => {
+    const p = Property.fromJson({ id: 'p1', unitKey: 'u|a|b|1', community: 'A', owner: { name: 'O' }, stage: 'marketAppraisal' });
+    expect(p.stage).toBe(PropertyStage.marketAppraisal);
+    expect(Property.fromJson(p.toJson()).stage).toBe(PropertyStage.marketAppraisal);
+    const old = p.toJson();
+    delete old.stage;
+    expect(Property.fromJson(old).stage).toBe(PropertyStage.none);
   });
 });

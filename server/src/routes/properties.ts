@@ -1,10 +1,12 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { Permission } from '../../../src/types/user';
-import { PropertyState } from '../../../src/types/models';
+import { PropertyState, PropertyStage, PropertyStageLabel, PROPERTY_STAGES } from '../../../src/types/models';
 import {
   queryProperties, propertyFacets, findPropertyById, findAssignedTo,
-  updatePropertyNotes, updateListingInfo, findByOwnerKey,
+  updatePropertyNotes, updateListingInfo, findByOwnerKey, updatePropertyStage,
 } from '../repositories/propertyRepo';
+import { transaction } from '../db/pool';
+import { canWorkUnit, isOpenAccess, assertAssignmentsEnabled } from '../domain/access';
 import { ownerKeyOf } from '../../../src/logic/ownerGrouping';
 import { callsForProperties } from '../repositories/callRepo';
 import { listAuditForProperty, writeAudit } from '../repositories/auditRepo';
@@ -29,6 +31,10 @@ import { forbidden, notFound, badRequest } from '../http/errors';
  *  - A broker's scope is enforced server-side, not by hiding UI. Where the
  *    client simply didn't render other brokers' units, `scopeFor()` narrows the
  *    query, so asking for them directly returns nothing rather than everything.
+ *
+ * With OPEN ACCESS on (src/config.ts) both rules are relaxed on purpose: every
+ * unit is open to every user (`canWorkUnit`), list responses carry full numbers
+ * (see serializers), and the assign / reclaim endpoints are refused.
  */
 
 // Matches the largest option in the table's page-size selector
@@ -63,6 +69,7 @@ const listQuerySchema = {
     plotTo: { type: 'number', minimum: 0 },
     followUp: { type: 'string', enum: ['scheduled', 'due'] },
     hasNotes: { type: 'boolean' },
+    stage: { type: 'string', enum: [...PROPERTY_STAGES, ''] },
     dueOnly: { type: 'boolean' },
     interestedOnly: { type: 'boolean' },
     expiringSoon: { type: 'boolean' },
@@ -91,6 +98,7 @@ interface ListQuery {
   sizeFrom?: number; sizeTo?: number;
   plotFrom?: number; plotTo?: number;
   followUp?: 'scheduled' | 'due'; hasNotes?: boolean;
+  stage?: PropertyStage | '';
   dueOnly?: boolean; interestedOnly?: boolean; expiringSoon?: boolean;
   includeInactive?: boolean;
   tenancy?: 'vacant' | 'rented' | 'leaseSoon';
@@ -102,6 +110,27 @@ interface ListQuery {
 /** A broker's own units span these states; "To call" drops the last two. */
 const MINE_TO_CALL = [PropertyState.assigned, PropertyState.portfolio];
 const MINE_ALL = [PropertyState.assigned, PropertyState.portfolio, PropertyState.cooling, PropertyState.dnc];
+/** Open access: the workable units across the whole vault ("To call" drops the
+ *  cooled-off and do-not-call ones, exactly like a broker's own list did). */
+const OPEN_TO_CALL = [PropertyState.pool, PropertyState.assigned, PropertyState.portfolio];
+
+/**
+ * The State filter, combined with the caller's scope. Open access shows "In pool"
+ * and "Assigned" as one "Open" state, so filtering by `pool` means both there —
+ * narrowed to the scope's states when it has any. Otherwise passed through as is.
+ */
+function openStateFilter(
+  state: PropertyState | '' | undefined, scopeStates: PropertyState[] | undefined,
+): { state?: PropertyState; states?: PropertyState[] } {
+  if (isOpenAccess() && state === PropertyState.pool) {
+    const open = [PropertyState.pool, PropertyState.assigned];
+    const states = scopeStates ? scopeStates.filter(s => open.includes(s)) : open;
+    // An empty list would mean "no state filter" downstream — keep the AND of
+    // both instead, which correctly matches nothing.
+    return states.length > 0 ? { states } : { state, states: scopeStates };
+  }
+  return { state: state || undefined, states: scopeStates };
+}
 
 export default async function propertyRoutes(app: FastifyInstance) {
   /**
@@ -111,10 +140,23 @@ export default async function propertyRoutes(app: FastifyInstance) {
    * teaser pool — the reference implementation showed brokers pool units with
    * owner data stripped, so `ownerHidden` is forced on and owner-derived
    * filters are refused rather than silently ignored.
+   *
+   * Open access: nobody owns anything, so "mine" means the whole vault (the
+   * workable units, or every unit with `includeInactive`) and nothing is hidden.
    */
-  function scopeFor(req: FastifyRequest, q: ListQuery) {
+  function scopeFor(req: FastifyRequest, q: ListQuery): {
+    assignedTo?: string; states?: PropertyState[]; ownerHidden: boolean;
+  } {
     const me = req.currentUser!;
     const scope = q.scope ?? (me.isManager ? 'all' : 'mine');
+
+    if (isOpenAccess()) {
+      if (scope === 'pool') return { states: [PropertyState.pool], ownerHidden: false };
+      if (scope === 'mine' || !me.isManager) {
+        return { states: q.includeInactive ? undefined : OPEN_TO_CALL, ownerHidden: false };
+      }
+      return { assignedTo: q.assignedTo, ownerHidden: false };
+    }
 
     if (scope === 'mine') {
       // "All" widens to the units the broker still holds but that dropped out of
@@ -152,6 +194,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
   }, async (req) => {
     const q = req.query as ListQuery;
     const scope = scopeFor(req, q);
+    const stateFilter = openStateFilter(q.state, scope.states);
 
     // A broker in the teaser pool must not filter by owner nationality — that
     // would let them probe hidden owner data one query at a time.
@@ -172,7 +215,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
       search: q.search,
       community: q.community,
       cluster: q.cluster,
-      state: q.state,
+      state: stateFilter.state,
       beds: q.beds,
       nationality: scope.ownerHidden ? undefined : q.nationality,
       outcome: q.outcome,
@@ -191,6 +234,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
       plotTo: q.plotTo,
       followUp: q.followUp,
       hasNotes: q.hasNotes,
+      stage: q.stage || undefined,
       dueOnly: q.dueOnly,
       interestedOnly: q.interestedOnly,
       expiringSoon: q.expiringSoon,
@@ -198,7 +242,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
       tenancy: q.tenancy,
       datasetId: q.datasetId,
       assignedTo: scope.assignedTo,
-      states: scope.states,
+      states: stateFilter.states,
       ownerHidden: scope.ownerHidden,
       sortKey: q.sortKey,
       asc: q.asc,
@@ -255,7 +299,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
     if (!p) throw notFound('That unit no longer exists.');
 
     const me = req.currentUser!;
-    if (!me.isManager && p.assignedTo !== me.id) {
+    if (!canWorkUnit(me, p.assignedTo)) {
       throw forbidden('That unit is not assigned to you.');
     }
     return serializeProperty(p);
@@ -275,7 +319,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
     const me = req.currentUser!;
     const units = await ownerUnitsFor(id);
 
-    if (!me.isManager) {
+    if (!me.isManager && !isOpenAccess()) {
       const mine = units.filter(u => u.assignedTo === me.id);
       if (mine.length === 0) throw forbidden('That owner is not assigned to you.');
       return mine.map(serializeProperty);
@@ -296,7 +340,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
     const p = await findPropertyById(id);
     if (!p) throw notFound('That unit no longer exists.');
     const me = req.currentUser!;
-    if (!me.isManager && p.assignedTo !== me.id) {
+    if (!canWorkUnit(me, p.assignedTo)) {
       throw forbidden('That unit is not assigned to you.');
     }
     const calls = await callsForProperties([id]);
@@ -326,7 +370,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
     const p = await findPropertyById(id);
     if (!p) throw notFound('That unit no longer exists.');
     const me = req.currentUser!;
-    if (!me.isManager && p.assignedTo !== me.id) {
+    if (!canWorkUnit(me, p.assignedTo)) {
       throw forbidden('That unit is not assigned to you.');
     }
 
@@ -393,7 +437,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
     const me = req.currentUser!;
     const p = await findPropertyById(id);
     if (!p) throw notFound('That unit no longer exists.');
-    if (!me.isManager && p.assignedTo !== me.id) {
+    if (!canWorkUnit(me, p.assignedTo)) {
       throw forbidden('That unit is not assigned to you.');
     }
 
@@ -431,7 +475,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
 
     const p = await findPropertyById(id);
     if (!p) throw notFound('That unit no longer exists.');
-    if (!me.isManager && p.assignedTo !== me.id) {
+    if (!canWorkUnit(me, p.assignedTo)) {
       throw forbidden('That unit is not assigned to you.');
     }
 
@@ -461,9 +505,13 @@ export default async function propertyRoutes(app: FastifyInstance) {
     const p = await findPropertyById(id);
     if (!p) throw notFound('That unit no longer exists.');
 
+    // Linked to the unit, so the record popup can tell the next person who
+    // opened it last ("someone may already be working on it"). The journal list
+    // itself leaves plain opens out — only the hint reads them.
     return recordView({
       user: me,
       what: body.what ?? `Viewed owner detail ${id}`,
+      propertyIds: [id],
     });
   });
 
@@ -491,7 +539,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
 
     const p = await findPropertyById(id);
     if (!p) throw notFound('That unit no longer exists.');
-    if (!me.isManager && p.assignedTo !== me.id) {
+    if (!canWorkUnit(me, p.assignedTo)) {
       throw forbidden('You can only add notes to a unit assigned to you.');
     }
 
@@ -530,7 +578,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
 
     const p = await findPropertyById(id);
     if (!p) throw notFound('That unit no longer exists.');
-    if (!me.isManager && p.assignedTo !== me.id) {
+    if (!canWorkUnit(me, p.assignedTo)) {
       throw forbidden('You can only edit a unit assigned to you.');
     }
 
@@ -592,7 +640,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
 
     const p = await findPropertyById(id);
     if (!p) throw notFound('That unit no longer exists.');
-    if (!me.isManager && p.assignedTo !== me.id) {
+    if (!canWorkUnit(me, p.assignedTo)) {
       throw forbidden('You can only add updates to a unit assigned to you.');
     }
 
@@ -601,6 +649,50 @@ export default async function propertyRoutes(app: FastifyInstance) {
     // pass the current notes through unchanged so only the timer moves.
     await updatePropertyNotes(id, p.notes ?? '', await loadSettings());
     return { ok: true };
+  });
+
+  /**
+   * Set a unit's listing stage (None → Listed online) — the record popup's stage
+   * switch. Anyone who may work the unit may set it. Written to the record's
+   * journal as "Stage: A → B", so the next person sees who moved it and when.
+   */
+  app.patch('/api/properties/:id/stage', {
+    preHandler: [app.authenticate],
+    schema: {
+      params: {
+        type: 'object', required: ['id'],
+        properties: { id: { type: 'string', maxLength: 64 } },
+      },
+      body: {
+        type: 'object', required: ['stage'], additionalProperties: false,
+        properties: { stage: { type: 'string', enum: PROPERTY_STAGES } },
+      },
+    },
+  }, async (req) => {
+    const { id } = req.params as { id: string };
+    const { stage } = req.body as { stage: PropertyStage };
+    const me = req.currentUser!;
+
+    const p = await findPropertyById(id);
+    if (!p) throw notFound('That unit no longer exists.');
+    if (!canWorkUnit(me, p.assignedTo)) {
+      throw forbidden('You can only change the stage of a unit assigned to you.');
+    }
+
+    await transaction(async (cx) => {
+      const before = await updatePropertyStage(id, stage, cx);
+      if (before == null) throw notFound('That unit no longer exists.');
+      if (before !== stage) {
+        await writeAudit({
+          actorId: me.id, action: 'stage',
+          detail: `Stage: ${PropertyStageLabel[before]} → ${PropertyStageLabel[stage]}`,
+          propertyIds: [id],
+        }, cx);
+      }
+    });
+
+    const updated = await findPropertyById(id);
+    return serializeProperty(updated!);
   });
 
   app.post('/api/properties/assign', {
@@ -623,6 +715,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
       },
     },
   }, async (req) => {
+    assertAssignmentsEnabled();
     const body = req.body as { propertyIds: string[]; brokerId: string; note?: string; skipConflictOwners?: boolean };
     return assignProperties(body.propertyIds, body.brokerId, req.currentUser!.id, body.note, body.skipConflictOwners);
   });
@@ -647,6 +740,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
       },
     },
   }, async (req) => {
+    assertAssignmentsEnabled();
     const body = req.body as { propertyIds: string[]; brokerId: string };
     const { conflictUnits, conflictOwners } = await previewAssignConflicts(body.propertyIds, body.brokerId);
     return { conflictOwners, units: conflictUnits.map(serializeProperty) };
@@ -666,6 +760,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
       },
     },
   }, async (req) => {
+    assertAssignmentsEnabled();
     const body = req.body as { propertyIds: string[] };
     const reclaimed = await reclaimProperties(body.propertyIds, req.currentUser!.id);
     return { reclaimed };

@@ -2,7 +2,8 @@ import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../state/AuthContext';
 import { useTheme } from '../../state/ThemeContext';
-import { useMyProperties, useMyLeads } from '../../data/hooks';
+import { useMyProperties, useMyLeads, useBrokerDashboard } from '../../data/hooks';
+import { OPEN_ACCESS } from '../../config';
 import { AccountSheet } from '../common/AccountSheet';
 import { MarbleBackground } from '../common/MarbleBackground';
 import { Icon, IconName } from '../common/Icon';
@@ -15,7 +16,8 @@ type Tab = 'home' | 'today' | 'pool';
 const NAV: { key: Tab; label: string; icon: IconName }[] = [
   { key: 'home', label: 'Home', icon: 'home' },
   { key: 'today', label: 'Database', icon: 'phone' },
-  { key: 'pool', label: 'Pool', icon: 'layers' },
+  // Open access: every unit is already in the Database — no pool to request from.
+  ...(OPEN_ACCESS ? [] : [{ key: 'pool' as Tab, label: 'Pool', icon: 'layers' as IconName }]),
 ];
 
 export function BrokerShell() {
@@ -26,9 +28,11 @@ export function BrokerShell() {
   // in the browser's local day, exactly as it did before.
   const { rows: myProperties } = useMyProperties();
   const { rows: myLeads } = useMyLeads();
+  const { data: dash } = useBrokerDashboard();
 
   const now = new Date().toDateString();
-  const todayCount =
+  // Open access: there is no "my list" — the badge is simply my calls today.
+  const todayCount = OPEN_ACCESS ? (dash?.myCallsToday ?? 0) :
     myProperties.filter(p => p.lastCalledAt && new Date(p.lastCalledAt).toDateString() === now).length +
     myLeads.filter(l => l.lastCalledAt && new Date(l.lastCalledAt).toDateString() === now).length;
 
@@ -75,7 +79,7 @@ export function BrokerShell() {
         <main style={{ flex: 1, overflow: 'auto', maxHeight: '100vh', padding: 24 }}>
           {activeTab === 'home' && <BrokerHome onGo={(t) => setActiveTab(t as Tab)} />}
           {activeTab === 'today' && <TodayTab />}
-          {activeTab === 'pool' && <PoolTab />}
+          {activeTab === 'pool' && !OPEN_ACCESS && <PoolTab />}
         </main>
       </div>
     </div>

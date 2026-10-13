@@ -1,7 +1,7 @@
 import type { PoolConnection } from 'mysql2/promise';
 import { pool, Row, toDb, fromDb } from '../db/pool';
 import {
-  Property, OwnerInfo, PropertyState, CallOutcome, VaultSettings, kOrgId,
+  Property, OwnerInfo, PropertyState, PropertyStage, CallOutcome, VaultSettings, kOrgId, toPropertyStage,
 } from '../../../src/types/models';
 import type { PhoneEntry } from '../../../src/types/models';
 import { ownerKeyOf } from '../../../src/logic/ownerGrouping';
@@ -67,6 +67,7 @@ export function toProperty(r: Row): Property {
   p.askingPrice = r.asking_price != null ? Number(r.asking_price) : undefined;
   p.askingRent = r.asking_rent != null ? Number(r.asking_rent) : undefined;
   p.listingNote = (r.listing_note as string) ?? undefined;
+  p.stage = toPropertyStage(r.stage);
   p.extra = parseExtra(r.extra);
   p.owner.phones = parsePhones(r.owner_phones);
   p.owners = parseOwners(r.owners);
@@ -135,7 +136,7 @@ const COLS = `
   created_at, updated_at, assigned_to, assigned_at, assignment_note,
   cooldown_until, portfolio_since, last_outcome, last_called_at,
   call_attempts, next_follow_up_at, dnc_at, assignment_expires_at, notes,
-  asking_price, asking_rent, listing_note`;
+  asking_price, asking_rent, listing_note, stage`;
 
 /** Params for an INSERT/REPLACE of one property. Keep in sync with `PLACEHOLDERS`. */
 function writeParams(p: Property): unknown[] {
@@ -396,6 +397,8 @@ export interface PropertyFilter {
   followUp?: 'scheduled' | 'due';
   /** Only units that carry a written note. */
   hasNotes?: boolean;
+  /** Listing journey stage (exact). */
+  stage?: PropertyStage;
 }
 
 export interface PropertyQuery extends PropertyFilter {
@@ -430,6 +433,7 @@ const SORTABLE: Record<string, string> = {
   attempts: 'call_attempts',
   assignedAt: 'assigned_at',
   createdAt: 'created_at',
+  stage: 'stage',
 };
 
 /**
@@ -579,6 +583,7 @@ function buildWhere(f: PropertyFilter): { sql: string; params: unknown[] } {
   else if (f.followUp === 'due') where.push('next_follow_up_at IS NOT NULL AND next_follow_up_at <= UTC_TIMESTAMP(3)');
 
   if (f.hasNotes) where.push("notes IS NOT NULL AND notes <> ''");
+  if (f.stage) { where.push('stage = ?'); params.push(f.stage); }
 
   if (f.search && f.search.trim().length > 0) {
     // Substring match over the same haystack the client concatenated. LIKE
@@ -945,6 +950,29 @@ export async function updateListingInfo(
   sets.push('updated_at = ?'); params.push(toDb(new Date().toISOString()));
   params.push(id);
   await db.query(`UPDATE properties SET ${sets.join(', ')} WHERE id = ?`, params);
+}
+
+/**
+ * Set a unit's listing stage. Its own write (like notes), so the import /
+ * call-logging upsert never touches it. Returns the stage it replaced, read
+ * under a row lock so two people changing it at once each record the true
+ * "from → to" in the journal.
+ */
+export async function updatePropertyStage(
+  id: string, stage: PropertyStage, cx: PoolConnection,
+): Promise<PropertyStage | null> {
+  const [rows] = await cx.query<Row[]>(
+    'SELECT stage FROM properties WHERE id = ? FOR UPDATE', [id],
+  );
+  if (rows.length === 0) return null;
+  const before = toPropertyStage(rows[0].stage);
+  if (before !== stage) {
+    await cx.query(
+      'UPDATE properties SET stage = ?, updated_at = ? WHERE id = ?',
+      [stage, toDb(new Date().toISOString()), id],
+    );
+  }
+  return before;
 }
 
 /**

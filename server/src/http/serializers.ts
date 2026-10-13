@@ -1,6 +1,7 @@
 import { AppUser } from '../../../src/types/user';
 import { Property, Lead, CallLog, BatchRequest, DataSet, AuditEntry, VaultSettings } from '../../../src/types/models';
-import { maskedPhone } from '../../../src/utils/format';
+import { maskedPhone, prettyPhone } from '../../../src/utils/format';
+import { isOpenAccess } from '../domain/access';
 
 /**
  * The wire format — and the last line of defence for the data rules.
@@ -13,7 +14,16 @@ import { maskedPhone } from '../../../src/utils/format';
  *
  * Field names mirror the frontend's `toJson()` so the existing `fromJson`
  * constructors keep working unchanged.
+ *
+ * OPEN ACCESS (src/config.ts): with assignments switched off, every number is
+ * shown to everyone, so `listPhone` sends it in full (formatted like a reveal).
+ * Switched back on, it masks again — this is the only place that decides.
  */
+
+/** A phone number as a list/detail response carries it. */
+function listPhone(phone?: string): string {
+  return isOpenAccess() ? prettyPhone(phone) : maskedPhone(phone);
+}
 
 /** A user as the client may see them. Never includes password material. */
 export function publicUser(u: AppUser) {
@@ -65,20 +75,20 @@ export function serializeProperty(p: Property) {
     owner: {
       name: p.owner.name,
       // Masked. The real number never travels on a list response.
-      phone: hasPhone ? maskedPhone(p.owner.phone) : undefined,
+      phone: hasPhone ? listPhone(p.owner.phone) : undefined,
       // An owner may hold several numbers (Mobile 1 / 2 / 3). EVERY one is
       // masked here — otherwise this list becomes a back door to exactly the
       // numbers the `phone` mask above exists to protect. The labels are safe:
       // they carry no digits, and the UI needs them to say "3 numbers on record".
-      phones: p.owner.phones.map(e => ({ label: e.label, number: maskedPhone(e.number) })),
+      phones: p.owner.phones.map(e => ({ label: e.label, number: listPhone(e.number) })),
       nationality: p.owner.nationality,
     },
     // Co-owners — each with their OWN number, EVERY one masked on this list
     // response exactly like the primary. Empty for a single-owner unit.
     owners: p.owners.map(o => ({
       name: o.name,
-      phone: o.phone ? maskedPhone(o.phone) : undefined,
-      phones: o.phones.map(e => ({ label: e.label, number: maskedPhone(e.number) })),
+      phone: o.phone ? listPhone(o.phone) : undefined,
+      phones: o.phones.map(e => ({ label: e.label, number: listPhone(e.number) })),
       nationality: o.nationality,
     })),
     createdAt: p.createdAt,
@@ -98,6 +108,7 @@ export function serializeProperty(p: Property) {
     askingPrice: p.askingPrice,
     askingRent: p.askingRent,
     listingNote: p.listingNote,
+    stage: p.stage,
     extra: p.extra,
   };
 }
@@ -110,7 +121,7 @@ export function serializeLead(l: Lead) {
     datasetId: l.datasetId,
     enquiryDate: l.enquiryDate,
     name: l.name,
-    phone: hasPhone ? maskedPhone(l.phone) : undefined,
+    phone: hasPhone ? listPhone(l.phone) : undefined,
     email: l.email,
     project: l.project,
     source: l.source,

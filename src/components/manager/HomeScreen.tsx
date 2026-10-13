@@ -12,7 +12,7 @@ import {
 import { Icon, IconName } from '../common/Icon';
 import { AnalyticsTable } from '../common/AnalyticsTable';
 import { brokerBoardColumns } from './brokerColumns';
-import { LEADS_ENABLED } from '../../config';
+import { LEADS_ENABLED, OPEN_ACCESS } from '../../config';
 import { UnitsDrilldownPopup, DrillParams } from './UnitsDrilldownPopup';
 
 /**
@@ -128,20 +128,21 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
   // ── Alerts ──
   const { pendingRequests: pending, idleBrokers, staleCount, expiringSoon } = data.alerts;
   const alerts: Alert[] = [];
-  if (pending > 0) {
+  // Open access: no requests or assignment timers, so neither alert can apply.
+  if (pending > 0 && !OPEN_ACCESS) {
     alerts.push({ icon: 'user', color: 'var(--info)', message: `${pending} request${pending === 1 ? '' : 's'} awaiting approval`, goTo: 'database' });
   }
   if (idleBrokers.length > 0) {
     alerts.push({
       icon: 'alert', color: 'var(--warning)',
-      message: `${idleBrokers.length} broker${idleBrokers.length === 1 ? '' : 's'} with data but no calls today — ${idleBrokers.slice(0, 3).join(', ')}${idleBrokers.length > 3 ? '…' : ''}`,
+      message: `${idleBrokers.length} broker${idleBrokers.length === 1 ? '' : 's'} ${OPEN_ACCESS ? 'active' : 'with data'} but no calls today — ${idleBrokers.slice(0, 3).join(', ')}${idleBrokers.length > 3 ? '…' : ''}`,
       goTo: 'team',
     });
   }
   if (staleCount > 0) {
     alerts.push({ icon: 'clock', color: 'var(--warning)', message: `${staleCount} interested owner${staleCount === 1 ? '' : 's'} going stale — not called recently`, goTo: 'team' });
   }
-  if (expiringSoon > 0) {
+  if (expiringSoon > 0 && !OPEN_ACCESS) {
     alerts.push({
       icon: 'clock', color: 'var(--error)',
       message: `${expiringSoon} held unit${expiringSoon === 1 ? '' : 's'} running out of time — returning to the pool soon`,
@@ -188,8 +189,8 @@ export function HomeScreen({ onGo }: { onGo?: (tab: string) => void }) {
         actions={
           <>
             {me.can(Permission.manageData) && <SlabAction icon="upload" label="Import data" onClick={() => go('control')} />}
-            {me.can(Permission.assignData) && <SlabAction icon="assign" label="Assign data" onClick={() => go('database')} />}
-            {me.can(Permission.assignData) && <SlabAction icon="user" label="Requests" badge={pending} primary={pending > 0} onClick={() => go('database')} />}
+            {!OPEN_ACCESS && me.can(Permission.assignData) && <SlabAction icon="assign" label="Assign data" onClick={() => go('database')} />}
+            {!OPEN_ACCESS && me.can(Permission.assignData) && <SlabAction icon="user" label="Requests" badge={pending} primary={pending > 0} onClick={() => go('database')} />}
             {me.can(Permission.manageUsers) && <SlabAction icon="users" label="Register user" onClick={() => go('control')} />}
             <SlabAction icon="vault" label="Open database" onClick={() => go('database')} />
           </>

@@ -12,7 +12,7 @@ import { CallStop } from '../../state/callTypes';
 import { PropertyPopup } from '../manager/PropertyPopup';
 import { ApiError } from '../../data/apiClient';
 import { useMyLeads } from '../../data/hooks';
-import { LEADS_ENABLED } from '../../config';
+import { LEADS_ENABLED, OPEN_ACCESS } from '../../config';
 import { useStickyHeader, stickyHeaderStyle } from '../common/useStickyHeader';
 
 /**
@@ -30,7 +30,8 @@ const QUICKS: { key: Quick; label: string }[] = [
   // do-not-call — so nothing silently disappears after it's dispositioned.
   { key: 'toCall', label: 'To call' },
   { key: 'all', label: 'All' },
-  { key: 'expiring', label: '⏰ Expiring soon' },
+  // Open access: no assignment timers, so nothing can expire.
+  ...(OPEN_ACCESS ? [] : [{ key: 'expiring' as Quick, label: '⏰ Expiring soon' }]),
   { key: 'due', label: 'Follow-up due' },
   { key: 'fresh', label: 'Never called' },
   // These filter on the unit's CURRENT status (its last outcome), not activity in
@@ -40,6 +41,9 @@ const QUICKS: { key: Quick; label: string }[] = [
   { key: 'text', label: 'Awaiting text' },
   { key: 'interested', label: 'Interested (now)' },
 ];
+
+/** Open access: the shared working list — who to call, and where each unit stands. */
+const OPEN_WORKING_COLUMNS = ['owner', 'mobile', 'beds', 'size', 'stage', 'outcome', 'calledAt', 'followUp', 'state'];
 
 /**
  * Maps a quick chip onto server filters. `dueOnly` and `interestedOnly` are
@@ -116,9 +120,13 @@ export function TodayTab() {
       )}
 
       {!buyers ? (
+        // Open access: "mine" is the whole vault on the server (every workable
+        // unit; "All" adds cooled-off and do-not-call), with owner + number shown.
+        // Its own layout key, so the old owner-less column set doesn't carry over.
         <PropertyTable
-          prefsKey="broker_today"
-          hideOwner
+          prefsKey={OPEN_ACCESS ? 'broker_today_open' : 'broker_today'}
+          hideOwner={!OPEN_ACCESS}
+          defaultColumns={OPEN_ACCESS ? OPEN_WORKING_COLUMNS : undefined}
           scope="mine"
           stickyTop={headerH}
           onSelect={openDetail}

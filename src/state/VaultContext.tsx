@@ -2,7 +2,7 @@ import React, {
   createContext, useContext, useState, useCallback, useEffect, useMemo, useRef,
 } from 'react';
 import {
-  DataSet, Property, Lead, BatchRequest, VaultSettings,
+  DataSet, Property, Lead, BatchRequest, VaultSettings, PropertyStage,
   RequestStatus, CallOutcome,
 } from '../types/models';
 import { AppUser, UserRole, Permission } from '../types/user';
@@ -87,6 +87,8 @@ interface VaultContextValue {
   decideRequestUnits: (req: BatchRequest, action: 'approve' | 'deny', unitIds: string[]) => Promise<api.UnitDecisionResult>;
   /** Re-read one request and swap it into the list; returns the fresh copy. */
   refreshRequest: (id: string) => Promise<BatchRequest>;
+  /** Set a unit's listing stage; tables refetch so the Stage column follows. */
+  setPropertyStage: (id: string, stage: PropertyStage) => Promise<Property>;
 
   deleteDataset: (d: DataSet) => Promise<{ removedUnits: number; removedLeads: number }>;
   updateDataset: (id: string, patch: {
@@ -317,6 +319,12 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
     return r;
   }, [bump]);
 
+  const setPropertyStage = useCallback(async (id: string, stage: PropertyStage) => {
+    const p = await api.properties.setStage(id, stage);
+    bump();
+    return p;
+  }, [bump]);
+
   const refreshRequest = useCallback(async (id: string) => {
     const fresh = await api.requests.get(id);
     if (mounted.current) setRequests(prev => prev.map(x => (x.id === id ? fresh : x)));
@@ -389,7 +397,7 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
     reload, reloadRequests, reloadDatasets,
     saveUser, setUserActive, deactivateBroker, resetUserPassword, saveSettings,
     assign, reclaim, assignLeads, reclaimLeads,
-    submitRequest, approveRequest, denyRequest, decideRequestUnits, refreshRequest,
+    submitRequest, approveRequest, denyRequest, decideRequestUnits, refreshRequest, setPropertyStage,
     deleteDataset, updateDataset,
     undoDnc, undoDncLead,
     logCall, logLeadCall,

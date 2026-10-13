@@ -1,7 +1,7 @@
 import { get, post, patch, del, download, upload, tzOffsetMinutes, setCsrfToken } from './apiClient';
 import {
   Property, Lead, CallLog, BatchRequest, DataSet, VaultSettings,
-  PropertyState, CallOutcome, DataSetType, DataModule, RequestStatus,
+  PropertyState, PropertyStage, CallOutcome, DataSetType, DataModule, RequestStatus,
 } from '../types/models';
 import type { PhoneEntry } from '../types/models';
 import { AppUser, UserRole, Permission } from '../types/user';
@@ -153,6 +153,8 @@ export interface PropertyQuery {
   followUp?: 'scheduled' | 'due';
   /** Only units that carry a written note. */
   hasNotes?: boolean;
+  /** Listing journey stage (exact). */
+  stage?: PropertyStage;
   /** Follow-up due now or overdue — the broker's "Due follow-up" chip. */
   dueOnly?: boolean;
   /** Last outcome was interested (sell or rent) — the "Interested" chip. */
@@ -279,6 +281,11 @@ export const properties = {
   /** Add a dated note to the record's journal without logging a call. */
   async addUpdate(id: string, note: string): Promise<void> {
     await post(`/api/properties/${id}/note`, { note });
+  },
+
+  /** Set a unit's listing stage; returns the updated unit. */
+  async setStage(id: string, stage: PropertyStage): Promise<Property> {
+    return Property.fromJson(await patch(`/api/properties/${id}/stage`, { stage }));
   },
 
   /** Save the listing Information (asking price / rent / notes) on a unit. */

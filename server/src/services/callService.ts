@@ -9,6 +9,7 @@ import { loadSettings } from '../repositories/settingsRepo';
 import { writeAudit } from '../repositories/auditRepo';
 import { newCallId } from '../domain/ids';
 import { notFound, forbidden } from '../http/errors';
+import { isOpenAccess } from '../domain/access';
 
 /**
  * Logging a call.
@@ -69,7 +70,7 @@ export async function logCall(input: LogCallInput): Promise<CallLog> {
 
     // A broker may only log against units assigned to them. The client never
     // checked — it simply didn't show other brokers' units.
-    if (!input.isManager) {
+    if (!input.isManager && !isOpenAccess()) {
       const foreign = properties.filter(p => p.assignedTo !== input.brokerId);
       if (foreign.length > 0) {
         throw forbidden('Those units are not assigned to you.');
@@ -190,7 +191,7 @@ export async function logLeadCall(input: LogLeadCallInput): Promise<CallLog> {
     if (rows.length === 0) throw notFound('That lead no longer exists.');
     const lead = toLead(rows[0]);
 
-    if (!input.isManager && lead.assignedTo !== input.brokerId) {
+    if (!input.isManager && !isOpenAccess() && lead.assignedTo !== input.brokerId) {
       throw forbidden('That lead is not assigned to you.');
     }
 
@@ -283,6 +284,14 @@ export async function undoDncLead(leadId: string, actorId: string): Promise<Lead
 export async function sweepLapsed(): Promise<{ properties: number; leads: number }> {
   const settings = await loadSettings();
   const now = new Date().toISOString();
+  // Open access: nobody holds a unit, so an assignment deadline means nothing and
+  // is never acted on — only a finished cooldown (not interested / already
+  // listed) brings a unit back. The deadlines stay stored, untouched.
+  const open = isOpenAccess();
+  const expiredHold = open ? '' : `
+           OR (state IN ('assigned', 'portfolio')
+               AND assignment_expires_at IS NOT NULL
+               AND assignment_expires_at < UTC_TIMESTAMP(3))`;
 
   return transaction(async (cx) => {
     // Candidates: any held/cooled unit whose own timer has passed.
@@ -290,14 +299,33 @@ export async function sweepLapsed(): Promise<{ properties: number; leads: number
       `SELECT ${PROP_COLS} FROM properties
        WHERE org_id = ?
          AND ((state = 'cooling' AND cooldown_until IS NOT NULL AND cooldown_until < UTC_TIMESTAMP(3))
-           OR (state IN ('assigned', 'portfolio')
-               AND assignment_expires_at IS NOT NULL
-               AND assignment_expires_at < UTC_TIMESTAMP(3)))
+           ${expiredHold})
        FOR UPDATE`,
       [kOrgId],
     );
-    const candidates = candRows.map(toProperty);
+    const all = candRows.map(toProperty);
     const changedProps: Property[] = [];
+    // Groups recycled this sweep — each gets a system audit row (below) so the
+    // record journal shows why the unit went back to the pool.
+    const reclaimedGroups: { ids: string[]; detail: string }[] = [];
+
+    // A unit nobody holds (always, under open access) has no group to wait for:
+    // it returns to the pool on its own. Grouping these by broker would also put
+    // an empty list into the `assigned_to IN (…)` below, which is invalid SQL.
+    const solo = open ? all : all.filter(p => !p.assignedTo);
+    for (const p of solo) {
+      const detail = p.state === PropertyState.cooling
+        ? 'Back in the pool (cooldown ended)'
+        : 'Auto Reclaimed (Expiry of ownership)';
+      p.state = PropertyState.pool;
+      p.assignedTo = undefined; p.assignedAt = undefined; p.assignmentNote = undefined;
+      p.cooldownUntil = undefined; p.nextFollowUpAt = undefined;
+      p.portfolioSince = undefined; p.assignmentExpiresAt = undefined; p.callAttempts = 0;
+      p.updatedAt = now; changedProps.push(p);
+      reclaimedGroups.push({ ids: [p.id], detail });
+    }
+
+    const candidates = open ? [] : all.filter(p => !!p.assignedTo);
     if (candidates.length > 0) {
       const ownerKeys = Array.from(new Set(candidates.map(ownerKeyOf)));
       const brokers = Array.from(new Set(candidates.map(p => p.assignedTo).filter((b): b is string => !!b)));
@@ -323,9 +351,6 @@ export async function sweepLapsed(): Promise<{ properties: number; leads: number
 
       const nowDate = new Date(now);
       const future = (d?: string) => d != null && new Date(d) > nowDate;
-      // Groups recycled this sweep — each gets a system audit row (below) so the
-      // record journal shows why the unit went back to the pool.
-      const reclaimedGroups: string[][] = [];
       for (const units of groups.values()) {
         const active = units.some(p =>
           (p.state === PropertyState.assigned || p.state === PropertyState.portfolio) && future(p.assignmentExpiresAt));
@@ -353,31 +378,28 @@ export async function sweepLapsed(): Promise<{ properties: number; leads: number
             p.portfolioSince = undefined; p.assignmentExpiresAt = undefined; p.callAttempts = 0;
             p.updatedAt = now; changedProps.push(p);
           }
-          reclaimedGroups.push(units.map(p => p.id));
+          reclaimedGroups.push({ ids: units.map(p => p.id), detail: 'Auto Reclaimed (Expiry of ownership)' });
         }
       }
-      if (changedProps.length > 0) await saveProperties(changedProps, cx);
+    }
 
-      // Record the auto-reclaim in the trail with NO actor — this is the system,
-      // not a manager, so the journal reads "System · Auto Reclaimed" rather than
-      // pinning the recycle on whoever happened to trigger the sweep. One row per
-      // owner group, so the activity feed reads one event per abandoned owner.
-      for (const ids of reclaimedGroups) {
-        await writeAudit({
-          actorId: null, action: 'reclaim',
-          detail: 'Auto Reclaimed (Expiry of ownership)',
-          propertyIds: ids,
-        }, cx);
-      }
+    if (changedProps.length > 0) await saveProperties(changedProps, cx);
+
+    // Record the auto-reclaim in the trail with NO actor — this is the system,
+    // not a manager, so the journal reads "System · Auto Reclaimed" rather than
+    // pinning the recycle on whoever happened to trigger the sweep. One row per
+    // owner group, so the activity feed reads one event per abandoned owner.
+    for (const g of reclaimedGroups) {
+      await writeAudit({
+        actorId: null, action: 'reclaim', detail: g.detail, propertyIds: g.ids,
+      }, cx);
     }
 
     const [leadRows] = await cx.query<Row[]>(
       `SELECT ${LEAD_COLS} FROM leads
        WHERE org_id = ?
          AND ((state = 'cooling' AND cooldown_until IS NOT NULL AND cooldown_until < UTC_TIMESTAMP(3))
-           OR (state IN ('assigned', 'portfolio')
-               AND assignment_expires_at IS NOT NULL
-               AND assignment_expires_at < UTC_TIMESTAMP(3)))
+           ${expiredHold})
        FOR UPDATE`,
       [kOrgId],
     );

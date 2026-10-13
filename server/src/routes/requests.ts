@@ -8,6 +8,7 @@ import { writeAudit } from '../repositories/auditRepo';
 import { serializeRequest, serializeProperty } from '../http/serializers';
 import { newRequestId } from '../domain/ids';
 import { forbidden, notFound } from '../http/errors';
+import { assertAssignmentsEnabled } from '../domain/access';
 
 /**
  * Resolve each request's hand-picked units into a per-area breakdown
@@ -72,6 +73,7 @@ export default async function requestRoutes(app: FastifyInstance) {
       },
     },
   }, async (req) => {
+    assertAssignmentsEnabled();
     const body = req.body as {
       community: string; cluster?: string; count: number;
       unitIds?: string[]; note?: string;
@@ -153,6 +155,7 @@ export default async function requestRoutes(app: FastifyInstance) {
     schema: { params: idParams },
   }, async (req) => {
     const { id } = req.params as { id: string };
+    assertAssignmentsEnabled();
     const result = await approveRequest(id, req.currentUser!.id);
     const [request] = await withAreas([result.request]);
     return { granted: result.granted, considered: result.considered, request: serializeRequest(request) };
@@ -163,6 +166,7 @@ export default async function requestRoutes(app: FastifyInstance) {
     schema: { params: idParams },
   }, async (req) => {
     const { id } = req.params as { id: string };
+    assertAssignmentsEnabled();
     const [request] = await withAreas([await denyRequest(id, req.currentUser!.id)]);
     return serializeRequest(request);
   });
@@ -187,6 +191,7 @@ export default async function requestRoutes(app: FastifyInstance) {
     },
   }, async (req) => {
     const { id } = req.params as { id: string };
+    assertAssignmentsEnabled();
     const body = req.body as { action: 'approve' | 'deny'; unitIds: string[] };
     const r = await decideRequestUnits(id, body.unitIds, body.action, req.currentUser!.id);
     const [request] = await withAreas([r.request]);

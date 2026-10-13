@@ -8,6 +8,7 @@ import { undoDncLead } from '../services/callService';
 import { revealLeadPhone } from '../services/revealService';
 import { serializeLead, serializeCall } from '../http/serializers';
 import { forbidden, notFound } from '../http/errors';
+import { canWorkUnit, isOpenAccess, assertAssignmentsEnabled } from '../domain/access';
 
 /** Buyer leads. Mirrors properties.ts — same scoping and masking rules. */
 
@@ -48,6 +49,12 @@ export default async function leadRoutes(app: FastifyInstance) {
   function scopeFor(req: FastifyRequest, q: ListQuery) {
     const me = req.currentUser!;
     const scope = q.scope ?? (me.isManager ? 'all' : 'mine');
+
+    // Open access: every lead is open to everyone, nothing hidden.
+    if (isOpenAccess()) {
+      if (scope === 'pool') return { states: [PropertyState.pool], ownerHidden: false };
+      return { assignedTo: me.isManager && scope === 'all' ? q.assignedTo : undefined, ownerHidden: false };
+    }
 
     if (scope === 'mine' || !me.isManager) {
       if (scope === 'pool' && !me.isManager) {
@@ -119,7 +126,7 @@ export default async function leadRoutes(app: FastifyInstance) {
     const l = await findLeadById(id);
     if (!l) throw notFound('That lead no longer exists.');
     const me = req.currentUser!;
-    if (!me.isManager && l.assignedTo !== me.id) {
+    if (!canWorkUnit(me, l.assignedTo)) {
       throw forbidden('That lead is not assigned to you.');
     }
     return serializeLead(l);
@@ -135,7 +142,7 @@ export default async function leadRoutes(app: FastifyInstance) {
     const l = await findLeadById(id);
     if (!l) throw notFound('That lead no longer exists.');
     const me = req.currentUser!;
-    if (!me.isManager && l.assignedTo !== me.id) {
+    if (!canWorkUnit(me, l.assignedTo)) {
       throw forbidden('That lead is not assigned to you.');
     }
     return (await callsForLead(id)).map(serializeCall);
@@ -154,7 +161,7 @@ export default async function leadRoutes(app: FastifyInstance) {
 
     const l = await findLeadById(id);
     if (!l) throw notFound('That lead no longer exists.');
-    if (!me.isManager && l.assignedTo !== me.id) {
+    if (!canWorkUnit(me, l.assignedTo)) {
       throw forbidden('That lead is not assigned to you.');
     }
 
@@ -174,6 +181,7 @@ export default async function leadRoutes(app: FastifyInstance) {
       },
     },
   }, async (req) => {
+    assertAssignmentsEnabled();
     const body = req.body as { leadIds: string[]; brokerId: string; note?: string };
     const assigned = await assignLeads(body.leadIds, body.brokerId, req.currentUser!.id, body.note);
     return { assigned };
@@ -190,6 +198,7 @@ export default async function leadRoutes(app: FastifyInstance) {
       },
     },
   }, async (req) => {
+    assertAssignmentsEnabled();
     const body = req.body as { leadIds: string[] };
     const reclaimed = await reclaimLeads(body.leadIds, req.currentUser!.id);
     return { reclaimed };

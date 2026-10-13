@@ -16,6 +16,35 @@ export const PropertyStateLabel: Record<PropertyState, string> = {
   [PropertyState.dnc]: 'Do not call',
 };
 
+/**
+ * Where a unit is in the listing journey — set by hand from the record popup,
+ * independent of the calling lifecycle (`state`) and of any call outcome.
+ * Declared in journey order: the database ENUM uses the same order, so sorting
+ * by stage reads None → Listed online.
+ */
+export enum PropertyStage {
+  none = 'none',
+  prospecting = 'prospecting',
+  marketAppraisal = 'marketAppraisal',
+  listedOffline = 'listedOffline',
+  listedOnline = 'listedOnline',
+}
+
+export const PropertyStageLabel: Record<PropertyStage, string> = {
+  [PropertyStage.none]: 'None',
+  [PropertyStage.prospecting]: 'Prospecting',
+  [PropertyStage.marketAppraisal]: 'Market appraisal',
+  [PropertyStage.listedOffline]: 'Listed offline',
+  [PropertyStage.listedOnline]: 'Listed online',
+};
+
+export const PROPERTY_STAGES: PropertyStage[] = Object.values(PropertyStage);
+
+/** Unknown / missing values read as `none` rather than throwing. */
+export function toPropertyStage(v: unknown): PropertyStage {
+  return typeof v === 'string' && (PROPERTY_STAGES as string[]).includes(v) ? v as PropertyStage : PropertyStage.none;
+}
+
 export enum CallOutcome {
   noAnswer = 'noAnswer',
   unreachable = 'unreachable',
@@ -167,6 +196,9 @@ export class Property implements ProspectFields {
   askingPrice?: number;
   askingRent?: number;
   listingNote?: string;
+  /** The listing journey stage, set from the record popup. Like `notes`, it is
+   *  written on its own — imports and call logging never change it. */
+  stage: PropertyStage = PropertyStage.none;
   /** Any unmapped columns from the upload, kept verbatim so the table can show them. */
   extra: Record<string, string> = {};
 
@@ -249,6 +281,7 @@ export class Property implements ProspectFields {
       owners: this.owners.map(o => o.toJson()),
       notes: this.notes,
       askingPrice: this.askingPrice, askingRent: this.askingRent, listingNote: this.listingNote,
+      stage: this.stage,
       extra: this.extra,
     };
   }
@@ -292,6 +325,7 @@ export class Property implements ProspectFields {
     p.askingPrice = j.askingPrice != null ? (j.askingPrice as number) : undefined;
     p.askingRent = j.askingRent != null ? (j.askingRent as number) : undefined;
     p.listingNote = j.listingNote as string | undefined;
+    p.stage = toPropertyStage(j.stage);
     p.extra = Object.fromEntries(
       Object.entries((j.extra as Record<string, unknown>) ?? {}).map(([k, v]) => [k, String(v)]));
     return p;

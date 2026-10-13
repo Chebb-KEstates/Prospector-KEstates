@@ -32,6 +32,7 @@ its own `org_id` — `kOrgId` is a shared constant in the domain layer.
 | `importService.test.ts` | staging, server-side dry run, the dataset-id regression, re-import updating in place, staged rows dropped at commit, cross-user access |
 | `revealService.test.ts` | the single door a real phone leaves by: cap enforcement, manager exemption, per-local-day reset, and that a *blocked* reveal is still audited |
 | `requestDecisions.test.ts` | per-unit approve/deny on a hand-picked request: partial decisions keep it pending, closing rules, owner-linked grants, never taking a unit from another broker, stale/duplicate/invalid selections, whole-request Approve/Deny after partial decisions, two managers racing, audit lines |
+| `openAccess.test.ts` | OPEN_ACCESS through the HTTP layer: brokers see and work every unit with full numbers, the "Open" state filter, stage set / journaled / validated / filtered / sorted and never reset by imports, assignment + request endpoints refused without side effects, the sweep honouring cooldowns only — then the revert path (masking and ownership checks return, unassigned cooled units recycle) |
 
 Three of these are regression tests for bugs that existed in the reference
 implementation; one (`a blocked reveal is still audited`) is for a bug

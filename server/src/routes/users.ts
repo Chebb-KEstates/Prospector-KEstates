@@ -12,6 +12,7 @@ import { assignedCountByBroker, findMetricUnits } from '../repositories/property
 import { reclaimProperties, assignProperties } from '../services/assignmentService';
 import { newUserId } from '../domain/ids';
 import { badRequest, notFound, conflict, forbidden } from '../http/errors';
+import { assertAssignmentsEnabled } from '../domain/access';
 
 /**
  * User administration.
@@ -228,6 +229,8 @@ export default async function userRoutes(app: FastifyInstance) {
       throw badRequest('This is the last active manager. Promote someone else first.');
     }
 
+    // Open access: nothing is held, so units are never moved on deactivation.
+    if (mode !== 'keep') assertAssignmentsEnabled();
     const held = await findMetricUnits('held', { brokerId: id });
     const ids = held.map(p => p.id);
     let handled = 0;

@@ -13,7 +13,7 @@ import { RequestsScreen } from './RequestsScreen';
 import { ApiError } from '../../data/apiClient';
 import { Icon } from '../common/Icon';
 import { useStickyHeader, stickyHeaderStyle } from '../common/useStickyHeader';
-import { LEADS_ENABLED } from '../../config';
+import { LEADS_ENABLED, OPEN_ACCESS } from '../../config';
 
 /**
  * Database — the manager's single data surface.
@@ -41,7 +41,8 @@ type Quick = 'all' | 'expiring' | 'due' | 'fresh' | 'noAnswer' | 'callback' | 't
 // call)" labels keep that difference obvious.
 const QUICKS: { key: Quick; label: string }[] = [
   { key: 'all', label: 'All' },
-  { key: 'expiring', label: '⏰ Expiring soon' },
+  // Open access: no assignment timers, so nothing can expire.
+  ...(OPEN_ACCESS ? [] : [{ key: 'expiring' as Quick, label: '⏰ Expiring soon' }]),
   { key: 'due', label: 'Follow-up due' },
   { key: 'fresh', label: 'Never called' },
   { key: 'noAnswer', label: 'No answer (last call)' },
@@ -67,7 +68,9 @@ function quickToQuery(quick: Quick): {
 export function DatabaseScreen() {
   const { recordView, brokers, assign, reclaim, pendingRequests } = useVault();
   const { user } = useAuth();
-  const canAssign = !!user?.can(Permission.assignData);
+  // Open access: nothing is assigned or requested — no Requests tab, no Assign /
+  // Reclaim bar and no row checkboxes (they only fed those actions).
+  const canAssign = !OPEN_ACCESS && !!user?.can(Permission.assignData);
 
   const [view, setView] = useState<View>('owners');
   const [quick, setQuick] = useState<Quick>('all');

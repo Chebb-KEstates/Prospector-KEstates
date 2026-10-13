@@ -22,10 +22,17 @@ export function useTableLayout(available: string[], defaultVisible: string[], pr
       const raw = localStorage.getItem(storageKey);
       if (raw) {
         const j = JSON.parse(raw);
-        const stored = (j.order as string[] ?? []).filter(k => available.includes(k));
+        const savedOrder = (j.order as string[] ?? []);
+        const stored = savedOrder.filter(k => available.includes(k));
         if (stored.length) setOrder([...stored, ...available.filter(k => !stored.includes(k))]);
         const vis = (j.visible as string[] ?? []).filter(k => available.includes(k));
-        if (vis.length) setVisible(new Set(vis));
+        // A default column the saved layout has never seen (it was added to the
+        // app after the layout was saved) shows up rather than staying hidden
+        // until someone finds it in Columns. Once saved, the user's choice rules.
+        const added = savedOrder.length
+          ? defaultVisible.filter(k => available.includes(k) && !savedOrder.includes(k) && !vis.includes(k))
+          : [];
+        if (vis.length) setVisible(new Set([...vis, ...added]));
       }
     } catch { /* corrupt prefs → defaults win */ }
     setLoaded(true);

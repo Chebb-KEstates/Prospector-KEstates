@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Property, PropertyState, PropertyStateLabel, CallOutcomeLabel } from '../../types/models';
-import { StateChip, OutcomeChip, CountdownBadge } from '../common/StateChip';
+import { Property, PropertyState, PropertyStage, PropertyStageLabel, PROPERTY_STAGES, CallOutcomeLabel } from '../../types/models';
+import { StateChip, OutcomeChip, CountdownBadge, StageChip, stateFilterOptions } from '../common/StateChip';
+import { OPEN_ACCESS } from '../../config';
 import { Icon } from '../common/Icon';
 import { useTableLayout, ColumnsDialog } from '../common/tableLayout';
 import { FilterField, NumberRange, CalledPeriod, CALLED_PERIODS, calledRange } from '../common/propertyFilters';
@@ -113,7 +114,10 @@ function baseCols(soonHours: number): ColDef[] {
     { key: 'calledAt', label: 'Last call', flex: 2, sortable: true, render: p => <span style={{ color: 'var(--text-secondary)' }}>{fmtDateTime(p.lastCalledAt)}</span> },
     { key: 'followUp', label: 'Follow-up', flex: 2, sortable: true, render: p => <span style={{ color: 'var(--text-secondary)' }}>{fmtDate(p.nextFollowUpAt)}</span> },
     { key: 'attempts', label: 'Attempts', flex: 1, numeric: true, sortable: true, render: p => p.callAttempts || <span style={{ color: 'var(--text-tertiary)' }}>—</span> },
-    { key: 'assignedAt', label: 'Assigned on', flex: 2, sortable: true, render: p => <span style={{ color: 'var(--text-secondary)' }}>{fmtDate(p.assignedAt)}</span> },
+    // Open access: nothing is assigned, so "Assigned on" is not offered.
+    ...(OPEN_ACCESS ? [] : [
+      { key: 'assignedAt', label: 'Assigned on', flex: 2, sortable: true, render: (p: Property) => <span style={{ color: 'var(--text-secondary)' }}>{fmtDate(p.assignedAt)}</span> },
+    ]),
     { key: 'createdAt', label: 'Added', flex: 2, sortable: true, render: p => <span style={{ color: 'var(--text-secondary)' }}>{fmtDate(p.createdAt)}</span> },
     {
       // Broker/manager notes can name the owner, so this rides with the owner
@@ -123,6 +127,9 @@ function baseCols(soonHours: number): ColDef[] {
         ? <span className="truncate" title={p.notes} style={{ color: 'var(--text-secondary)' }}>{p.notes}</span>
         : <span style={{ color: 'var(--text-tertiary)' }}>—</span>,
     },
+    // Listing journey (None → Listed online), set from the record popup. Sorts in
+    // journey order (the database ENUM order).
+    { key: 'stage', label: 'Stage', flex: 2, sortable: true, render: p => <StageChip stage={p.stage} /> },
     {
       key: 'state', label: 'State', flex: 2, sortable: true,
       // The assignment timer rides alongside the state so a manager scanning the
@@ -138,9 +145,9 @@ function baseCols(soonHours: number): ColDef[] {
 }
 
 const DEFAULT_VISIBLE = {
-  normal: ['owner', 'mobile', 'beds', 'size', 'lastTx', 'state'],
+  normal: ['owner', 'mobile', 'beds', 'size', 'lastTx', 'stage', 'state'],
   teaser: ['beds', 'size', 'type', 'lastTx', 'state'],
-  hideOwner: ['beds', 'size', 'outcome', 'calledAt', 'followUp', 'state'],
+  hideOwner: ['beds', 'size', 'outcome', 'calledAt', 'followUp', 'stage', 'state'],
 };
 
 interface Props {
@@ -189,6 +196,8 @@ interface Props {
    * Used to give the broker Pool a fixed, focused column set.
    */
   allowColumns?: string[];
+  /** The columns shown before the user customises (overrides the mode default). */
+  defaultColumns?: string[];
 }
 
 const PAGE_SIZES = [10, 25, 50, 100, 250];
@@ -197,9 +206,12 @@ export function PropertyTable({
   scope, assignedTo, datasetId, fixedState,
   forcedOutcome, dueOnly, interestedOnly, expiringSoon, includeInactive,
   onSelect, selectedId, teaser, hideOwner, prefsKey,
-  checkedIds, onCheckedChanged, onFiltersChange, headerExtra, stickyTop = 0, showAssignee, allowColumns,
+  checkedIds, onCheckedChanged, onFiltersChange, headerExtra, stickyTop = 0, showAssignee: showAssigneeProp, allowColumns,
+  defaultColumns,
 }: Props) {
   const ownerHidden = !!teaser || !!hideOwner;
+  // Open access: nobody is assigned anything, so no "Assigned to" column or filter.
+  const showAssignee = !!showAssigneeProp && !OPEN_ACCESS;
   const selectable = !!checkedIds && !!onCheckedChanged;
   const { brokers, userById, settings } = useVault();
 
@@ -226,6 +238,7 @@ export function PropertyTable({
   const [plotTo, setPlotTo] = useState('');
   const [followUp, setFollowUp] = useState<'' | 'scheduled' | 'due'>('');
   const [hasNotes, setHasNotes] = useState(false);
+  const [stage, setStage] = useState<PropertyStage | ''>('');
   const [assigneeFilter, setAssigneeFilter] = useState('');
   const [sortKey, setSortKey] = useState<ColKey>(PINNED);
   const [asc, setAsc] = useState(true);
@@ -274,6 +287,7 @@ export function PropertyTable({
     plotTo: num(plotTo),
     followUp: followUp || undefined,
     hasNotes: hasNotes || undefined,
+    stage: stage || undefined,
     sortKey: sortKey === PINNED ? undefined : sortKey,
     asc,
     page,
@@ -281,7 +295,7 @@ export function PropertyTable({
   }), [scope, assignedTo, assigneeFilter, datasetId, search, community, cluster, fixedState, state,
        beds, nationality, outcome, forcedOutcome, dueOnly, interestedOnly, expiringSoon, includeInactive,
        txFrom, txTo, contact, tenancy, called.from, called.to,
-       propertyType, valueFrom, valueTo, sizeFrom, sizeTo, plotFrom, plotTo, followUp, hasNotes,
+       propertyType, valueFrom, valueTo, sizeFrom, sizeTo, plotFrom, plotTo, followUp, hasNotes, stage,
        sortKey, asc, page, pageSize]);
 
   const { rows, total, loading, initialLoading, error } = usePropertyPage(query);
@@ -346,6 +360,7 @@ export function PropertyTable({
   const colByKey = useMemo(() => new Map([unitCol, ...allCols].map(c => [c.key, c])), [allCols, unitCol]);
   const available = useMemo(() => allCols.map(c => c.key), [allCols]);
   const defaultVisible = allowColumns ? available
+    : defaultColumns ? defaultColumns
     : teaser ? DEFAULT_VISIBLE.teaser
     : hideOwner ? DEFAULT_VISIBLE.hideOwner
     : showAssignee ? [...DEFAULT_VISIBLE.normal, 'assignee']
@@ -355,13 +370,13 @@ export function PropertyTable({
     useTableLayout(available, defaultVisible, prefsKey);
 
   const anyFilter = search.trim() || community || cluster || state || beds || nationality || outcome || txFrom || txTo || contact || tenancy || calledPeriod || assigneeFilter
-    || propertyType || valueFrom || valueTo || sizeFrom || sizeTo || plotFrom || plotTo || followUp || hasNotes;
+    || propertyType || valueFrom || valueTo || sizeFrom || sizeTo || plotFrom || plotTo || followUp || hasNotes || stage;
   const clearFilters = () => {
     setSearch(''); setCommunity(''); setCluster(''); setState(''); setBeds('');
     setNationality(''); setOutcome(''); setTxFrom(''); setTxTo('');
     setContact(''); setTenancy(''); setCalledPeriod(''); setAssigneeFilter('');
     setPropertyType(''); setValueFrom(''); setValueTo(''); setSizeFrom(''); setSizeTo('');
-    setPlotFrom(''); setPlotTo(''); setFollowUp(''); setHasNotes(false); setPage(0);
+    setPlotFrom(''); setPlotTo(''); setFollowUp(''); setHasNotes(false); setStage(''); setPage(0);
   };
 
   // Any filter change must reset to page 0 — otherwise you can be stranded on
@@ -370,7 +385,7 @@ export function PropertyTable({
   useEffect(() => { setPage(0); },
     [search, community, cluster, state, beds, nationality, outcome, txFrom, txTo,
      contact, tenancy, calledPeriod, assigneeFilter,
-     propertyType, valueFrom, valueTo, sizeFrom, sizeTo, plotFrom, plotTo, followUp, hasNotes,
+     propertyType, valueFrom, valueTo, sizeFrom, sizeTo, plotFrom, plotTo, followUp, hasNotes, stage,
      pageSize, sortKey, asc, forcedOutcome, dueOnly, interestedOnly, scope]);
 
   // Notify the owner on FILTER changes (not sort / page size) so a stale
@@ -378,7 +393,7 @@ export function PropertyTable({
   useEffect(() => { onFiltersChange?.(); },
     [search, community, cluster, state, beds, nationality, outcome, txFrom, txTo,
      contact, tenancy, calledPeriod, assigneeFilter,
-     propertyType, valueFrom, valueTo, sizeFrom, sizeTo, plotFrom, plotTo, followUp, hasNotes,
+     propertyType, valueFrom, valueTo, sizeFrom, sizeTo, plotFrom, plotTo, followUp, hasNotes, stage,
      onFiltersChange]);
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
@@ -425,7 +440,7 @@ export function PropertyTable({
     (outcome ? 1 : 0) + (assigneeFilter ? 1 : 0) + (tenancy ? 1 : 0) + (calledPeriod ? 1 : 0) +
     ((txFrom || txTo) ? 1 : 0) + (contact ? 1 : 0) + (propertyType ? 1 : 0) +
     ((valueFrom || valueTo) ? 1 : 0) + ((sizeFrom || sizeTo) ? 1 : 0) + ((plotFrom || plotTo) ? 1 : 0) +
-    (followUp ? 1 : 0) + (hasNotes ? 1 : 0);
+    (followUp ? 1 : 0) + (hasNotes ? 1 : 0) + (stage ? 1 : 0);
 
   return (
     <div>
@@ -457,8 +472,8 @@ export function PropertyTable({
         </div>
         {!fixedState && facets.states.length > 1 && (
           <select className="input" style={sel} value={state} onChange={e => setState(e.target.value as PropertyState | '')}>
-            {/* Portfolio is hidden for now — those units read as "Assigned". */}
-            <option value="">All states</option>{facets.states.filter(s => s !== PropertyState.portfolio).map(s => <option key={s} value={s}>{PropertyStateLabel[s]}</option>)}
+            {/* Same words as the State chips (see stateFilterOptions). */}
+            <option value="">All states</option>{stateFilterOptions(facets.states).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         )}
         <div style={{ position: 'relative' }}>
@@ -535,6 +550,12 @@ export function PropertyTable({
                     </select>
                   </FilterField>
                 )}
+                <FilterField label="Stage">
+                  <select className="input" style={selFull} value={stage} onChange={e => setStage(e.target.value as PropertyStage | '')}>
+                    <option value="">Any stage</option>
+                    {PROPERTY_STAGES.map(s => <option key={s} value={s}>{PropertyStageLabel[s]}</option>)}
+                  </select>
+                </FilterField>
                 <FilterField label="Tenancy">
                   <select className="input" style={selFull} value={tenancy} onChange={e => setTenancy(e.target.value as typeof tenancy)}>
                     <option value="">Any tenancy</option>

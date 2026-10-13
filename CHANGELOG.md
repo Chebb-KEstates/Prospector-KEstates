@@ -18,6 +18,68 @@ for what each part means for Prospector.
 
 ---
 
+## [4.0.0] — 2026-10-13
+
+**MAJOR** — changes who can see and work which units, and relaxes number masking.
+Controlled by one switch, `OPEN_ACCESS` in `src/config.ts` (on). Setting it to
+`false` restores 3.36.0 behaviour, with no data migration.
+
+### Changed
+- **No more assignments — every unit is open to everyone.** Brokers now see and
+  work the whole Database, including units that were assigned to someone else.
+  Nobody requests access any more: the broker **Pool** tab, the manager
+  **Requests** tab, the **Assign / Reclaim** bar, the popup's **Reclaim /
+  Reassign** bar, the "Request" buttons and the assignment timers ("Expiring
+  soon", countdowns, the Assignment timer settings) are all gone.
+- A manager marking a unit **Interested** now saves straight away. There is no
+  "who works it?" prompt, because there is no one to hand it to.
+- The **State** column now reads **Open** for units that were "In pool" or
+  "Assigned", and **Interested** for interested units. Display only: the stored
+  state is unchanged.
+- The broker home page drops the cards built on "my assigned units" (My list,
+  Running out of time, pipeline, Due next, Pool snapshot). The calling funnel,
+  "You vs the team" and the tips remain. The Database badge now counts your calls
+  today.
+
+### Added
+- **Stage** for every unit: None, Prospecting, Market appraisal, Listed offline,
+  Listed online. It is a new column in the tables (sortable, with a Stage filter
+  under Filters) and a one-click switch row at the top of the record popup.
+  Every change is written to the unit's history journal as "Stage: A → B".
+- **"Read the history first" hint** on the record popup: "Before taking any
+  action, make sure you've read this unit's history — someone else may already be
+  working on it." It also names the last other person who touched the unit (opened
+  it, called, added an update, changed the stage…) and when. It turns amber if
+  that was within the last 24 hours.
+
+### Security
+- **Owner numbers are shown in full** in every list and record, with no Reveal
+  step and so no reveal-lock. This deliberately relaxes the "masked by the server"
+  rule (handbook §2) while `OPEN_ACCESS` is on. Opening a record is still written
+  to the audit trail, now linked to the unit. The identity watermark is
+  unchanged. Exports are unchanged.
+- The server refuses assign, reclaim and request actions (`409 assignments_off`)
+  while open access is on, so the stored assignments and pending requests stay
+  exactly as they were for a later revert.
+
+### Fixed
+- The expiry sweep could fail with invalid SQL (`IN ()`) when every expired unit
+  had no assigned broker. Such units now return to the pool individually.
+- A table column added to the app after you saved your column layout now shows
+  up, instead of staying hidden until you find it in Columns.
+
+### Data
+- **Migration 016** adds `properties.stage` (ENUM, default `none`) and an index.
+  Additive: every existing unit reads as None, and no other column or row
+  changes. Like notes, stage is never written by imports or call logging. **Run
+  `npm run migrate` (in `server/`) before starting the new server.**
+- No assignment data is touched. With open access on, the expiry sweep no longer
+  returns held units to the pool; a finished cooldown still does. If you switch
+  back, units still held from before carry their old timers, so the first sweep
+  will return any long-expired ones to the pool.
+
+---
+
 ## [3.36.0] — 2026-10-02
 
 ### Added
