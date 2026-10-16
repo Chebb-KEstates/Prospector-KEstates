@@ -18,6 +18,36 @@ for what each part means for Prospector.
 
 ---
 
+## [4.2.0] — 2026-10-16
+
+### Changed
+- **Every cooldown, timer and alert can be 0, and 0 means off.** The two
+  cooldowns and "Interested-unit staleness" now accept 0 (they used to require
+  at least 1); the assignment-timer fields already did. With 0:
+  - **Not interested / Already listed cooldown:** the unit is not returned to
+    the pool automatically.
+  - **Staleness:** no interested unit is flagged stale.
+  - **Hold timers:** no countdown, and no unit is released from its broker.
+  - **"Running out of time":** no warning.
+  Off really means off: a unit still carrying a deadline from before the switch
+  is left alone too, and a cooldown coming due never pulls back that owner's held
+  units whose timer is off. Each value is independent, and raising it again
+  resumes the stored deadlines.
+- **Anyone can log on a unit.** A broker can now log a call (answered / no
+  answer / didn't connect), write notes and add updates on any unit they can see,
+  including another broker's or a pooled one. Ownership doesn't change; **Take
+  over ownership** is still how a unit moves. Changing the **stage** and the
+  listing info stay with the unit's broker or a manager.
+
+### Data
+- **Migration 018** sets those eight Settings values to 0 (both cooldowns,
+  staleness, the four hold timers and the "running out of time" alert). Only the
+  settings row changes; no unit is touched, and every value can be changed back
+  from Settings. **Run `npm run migrate` (in `server/`) before starting the
+  server.**
+
+---
+
 ## [4.1.0] — 2026-10-13
 
 Assignments are back. 4.0.0's "everyone works everything" becomes **"everyone

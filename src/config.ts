@@ -11,14 +11,14 @@
 export const LEADS_ENABLED = false;
 
 /**
- * `OPEN_VIEW` — everyone can SEE every unit; only its owner can WORK it.
+ * `OPEN_VIEW` — everyone can SEE and log on every unit; only its owner manages it.
  *
  * ON (true):
  *  - Every user can open any unit and see its owner details, including the
  *    full number. There is no "Reveal" step, so there is no reveal-lock.
- *  - Working a unit (logging a call, notes, updates, listing info, stage) still
- *    belongs to the broker it is assigned to, or a manager. Anyone else sees it
- *    read-only, with "This unit belongs to X" and a "Take over ownership" button
+ *  - Anyone may LOG on a unit they can see (a call, notes, updates). Its stage
+ *    and listing info belong to the broker it is assigned to, or a manager.
+ *    Anyone else sees "This unit belongs to X" and a "Take over ownership" button
  *    (or "Request this unit" for a pooled unit). Either one sends a request the
  *    manager approves or denies; approving a take-over moves the unit (with that
  *    owner's other units in the same area) to the requester.

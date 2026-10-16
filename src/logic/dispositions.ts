@@ -19,6 +19,12 @@ import type { ProspectFields } from '../types/models';
  * lets a portfolio unit sit forever, `noAnswerMaxHoldDays = 0` drops the cap,
  * and `noAnswerExtensionHours = 0` means a no-answer leaves the clock untouched.
  * A unit with no `assignmentExpiresAt` is simply never swept.
+ *
+ * The same holds for the cooldowns and the staleness flag: 0 switches them off
+ * (a not-interested / already-listed unit gets no return date and stays cooling;
+ * no interested unit is flagged stale). And a timer switched off stops acting on
+ * deadlines set BEFORE it was switched off too — see `holdTimerOn` /
+ * `cooldownTimerOn`, which the sweep and the countdown both consult.
  */
 
 /** A deadline `hours` out, or undefined when the limit is 0 (removed). */
@@ -90,14 +96,14 @@ export function applyOutcome(
     case CallOutcome.notInterested:
       p.callAttempts = 0;
       p.state = PropertyState.cooling;
-      p.cooldownUntil = addDays(now, settings.notInterestedCooldownDays);
+      p.cooldownUntil = deadlineDays(now, settings.notInterestedCooldownDays); // 0 = no cooldown timer
       p.portfolioSince = undefined;
       p.assignmentExpiresAt = undefined;
       break;
     case CallOutcome.alreadyListed:
       p.callAttempts = 0;
       p.state = PropertyState.cooling;
-      p.cooldownUntil = addDays(now, settings.listedCooldownDays);
+      p.cooldownUntil = deadlineDays(now, settings.listedCooldownDays); // 0 = no cooldown timer
       p.portfolioSince = undefined;
       p.assignmentExpiresAt = undefined;
       break;
@@ -162,6 +168,31 @@ export function daysBetween(a: string, b: string): number {
 }
 
 /**
+ * Is the hold timer for a unit in `state` switched on? Assigned units run on the
+ * contact SLA, interested (portfolio) units on the renewal window. A setting of 0
+ * switches that timer OFF: no countdown is shown and no unit is released — even
+ * one still carrying a deadline from before it was switched off (that deadline
+ * is kept, untouched, for if the timer is switched back on).
+ */
+export function holdTimerOn(state: PropertyState, settings: VaultSettings = new VaultSettings()): boolean {
+  if (state === PropertyState.portfolio) return settings.portfolioRenewDays > 0;
+  if (state === PropertyState.assigned) return settings.assignmentSlaHours > 0;
+  return false;
+}
+
+/**
+ * Is the cooldown that parked this cooling unit switched on? "Already listed"
+ * has its own window; every other cooldown is "not interested". 0 = off: the
+ * unit stays cooling until someone acts on it, and is never returned to the pool
+ * automatically.
+ */
+export function cooldownTimerOn(p: Pick<ProspectFields, 'lastOutcome'>, settings: VaultSettings = new VaultSettings()): boolean {
+  return p.lastOutcome === CallOutcome.alreadyListed
+    ? settings.listedCooldownDays > 0
+    : settings.notInterestedCooldownDays > 0;
+}
+
+/**
  * Recycle lapsed holds back to the pool. Two triggers:
  *  - a cooled record whose cooldown window has passed;
  *  - an assigned/portfolio record whose assignment deadline has passed.
@@ -178,9 +209,9 @@ export function sweepCooldowns<T extends ProspectFields>(
   const nowDate = new Date(now);
   const changed: T[] = [];
   for (const p of items) {
-    const cooled = p.state === PropertyState.cooling &&
+    const cooled = p.state === PropertyState.cooling && cooldownTimerOn(p, settings) &&
       p.cooldownUntil != null && new Date(p.cooldownUntil) < nowDate;
-    const lapsed = (p.state === PropertyState.assigned || p.state === PropertyState.portfolio) &&
+    const lapsed = (p.state === PropertyState.assigned || p.state === PropertyState.portfolio) && holdTimerOn(p.state, settings) &&
       p.assignmentExpiresAt != null && new Date(p.assignmentExpiresAt) < nowDate;
     if (cooled || lapsed) {
       p.state = PropertyState.pool;
@@ -204,7 +235,8 @@ export function isPortfolioStale(
   now: string,
   settings: VaultSettings = new VaultSettings(),
 ): boolean {
-  return p.state === PropertyState.portfolio &&
+  // 0 = staleness flag off.
+  return settings.portfolioStaleDays > 0 && p.state === PropertyState.portfolio &&
     (p.lastCalledAt == null ||
       daysBetween(p.lastCalledAt, now) >= settings.portfolioStaleDays);
 }

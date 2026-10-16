@@ -1,6 +1,6 @@
 import {
   applyOutcome, sweepCooldowns, isPortfolioStale, daysBetween,
-  addHours, assignmentDeadlineOnAssign,
+  addHours, assignmentDeadlineOnAssign, holdTimerOn, cooldownTimerOn,
 } from './dispositions';
 import { PropertyState, CallOutcome, VaultSettings, Property, OwnerInfo, kOrgId } from '../types/models';
 
@@ -236,5 +236,49 @@ describe('portfolio staleness', () => {
     const p = prop(PropertyState.portfolio);
     p.lastCalledAt = daysAgo(2);
     expect(isPortfolioStale(p, NOW, new VaultSettings(30, 30, 3, 14, 21))).toBe(false);
+  });
+});
+
+describe('a setting of 0 switches the rule off', () => {
+  const now = '2026-10-16T10:00:00.000Z';
+  const past = '2026-10-15T10:00:00.000Z';
+  const off = new VaultSettings(0, 0, 3, 14, 0, '', 0, 0, 0, 0, 0);
+
+  it('not interested / already listed with a 0 cooldown get no return date', () => {
+    for (const outcome of [CallOutcome.notInterested, CallOutcome.alreadyListed]) {
+      const p = new Property('p', 'org', 'd', PropertyState.assigned, 'u|a|b|1', 'A', undefined, undefined, '1', undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, 0, undefined, undefined, undefined, new OwnerInfo('O'), now);
+      applyOutcome(p, outcome, now, undefined, off);
+      expect(p.state).toBe(PropertyState.cooling);
+      expect(p.cooldownUntil).toBeUndefined();
+    }
+  });
+
+  it('the sweep leaves held and cooled units alone, even with an old passed deadline', () => {
+    const mk = (state: PropertyState, outcome?: CallOutcome) => {
+      const p = new Property('p', 'org', 'd', state, 'u|a|b|1', 'A', undefined, undefined, '1', undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, 0, undefined, undefined, undefined, new OwnerInfo('O'), now);
+      p.assignmentExpiresAt = past; p.cooldownUntil = past; p.lastOutcome = outcome; p.assignedTo = 'b';
+      return p;
+    };
+    const items = [mk(PropertyState.assigned), mk(PropertyState.portfolio), mk(PropertyState.cooling, CallOutcome.notInterested), mk(PropertyState.cooling, CallOutcome.alreadyListed)];
+    expect(sweepCooldowns(items, now, off)).toHaveLength(0);
+    expect(sweepCooldowns(items, now, new VaultSettings())).toHaveLength(4);
+  });
+
+  it('timer switches are per rule', () => {
+    const s = new VaultSettings(30, 0, 3, 14, 21, '', 0, 24, 14, 7, 24);
+    expect(holdTimerOn(PropertyState.assigned, s)).toBe(false);
+    expect(holdTimerOn(PropertyState.portfolio, s)).toBe(true);
+    expect(cooldownTimerOn({ lastOutcome: CallOutcome.alreadyListed }, s)).toBe(false);
+    expect(cooldownTimerOn({ lastOutcome: CallOutcome.notInterested }, s)).toBe(true);
+  });
+
+  it('staleness 0 never flags an interested unit', () => {
+    const p = new Property('p', 'org', 'd', PropertyState.portfolio, 'u|a|b|1', 'A', undefined, undefined, '1', undefined, undefined,
+      undefined, undefined, undefined, undefined, undefined, 0, undefined, undefined, undefined, new OwnerInfo('O'), now);
+    p.lastCalledAt = '2026-01-01T00:00:00.000Z';
+    expect(isPortfolioStale(p, now, off)).toBe(false);
+    expect(isPortfolioStale(p, now, new VaultSettings())).toBe(true);
   });
 });

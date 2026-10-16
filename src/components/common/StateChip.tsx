@@ -3,6 +3,8 @@ import { PropertyState, PropertyStateLabel, PropertyStage, PropertyStageLabel, C
 import { useNow } from '../../utils/useNow';
 import { remainingMs, formatRemaining, fmtDateTime } from '../../utils/format';
 import { Icon } from './Icon';
+import { useVault } from '../../state/VaultContext';
+import { holdTimerOn } from '../../logic/dispositions';
 
 const stateColors: Record<PropertyState, string> = {
   [PropertyState.pool]: '#6B6560',
@@ -68,10 +70,13 @@ export function StateChip({ state }: StateChipProps) {
  * inside the "expiring soon" window and red in the last two hours (or once
  * overdue and awaiting the sweep), so a broker sees at a glance what's slipping.
  */
-export function CountdownBadge({ deadline, soonHours = 24 }: { deadline?: string; soonHours?: number }) {
+export function CountdownBadge({ deadline, soonHours = 24, state }: { deadline?: string; soonHours?: number; state?: PropertyState }) {
   const now = useNow(60_000);
+  const { settings } = useVault();
   const ms = remainingMs(deadline, now);
-  if (ms == null) return null;
+  // A switched-off timer (setting 0) shows no countdown, even if the unit still
+  // carries a deadline from before it was switched off — nothing will act on it.
+  if (ms == null || (state != null && !holdTimerOn(state, settings))) return null;
 
   const hoursLeft = ms / 3_600_000;
   const color = ms <= 0 || hoursLeft <= 2 ? '#C62828'

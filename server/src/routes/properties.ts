@@ -3,10 +3,10 @@ import { Permission } from '../../../src/types/user';
 import { PropertyState, PropertyStage, PropertyStageLabel, PROPERTY_STAGES, BatchRequest, RequestKind, kOrgId } from '../../../src/types/models';
 import {
   queryProperties, propertyFacets, findPropertyById, findAssignedTo,
-  updatePropertyNotes, updateListingInfo, findByOwnerKey, updatePropertyStage,
+  updatePropertyNotes, updateListingInfo, findByOwnerKey, updatePropertyStage, timedHoldStates,
 } from '../repositories/propertyRepo';
 import { transaction } from '../db/pool';
-import { canViewUnit, canWorkUnit, isOpenView } from '../domain/access';
+import { canViewUnit, canWorkUnit, canLogOnUnit, isOpenView } from '../domain/access';
 import { ownerKeyOf } from '../../../src/logic/ownerGrouping';
 import { callsForProperties } from '../repositories/callRepo';
 import { listAuditForProperty, writeAudit } from '../repositories/auditRepo';
@@ -196,9 +196,10 @@ export default async function propertyRoutes(app: FastifyInstance) {
 
     // Only the "expiring soon" chip needs the timer window, so the settings
     // read is paid for only when that filter is on.
-    const expiringWithinHours = q.expiringSoon
-      ? (await loadSettings()).expiringSoonHours
-      : undefined;
+    const timerSettings = q.expiringSoon ? await loadSettings() : undefined;
+    const expiringWithinHours = timerSettings?.expiringSoonHours;
+    // …and only units whose hold timer is switched on can be running out of time.
+    const expiringStates = timerSettings ? timedHoldStates(timerSettings) : undefined;
 
     const result = await queryProperties({
       search: q.search,
@@ -228,6 +229,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
       interestedOnly: q.interestedOnly,
       expiringSoon: q.expiringSoon,
       expiringWithinHours,
+      expiringStates,
       tenancy: q.tenancy,
       datasetId: q.datasetId,
       assignedTo: scope.assignedTo,
@@ -529,7 +531,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
 
     const p = await findPropertyById(id);
     if (!p) throw notFound('That unit no longer exists.');
-    if (!canWorkUnit(me, p.assignedTo)) {
+    if (!canLogOnUnit(me, p.assignedTo)) {
       throw forbidden('You can only add notes to a unit assigned to you.');
     }
 
@@ -630,7 +632,7 @@ export default async function propertyRoutes(app: FastifyInstance) {
 
     const p = await findPropertyById(id);
     if (!p) throw notFound('That unit no longer exists.');
-    if (!canWorkUnit(me, p.assignedTo)) {
+    if (!canLogOnUnit(me, p.assignedTo)) {
       throw forbidden('You can only add updates to a unit assigned to you.');
     }
 

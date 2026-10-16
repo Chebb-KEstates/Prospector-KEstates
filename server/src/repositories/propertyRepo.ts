@@ -5,6 +5,7 @@ import {
 } from '../../../src/types/models';
 import type { PhoneEntry } from '../../../src/types/models';
 import { ownerKeyOf } from '../../../src/logic/ownerGrouping';
+import { holdTimerOn } from '../../../src/logic/dispositions';
 
 /**
  * Properties (owner records).
@@ -369,6 +370,8 @@ export interface PropertyFilter {
   expiringSoon?: boolean;
   /** Window (hours) for `expiringSoon`; the route fills it from settings. */
   expiringWithinHours?: number;
+  /** The held states whose hold timer is on (see timedHoldStates); default both. */
+  expiringStates?: PropertyState[];
   /**
    * Tenancy signal: 'vacant' (no rental), 'rented', or 'leaseSoon' (lease ends
    * within ~90 days). Derived from rent_end plus the imported "Rental status".
@@ -503,18 +506,20 @@ function buildWhere(f: PropertyFilter): { sql: string; params: unknown[] } {
     // off, so nothing matches. A null (feature requested without a setting)
     // falls back to 24h.
     const hours = f.expiringWithinHours ?? 24;
-    if (hours <= 0) {
+    // Only states whose hold timer is switched on can run out of time.
+    const timed = f.expiringStates ?? [PropertyState.assigned, PropertyState.portfolio];
+    if (hours <= 0 || timed.length === 0) {
       where.push('1 = 0');
     } else {
       // UTC_TIMESTAMP, not NOW(): the app writes UTC into these columns (the pool
       // is opened with timezone 'Z'), while NOW() answers in the server's local
       // zone — comparing the two skews every deadline by the UTC offset.
       where.push(
-        `state IN ('${PropertyState.assigned}', '${PropertyState.portfolio}') ` +
+        `state IN (${timed.map(() => '?').join(', ')}) ` +
         `AND assignment_expires_at IS NOT NULL ` +
         `AND assignment_expires_at <= (UTC_TIMESTAMP(3) + INTERVAL ? HOUR)`,
       );
-      params.push(hours);
+      params.push(...timed, hours);
     }
   }
 
@@ -786,6 +791,7 @@ export async function countDistinctOwners(): Promise<number> {
  * pure SQL with no JS re-check, so NOW() would call units stale a UTC offset early.
  */
 export async function countStalePortfolio(staleDays: number): Promise<number> {
+  if (staleDays <= 0) return 0; // 0 = the staleness flag is off
   const [rows] = await pool.query<Row[]>(
     `SELECT COUNT(*) AS n FROM properties
      WHERE org_id = ? AND state = 'portfolio'
@@ -801,17 +807,26 @@ export async function countStalePortfolio(staleDays: number): Promise<number> {
  * passed, awaiting the next sweep) — the "running out of time" count. Pass a
  * `brokerId` for one broker's own at-risk units; omit for the whole org.
  */
-export async function countExpiringSoon(hours: number, brokerId?: string): Promise<number> {
-  // 0 = the "expiring soon" warning is off — nothing is ever "soon".
-  if (hours <= 0) return 0;
+/** The held states whose hold timer is switched on (a setting of 0 = off). */
+export function timedHoldStates(settings: VaultSettings): PropertyState[] {
+  return [PropertyState.assigned, PropertyState.portfolio].filter(s => holdTimerOn(s, settings));
+}
+
+export async function countExpiringSoon(
+  hours: number, brokerId?: string, settings?: VaultSettings,
+): Promise<number> {
+  // 0 = the "expiring soon" warning is off — nothing is ever "soon". Nor can a
+  // unit whose hold timer is switched off.
+  const timed = settings ? timedHoldStates(settings) : [PropertyState.assigned, PropertyState.portfolio];
+  if (hours <= 0 || timed.length === 0) return 0;
   const where = [
     'org_id = ?',
-    `state IN ('${PropertyState.assigned}', '${PropertyState.portfolio}')`,
+    `state IN (${timed.map(() => '?').join(', ')})`,
     'assignment_expires_at IS NOT NULL',
     // UTC_TIMESTAMP — these columns hold UTC (see buildWhere).
     'assignment_expires_at <= (UTC_TIMESTAMP(3) + INTERVAL ? HOUR)',
   ];
-  const params: unknown[] = [kOrgId, hours];
+  const params: unknown[] = [kOrgId, ...timed, hours];
   if (brokerId) { where.push('assigned_to = ?'); params.push(brokerId); }
   const [rows] = await pool.query<Row[]>(
     `SELECT COUNT(*) AS n FROM properties WHERE ${where.join(' AND ')}`, params,

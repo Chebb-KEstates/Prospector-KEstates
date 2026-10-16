@@ -25,9 +25,18 @@ export function canViewUnit(me: AppUser, assignedTo?: string | null): boolean {
 }
 
 /**
- * May this user WORK a unit held by `assignedTo` — log a call, write notes or an
- * update, edit listing info, change the stage? Only its broker or a manager,
- * whatever the view mode.
+ * May this user LOG on a unit held by `assignedTo` — a call (answered / no
+ * answer / didn't connect), its notes, or a journal update? Under open view,
+ * anyone who can see it may (it doesn't change who owns it; "Take over
+ * ownership" does that). Otherwise only its broker or a manager.
+ */
+export function canLogOnUnit(me: AppUser, assignedTo?: string | null): boolean {
+  return isOpenView() || canWorkUnit(me, assignedTo);
+}
+
+/**
+ * May this user MANAGE a unit held by `assignedTo` — change its stage or edit
+ * its listing info? Only its broker or a manager, whatever the view mode.
  */
 export function canWorkUnit(me: AppUser, assignedTo?: string | null): boolean {
   return me.isManager || (!!assignedTo && assignedTo === me.id);

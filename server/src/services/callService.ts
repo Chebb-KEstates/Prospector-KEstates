@@ -1,6 +1,6 @@
 import { transaction, Row } from '../db/pool';
 import { CallLog, CallOutcome, Property, Lead, PropertyState, kOrgId } from '../../../src/types/models';
-import { applyOutcome, sweepCooldowns } from '../../../src/logic/dispositions';
+import { applyOutcome, sweepCooldowns, holdTimerOn } from '../../../src/logic/dispositions';
 import { ownerKeyOf } from '../../../src/logic/ownerGrouping';
 import { toProperty, saveProperties } from '../repositories/propertyRepo';
 import { toLead, saveLeads } from '../repositories/leadRepo';
@@ -9,6 +9,7 @@ import { loadSettings } from '../repositories/settingsRepo';
 import { writeAudit } from '../repositories/auditRepo';
 import { newCallId } from '../domain/ids';
 import { notFound, forbidden } from '../http/errors';
+import { isOpenView } from '../domain/access';
 
 /**
  * Logging a call.
@@ -67,9 +68,10 @@ export async function logCall(input: LogCallInput): Promise<CallLog> {
     const properties = rows.map(toProperty);
     if (properties.length === 0) throw notFound('Those units no longer exist.');
 
-    // A broker may only log against units assigned to them. The client never
-    // checked — it simply didn't show other brokers' units.
-    if (!input.isManager) {
+    // A broker may only log against units assigned to them — unless open view is
+    // on, where anyone who can see a unit may log a call on it (who owns it is
+    // unchanged; "Take over ownership" is how that moves).
+    if (!input.isManager && !isOpenView()) {
       const foreign = properties.filter(p => p.assignedTo !== input.brokerId);
       if (foreign.length > 0) {
         throw forbidden('Those units are not assigned to you.');
@@ -283,20 +285,28 @@ export async function undoDncLead(leadId: string, actorId: string): Promise<Lead
 export async function sweepLapsed(): Promise<{ properties: number; leads: number }> {
   const settings = await loadSettings();
   const now = new Date().toISOString();
-  const expiredHold = `
-           OR (state IN ('assigned', 'portfolio')
-               AND assignment_expires_at IS NOT NULL
-               AND assignment_expires_at < UTC_TIMESTAMP(3))`;
+  // Due = its own timer has passed AND that timer is switched on (a setting of 0
+  // switches it off — then even a deadline set before it was switched off is left
+  // alone). Mirrors cooldownTimerOn / holdTimerOn in the shared dispositions.
+  const due = `
+         ((state = 'cooling' AND cooldown_until IS NOT NULL AND cooldown_until < UTC_TIMESTAMP(3)
+             AND IF(last_outcome = 'alreadyListed', ?, ?) > 0)
+          OR (((state = 'assigned' AND ? > 0) OR (state = 'portfolio' AND ? > 0))
+             AND assignment_expires_at IS NOT NULL
+             AND assignment_expires_at < UTC_TIMESTAMP(3)))`;
+  const timerParams = [
+    settings.listedCooldownDays, settings.notInterestedCooldownDays,
+    settings.assignmentSlaHours, settings.portfolioRenewDays,
+  ];
 
   return transaction(async (cx) => {
-    // Candidates: any held/cooled unit whose own timer has passed.
+    // Candidates: any held/cooled unit whose own (switched-on) timer has passed.
     const [candRows] = await cx.query<Row[]>(
       `SELECT ${PROP_COLS} FROM properties
        WHERE org_id = ?
-         AND ((state = 'cooling' AND cooldown_until IS NOT NULL AND cooldown_until < UTC_TIMESTAMP(3))
-           ${expiredHold})
+         AND ${due}
        FOR UPDATE`,
-      [kOrgId],
+      [kOrgId, ...timerParams],
     );
     const all = candRows.map(toProperty);
     const changedProps: Property[] = [];
@@ -347,8 +357,12 @@ export async function sweepLapsed(): Promise<{ properties: number; leads: number
       const nowDate = new Date(now);
       const future = (d?: string) => d != null && new Date(d) > nowDate;
       for (const units of groups.values()) {
+        // A held unit whose timer is switched off never lapses, so it keeps the
+        // group "being worked" — a cooled sibling coming due must not drag it
+        // back to the pool.
         const active = units.some(p =>
-          (p.state === PropertyState.assigned || p.state === PropertyState.portfolio) && future(p.assignmentExpiresAt));
+          (p.state === PropertyState.assigned || p.state === PropertyState.portfolio)
+          && (!holdTimerOn(p.state, settings) || future(p.assignmentExpiresAt)));
         if (active) {
           const maxDeadline = units
             .filter(p => p.state === PropertyState.assigned || p.state === PropertyState.portfolio)
@@ -393,10 +407,9 @@ export async function sweepLapsed(): Promise<{ properties: number; leads: number
     const [leadRows] = await cx.query<Row[]>(
       `SELECT ${LEAD_COLS} FROM leads
        WHERE org_id = ?
-         AND ((state = 'cooling' AND cooldown_until IS NOT NULL AND cooldown_until < UTC_TIMESTAMP(3))
-           ${expiredHold})
+         AND ${due}
        FOR UPDATE`,
-      [kOrgId],
+      [kOrgId, ...timerParams],
     );
     const leads = leadRows.map(toLead);
     const changedLeads = sweepCooldowns(leads, now, settings);

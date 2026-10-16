@@ -133,7 +133,7 @@ function baseCols(soonHours: number): ColDef[] {
       render: p => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <StateChip state={p.state} />
-          <CountdownBadge deadline={p.assignmentExpiresAt} soonHours={soonHours} />
+          <CountdownBadge deadline={p.assignmentExpiresAt} soonHours={soonHours} state={p.state} />
         </span>
       ),
     },

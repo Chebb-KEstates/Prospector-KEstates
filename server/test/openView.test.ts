@@ -111,29 +111,39 @@ test('a broker can SEE every unit — owner + full number — via scope=all; "mi
   assert.equal((await call(brokerX, 'GET', `/api/properties/${y1.id}/owner-holdings`)).status, 200);
 });
 
-test('…but only its broker or a manager can WORK it: calls, notes, updates, listing, stage', async () => {
+test('anyone may LOG on a unit (call, notes, update) — only its broker or a manager changes stage / listing', async () => {
   const { y1 } = await seed();
+  const allowed = [
+    await call(brokerX, 'POST', '/api/calls', { propertyIds: [y1.id], outcome: 'noAnswer', note: 'tried' }),
+    await call(brokerX, 'PATCH', `/api/properties/${y1.id}/notes`, { notes: 'X was here' }),
+    await call(brokerX, 'POST', `/api/properties/${y1.id}/note`, { note: 'update from X' }),
+  ];
+  for (const r of allowed) assert.equal(r.status, 200, JSON.stringify(r.json));
   const refused = [
-    await call(brokerX, 'POST', '/api/calls', { propertyIds: [y1.id], outcome: 'noAnswer' }),
-    await call(brokerX, 'PATCH', `/api/properties/${y1.id}/notes`, { notes: 'mine now' }),
-    await call(brokerX, 'POST', `/api/properties/${y1.id}/note`, { note: 'update' }),
     await call(brokerX, 'PATCH', `/api/properties/${y1.id}/listing`, { askingPrice: 1 }),
     await call(brokerX, 'PATCH', `/api/properties/${y1.id}/stage`, { stage: PropertyStage.prospecting }),
   ];
   for (const r of refused) assert.equal(r.status, 403, JSON.stringify(r.json));
   const after = (await findPropertyById(y1.id))!;
-  assert.equal(after.callAttempts, 0);
-  assert.equal(after.notes, undefined);
+  assert.equal(after.callAttempts, 1, 'X\'s call counted on the unit');
+  assert.equal(after.notes, 'X was here');
   assert.equal(after.stage, PropertyStage.none);
+  assert.equal(after.askingPrice, undefined);
+  assert.equal(after.assignedTo, brokerY, 'logging never moves ownership');
+  // The call is X's own (counts for X, shows as X in the journal).
+  const [calls] = await pool.query<any[]>('SELECT broker_id FROM calls WHERE org_id = ? ORDER BY at DESC LIMIT 1', [kOrgId]);
+  assert.equal(calls[0].broker_id, brokerX);
 
   // Its broker and a manager can.
   assert.equal((await call(brokerY, 'POST', '/api/calls', { propertyIds: [y1.id], outcome: 'noAnswer' })).status, 200);
   assert.equal((await call(brokerY, 'PATCH', `/api/properties/${y1.id}/stage`, { stage: PropertyStage.prospecting })).status, 200);
   assert.equal((await call(manager, 'PATCH', `/api/properties/${y1.id}/stage`, { stage: PropertyStage.marketAppraisal })).status, 200);
   assert.equal((await call(manager, 'POST', `/api/properties/${y1.id}/note`, { note: 'checked' })).status, 200);
-  // A pooled unit belongs to nobody — a broker can't work it either.
+  // A pooled unit can be called too, but its stage is a manager's (nobody owns it).
   const { pool1 } = await seed();
-  assert.equal((await call(brokerX, 'POST', '/api/calls', { propertyIds: [pool1.id], outcome: 'noAnswer' })).status, 403);
+  assert.equal((await call(brokerX, 'POST', '/api/calls', { propertyIds: [pool1.id], outcome: 'noAnswer' })).status, 200);
+  assert.equal((await call(brokerX, 'PATCH', `/api/properties/${pool1.id}/stage`, { stage: PropertyStage.prospecting })).status, 403);
+  assert.equal((await findPropertyById(pool1.id))!.state, PropertyState.pool, 'a no-answer leaves it in the pool');
 });
 
 test('a broker\'s journal has no stage changes, record opens or reveals — a manager\'s has them all', async () => {
@@ -195,9 +205,9 @@ test('approving a take-over moves the unit — and the owner\'s same-area units 
   }
   const back = (await findRequestById(t.json.id))!;
   assert.equal(back.unitDecisions[y1.id], UnitDecision.granted);
-  // X can now work it; Y can't any more.
-  assert.equal((await call(brokerX, 'POST', '/api/calls', { propertyIds: [y1.id], outcome: 'noAnswer' })).status, 200);
-  assert.equal((await call(brokerY, 'POST', '/api/calls', { propertyIds: [y1.id], outcome: 'noAnswer' })).status, 403);
+  // X now owns it (stage is X's to change); Y can still log on it, but not manage it.
+  assert.equal((await call(brokerX, 'PATCH', `/api/properties/${y1.id}/stage`, { stage: PropertyStage.prospecting })).status, 200);
+  assert.equal((await call(brokerY, 'PATCH', `/api/properties/${y1.id}/stage`, { stage: PropertyStage.listedOnline })).status, 403);
   // The move is on the audit trail.
   const [rows] = await pool.query<any[]>(
     `SELECT a.detail FROM audit a JOIN audit_properties ap ON ap.audit_id = a.id
@@ -258,6 +268,8 @@ test('REVERT: off, another broker\'s unit is hidden again, numbers masked, take-
   try {
     assert.equal((await call(brokerX, 'GET', `/api/properties/${y1.id}`)).status, 403);
     assert.equal((await call(brokerX, 'GET', `/api/properties/${y1.id}/events`)).status, 403);
+    assert.equal((await call(brokerX, 'POST', '/api/calls', { propertyIds: [y1.id], outcome: 'noAnswer' })).status, 403);
+    assert.equal((await call(brokerX, 'POST', `/api/properties/${y1.id}/note`, { note: 'x' })).status, 403);
     const all = await call(brokerX, 'GET', '/api/properties?scope=all&includeInactive=true');
     assert.deepEqual(ids(all.json.rows), [x1.id], 'scope=all falls back to their own');
     assert.match(all.json.rows[0].owner.phone, /^•+4444$/);

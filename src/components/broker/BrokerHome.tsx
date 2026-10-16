@@ -209,7 +209,7 @@ export function BrokerHome({ onGo }: { onGo?: (tab: string) => void }) {
                       {p.unitLabel}
                     </div>
                   </div>
-                  <CountdownBadge deadline={p.assignmentExpiresAt} soonHours={vault.settings.expiringSoonHours} />
+                  <CountdownBadge deadline={p.assignmentExpiresAt} soonHours={vault.settings.expiringSoonHours} state={p.state} />
                 </div>
               ))}
             </>

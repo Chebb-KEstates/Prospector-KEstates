@@ -32,13 +32,13 @@ export default async function settingsRoutes(app: FastifyInstance) {
         type: 'object',
         additionalProperties: false,
         properties: {
-          // Bounded rather than free integers: a 0-day cooldown would quietly
-          // disable a protection.
-          notInterestedCooldownDays: { type: 'integer', minimum: 1, maximum: 365 },
-          listedCooldownDays: { type: 'integer', minimum: 1, maximum: 365 },
+          // Bounded integers. 0 switches that rule OFF (no cooldown return, no
+          // staleness flag) — see dispositions.ts cooldownTimerOn / isPortfolioStale.
+          notInterestedCooldownDays: { type: 'integer', minimum: 0, maximum: 365 },
+          listedCooldownDays: { type: 'integer', minimum: 0, maximum: 365 },
           maxNoAnswerAttempts: { type: 'integer', minimum: 1, maximum: 20 },
           assignmentExpiryDays: { type: 'integer', minimum: 1, maximum: 365 },
-          portfolioStaleDays: { type: 'integer', minimum: 1, maximum: 365 },
+          portfolioStaleDays: { type: 'integer', minimum: 0, maximum: 365 },
           officeIp: { type: 'string', maxLength: 64 },
           // Assignment timer. Hours 0–720 (30 days), days 0–365. 0 = no limit
           // (the timer is removed — see dispositions.ts).

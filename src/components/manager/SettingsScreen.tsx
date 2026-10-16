@@ -90,9 +90,9 @@ export function SettingsScreen() {
         <div className="card">
           <h3 style={{ fontWeight: 600, marginBottom: 16 }}>Cooldown</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {field('Not interested cooldown (days)', 'notInterestedCooldownDays', 'number', 'Owner stays in cooling before returning to pool')}
-            {field('Already listed cooldown (days)', 'listedCooldownDays', 'number')}
-            {field('Interested-unit staleness (days)', 'portfolioStaleDays', 'number', 'Days without a call before a kept interested unit is flagged stale')}
+            {field('Not interested cooldown (days)', 'notInterestedCooldownDays', 'number', 'Owner stays in cooling before returning to pool', true)}
+            {field('Already listed cooldown (days)', 'listedCooldownDays', 'number', 'Listed elsewhere — stays in cooling before returning to pool', true)}
+            {field('Interested-unit staleness (days)', 'portfolioStaleDays', 'number', 'Days without a call before a kept interested unit is flagged stale', true)}
           </div>
         </div>
 

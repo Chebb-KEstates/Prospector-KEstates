@@ -107,10 +107,10 @@ function interestPreset(u?: CallUnit): string[] {
  * can be closed or advanced.
  *
  * Open view (src/config.ts): anyone may open any unit, and the numbers arrive in
- * full and show straight away — no Reveal step, so no reveal-lock. Working it
- * (logging a call, notes, updates, listing info, stage) is for its broker or a
- * manager; anyone else gets it read-only under "This unit belongs to X" with a
- * "Take over ownership" button (or "Request this unit" when it's pooled).
+ * full and show straight away — no Reveal step, so no reveal-lock. Anyone may
+ * log on it (a call, its notes, a journal update); its stage and listing info
+ * are for its broker or a manager. Anyone else sees "This unit belongs to X"
+ * with a "Take over ownership" button (or "Request this unit" when it's pooled).
  *
  * The Stage row (None → Listed online) sits under the header; picking one saves
  * straight away. Stage changes, record opens and reveals reach the journal for
@@ -321,6 +321,10 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
   // Its broker or a manager. Everyone else views it read-only (open view) and can
   // ask for it. Until the unit has loaded, nobody gets the write controls.
   const canWork = isManager || (!!holding && !!user && holding.assignedTo === user.id);
+  // May this user LOG on it — a call, its notes, a journal update? Under open view
+  // anyone may (ownership is unchanged by it); stage and listing info stay with
+  // its broker or a manager (`canWork`).
+  const canLog = canWork || (OPEN_VIEW && !!holding);
   const holderName = holding?.assignedTo ? (vault.userById(holding.assignedTo)?.name ?? 'another broker') : undefined;
   // An undecided request of mine for this unit is already with a manager.
   const askPending = !!user && vault.requests.some(r =>
@@ -789,7 +793,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
               )}
               <LastCallPill at={focusedUnit?.detail?.lastCalledAt} />
               <StateChip state={curState} />
-              <CountdownBadge deadline={curExpires} soonHours={vault.settings.expiringSoonHours} />
+              <CountdownBadge deadline={curExpires} soonHours={vault.settings.expiringSoonHours} state={curState} />
               <button className="btn btn-icon btn-sm" onClick={() => void tryClose()} aria-label="Close"><Icon name="x" size={16} /></button>
             </div>
 
@@ -1030,7 +1034,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   <span>Stays on the property — saved automatically when you close, move on, or log a call.</span>
                   {notesSaved && !notesDirty && <span style={{ color: 'var(--success)', fontWeight: 600, whiteSpace: 'nowrap' }}>Saved ✓</span>}
                 </div>
-                <textarea className="input" value={notes} rows={4} readOnly={!canWork} style={{ resize: 'vertical' }}
+                <textarea className="input" value={notes} rows={4} readOnly={!canLog} style={{ resize: 'vertical' }}
                   placeholder="Anything worth keeping on this unit permanently…"
                   onChange={e => { setNotes(e.target.value); setNotesDirty(true); setNotesSaved(false); }} />
               </Column>
@@ -1090,7 +1094,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
                   </div>
                 )}
 
-                {canWork ? (<>
+                {canLog ? (<>
                 <div style={sectionLabel}>
                   Log the outcome{multiUnit ? ` — ${focusedUnit?.label ?? ''}` : ''}
                 </div>
@@ -1185,7 +1189,7 @@ export function PropertyPopup({ propertyId, ids = [], onNavigate, onClose }: {
               <Column>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
                   <div style={{ ...sectionLabel, marginBottom: 0, flex: 1 }}>History journal{multiUnit ? ` — ${focusedUnit?.label ?? ''}` : ''}</div>
-                  {!addingUpdate && canWork && (
+                  {!addingUpdate && canLog && (
                     <button className="btn btn-sm" onClick={() => { setAddingUpdate(true); setUpdateErr(null); }}
                       style={{
                         flexShrink: 0, fontWeight: 600, borderColor: 'var(--gold)', borderWidth: 1.5,
@@ -1319,13 +1323,13 @@ function OwnershipBanner({ holderName, mine, isManager, state, canWork, pending,
           <>
             <div style={{ fontWeight: 600 }}>This unit belongs to {holderName}.</div>
             <div style={{ color: 'var(--text-secondary)' }}>
-              You can view it, but only {holderName} or a manager can call, note or change it.
+              You can log calls, notes and updates on it. Only {holderName} or a manager can change its stage.
             </div>
           </>
         ) : (
           <>
             <div style={{ fontWeight: 600 }}>This unit isn’t assigned to anyone.</div>
-            <div style={{ color: 'var(--text-secondary)' }}>You can view it — to work on it, ask a manager for it.</div>
+            <div style={{ color: 'var(--text-secondary)' }}>You can log calls, notes and updates on it — to make it yours, ask a manager for it.</div>
           </>
         )}
         {error && <div style={{ color: 'var(--error)', marginTop: 2 }}>{error}</div>}

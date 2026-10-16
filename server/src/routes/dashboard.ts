@@ -105,7 +105,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       assignedCountByBroker(),
       workedByDataset(),
       countStalePortfolio(settings.portfolioStaleDays),
-      countExpiringSoon(settings.expiringSoonHours),
+      countExpiringSoon(settings.expiringSoonHours, undefined, settings),
       listUsers(),
       listAudit({ limit: 8, offset: 0 }),
       // Interested is now distinct units that BECAME interested in each window
@@ -415,7 +415,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       brokerCallStats(),
       assignedCountByBroker(),
       countPending(),
-      countExpiringSoon(settings.expiringSoonHours, me.id),
+      countExpiringSoon(settings.expiringSoonHours, me.id, settings),
       // Today's call counts (events) for the answer-rate-today line.
       brokerFunnelWindow(me.id, today.from, today.to),
     ]);
