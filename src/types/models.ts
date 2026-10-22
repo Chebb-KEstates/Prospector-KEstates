@@ -697,7 +697,23 @@ export class VaultSettings {
     public noAnswerMaxHoldDays = 14,     // hard cap: no-answers can't hold beyond this
     public portfolioRenewDays = 7,       // portfolio timer, renewed by working the unit
     public expiringSoonHours = 24,       // "running out of time" threshold + amber warning
+    // Stage follow-up — an ASSIGNED unit in one of these stages goes back to the
+    // pool when its broker hasn't logged a call on it for this many days (see
+    // server stageFollowUpService). 0 switches that stage's rule off.
+    public stageIdleProspectingDays = 30,
+    public stageIdleAppraisalDays = 14,
+    public stageIdleOfflineDays = 7,
   ) {}
+
+  /** The idle limit (days) for a stage, or 0 when it has none / its rule is off. */
+  stageIdleDays(stage: PropertyStage): number {
+    switch (stage) {
+      case PropertyStage.prospecting: return this.stageIdleProspectingDays;
+      case PropertyStage.marketAppraisal: return this.stageIdleAppraisalDays;
+      case PropertyStage.listedOffline: return this.stageIdleOfflineDays;
+      default: return 0; // None and Listed online have no follow-up rule
+    }
+  }
 
   toJson(): Record<string, unknown> {
     return {
@@ -712,6 +728,9 @@ export class VaultSettings {
       noAnswerMaxHoldDays: this.noAnswerMaxHoldDays,
       portfolioRenewDays: this.portfolioRenewDays,
       expiringSoonHours: this.expiringSoonHours,
+      stageIdleProspectingDays: this.stageIdleProspectingDays,
+      stageIdleAppraisalDays: this.stageIdleAppraisalDays,
+      stageIdleOfflineDays: this.stageIdleOfflineDays,
     };
   }
 
@@ -729,6 +748,9 @@ export class VaultSettings {
       _int(j.noAnswerMaxHoldDays, d.noAnswerMaxHoldDays),
       _int(j.portfolioRenewDays, d.portfolioRenewDays),
       _int(j.expiringSoonHours, d.expiringSoonHours),
+      _int(j.stageIdleProspectingDays, d.stageIdleProspectingDays),
+      _int(j.stageIdleAppraisalDays, d.stageIdleAppraisalDays),
+      _int(j.stageIdleOfflineDays, d.stageIdleOfflineDays),
     );
   }
 }

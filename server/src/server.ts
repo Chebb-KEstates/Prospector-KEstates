@@ -4,6 +4,7 @@ import { pool, closePool } from './db/pool';
 import { sweepExpiredSessions } from './auth/sessions';
 import { sweepExpiredImports } from './repositories/importRepo';
 import { sweepLapsed } from './services/callService';
+import { sweepStaleStages } from './services/stageFollowUpService';
 
 /**
  * Entry point.
@@ -43,9 +44,12 @@ async function main() {
         sweepExpiredImports(),
         sweepLapsed(),
       ]);
-      if (sessions || imports || lapsed.properties || lapsed.leads) {
+      // After the timer sweep, not alongside it: both reclaim held units, and
+      // running them one after the other keeps their row locks from contending.
+      const stages = await sweepStaleStages();
+      if (sessions || imports || lapsed.properties || lapsed.leads || stages.reclaimed) {
         app.log.info(
-          { sessions, imports, ...lapsed },
+          { sessions, imports, ...lapsed, stageReclaimed: stages.reclaimed },
           'housekeeping sweep',
         );
       }

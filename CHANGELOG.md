@@ -18,6 +18,40 @@ for what each part means for Prospector.
 
 ---
 
+## [4.3.0] — 2026-10-22
+
+### Added
+- **Stage follow-up.** An **assigned** unit in **Prospecting**, **Market
+  appraisal** or **Listed offline** goes back to the pool (unassigned) when its
+  broker hasn't logged a call on it for **30 / 14 / 7 days**. "Logged a call"
+  means any call result they saved, with or without feedback text. Calls by
+  anyone else (other brokers, managers) don't count.
+  - **When the clock starts:** the latest of the broker's last call, the day the
+    unit entered its current stage, and the day it was assigned to them. Moving
+    a unit to the next stage, or taking it over, gives a full fresh window.
+  - **What's never touched:** units in None or Listed online, pooled units and
+    do-not-call units.
+  - **Owner groups:** like every reclaim, an owner's same-area units go back
+    together. A call on any of them keeps them all.
+  - **What stays the same:** the unit keeps its stage. Its journal reads
+    "Auto Reclaimed — no call logged by X for N days in <stage>", with System
+    as the actor.
+  - **Schedule:** checked at server start and every 15 minutes with the other
+    housekeeping. Each unit is re-checked under a row lock just before it's
+    taken, so a call logged a moment earlier wins.
+- **Settings → Stage follow-up:** the three limits are adjustable, and 0
+  switches that stage's rule off.
+- **`npm run diagnose:stages`** (in `server/`): a read-only preview of which
+  units the next sweep would reclaim, and why.
+
+### Data
+- **Migration 019** adds the three settings (30 / 14 / 7). Additive: no unit
+  changes in the migration. **The rule starts working as soon as the new server
+  starts**, so run `npm run diagnose:stages` after migrating to see what the
+  first sweep will reclaim.
+
+---
+
 ## [4.2.0] — 2026-10-16
 
 ### Changed

@@ -47,6 +47,10 @@ export default async function settingsRoutes(app: FastifyInstance) {
           noAnswerMaxHoldDays: { type: 'integer', minimum: 0, maximum: 365 },
           portfolioRenewDays: { type: 'integer', minimum: 0, maximum: 365 },
           expiringSoonHours: { type: 'integer', minimum: 0, maximum: 720 },
+          // Stage follow-up, days 0–365. 0 = that stage's rule is off.
+          stageIdleProspectingDays: { type: 'integer', minimum: 0, maximum: 365 },
+          stageIdleAppraisalDays: { type: 'integer', minimum: 0, maximum: 365 },
+          stageIdleOfflineDays: { type: 'integer', minimum: 0, maximum: 365 },
         },
       },
     },
@@ -66,6 +70,9 @@ export default async function settingsRoutes(app: FastifyInstance) {
       body.noAnswerMaxHoldDays ?? current.noAnswerMaxHoldDays,
       body.portfolioRenewDays ?? current.portfolioRenewDays,
       body.expiringSoonHours ?? current.expiringSoonHours,
+      body.stageIdleProspectingDays ?? current.stageIdleProspectingDays,
+      body.stageIdleAppraisalDays ?? current.stageIdleAppraisalDays,
+      body.stageIdleOfflineDays ?? current.stageIdleOfflineDays,
     );
 
     await saveSettings(next);

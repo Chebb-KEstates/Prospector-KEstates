@@ -1,6 +1,6 @@
 {
   "name": "prospector-server",
-  "version": "4.2.0",
+  "version": "4.3.0",
   "private": true,
   "description": "Prospector backend — Fastify + MySQL. Owns persistence, auth, permissions, masking and audit.",
   "main": "dist/server/src/server.js",
@@ -10,6 +10,7 @@
     "start": "node dist/server/src/server.js",
     "migrate": "tsx src/db/migrate.ts",
     "diagnose:units": "tsx src/db/diagnose-unit-collisions.ts",
+    "diagnose:stages": "tsx src/db/diagnose-stage-follow-up.ts",
     "seed": "tsx src/db/seed.ts",
     "test": "node --test --test-concurrency=1 --import tsx test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"

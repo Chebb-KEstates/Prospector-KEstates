@@ -208,8 +208,18 @@ export async function assignPropertiesTx(
  */
 export async function reclaimProperties(propertyIds: string[], actorId: string): Promise<number> {
   if (propertyIds.length === 0) return 0;
+  return transaction(cx => reclaimPropertiesTx(cx, propertyIds, actorId, 'Reclaimed owner group to the pool'));
+}
 
-  return transaction(async (cx) => {
+/**
+ * The body of `reclaimProperties`, inside a caller's transaction — so the
+ * stage-inactivity sweep reclaims with exactly the same owner-group rules.
+ * `actorId` null = the system (the journal reads "System").
+ */
+export async function reclaimPropertiesTx(
+  cx: PoolConnection, propertyIds: string[], actorId: string | null, detail: string,
+): Promise<number> {
+  {
     const [rows] = await cx.query<Row[]>(
       `SELECT ${ASSIGNABLE_COLS} FROM properties
        WHERE id IN (${propertyIds.map(() => '?').join(', ')}) FOR UPDATE`,
@@ -252,12 +262,12 @@ export async function reclaimProperties(propertyIds: string[], actorId: string):
     await saveProperties(changed, cx);
 
     await writeAudit({
-      actorId, action: 'reclaim', detail: 'Reclaimed owner group to the pool',
+      actorId, action: 'reclaim', detail,
       propertyIds: changed.map(p => p.id),
     }, cx);
 
     return changed.length;
-  });
+  }
 }
 
 const LEAD_COLS = `

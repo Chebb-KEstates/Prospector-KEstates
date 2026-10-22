@@ -29,6 +29,10 @@ export async function loadSettings(cx?: PoolConnection): Promise<VaultSettings> 
     r.no_answer_max_hold_days != null ? Number(r.no_answer_max_hold_days) : d.noAnswerMaxHoldDays,
     r.portfolio_renew_days != null ? Number(r.portfolio_renew_days) : d.portfolioRenewDays,
     r.expiring_soon_hours != null ? Number(r.expiring_soon_hours) : d.expiringSoonHours,
+    // Stage follow-up (migration 019).
+    r.stage_idle_prospecting_days != null ? Number(r.stage_idle_prospecting_days) : d.stageIdleProspectingDays,
+    r.stage_idle_appraisal_days != null ? Number(r.stage_idle_appraisal_days) : d.stageIdleAppraisalDays,
+    r.stage_idle_offline_days != null ? Number(r.stage_idle_offline_days) : d.stageIdleOfflineDays,
   );
 }
 
@@ -40,8 +44,9 @@ export async function saveSettings(s: VaultSettings, cx?: PoolConnection): Promi
         max_no_answer_attempts, assignment_expiry_days, portfolio_stale_days,
         office_ip,
         assignment_sla_hours, no_answer_extension_hours, no_answer_max_hold_days,
-        portfolio_renew_days, expiring_soon_hours, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        portfolio_renew_days, expiring_soon_hours,
+        stage_idle_prospecting_days, stage_idle_appraisal_days, stage_idle_offline_days, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        not_interested_cooldown_days = VALUES(not_interested_cooldown_days),
        listed_cooldown_days         = VALUES(listed_cooldown_days),
@@ -54,13 +59,17 @@ export async function saveSettings(s: VaultSettings, cx?: PoolConnection): Promi
        no_answer_max_hold_days      = VALUES(no_answer_max_hold_days),
        portfolio_renew_days         = VALUES(portfolio_renew_days),
        expiring_soon_hours          = VALUES(expiring_soon_hours),
+       stage_idle_prospecting_days  = VALUES(stage_idle_prospecting_days),
+       stage_idle_appraisal_days    = VALUES(stage_idle_appraisal_days),
+       stage_idle_offline_days      = VALUES(stage_idle_offline_days),
        updated_at                   = VALUES(updated_at)`,
     [
       kOrgId,
       s.notInterestedCooldownDays, s.listedCooldownDays, s.maxNoAnswerAttempts,
       s.assignmentExpiryDays, s.portfolioStaleDays, s.officeIp,
       s.assignmentSlaHours, s.noAnswerExtensionHours, s.noAnswerMaxHoldDays,
-      s.portfolioRenewDays, s.expiringSoonHours, new Date(),
+      s.portfolioRenewDays, s.expiringSoonHours,
+      s.stageIdleProspectingDays, s.stageIdleAppraisalDays, s.stageIdleOfflineDays, new Date(),
     ],
   );
 }
