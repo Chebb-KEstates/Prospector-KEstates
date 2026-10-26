@@ -470,6 +470,26 @@ export const datasets = {
 
 // ── Settings ───────────────────────────────────────────────────────────────
 
+// ── Notifications ──────────────────────────────────────────────────────────
+
+/** One in-app notification (the sidebar bell). */
+export interface AppNotification {
+  id: string;
+  kind: string;
+  propertyId?: string;
+  title: string;
+  body: string;
+  createdAt: string;
+  readAt?: string;
+}
+
+export const notifications = {
+  /** My newest notifications and how many are unread. */
+  list: () => get<{ rows: AppNotification[]; unread: number }>('/api/notifications'),
+  /** Mark some (or, with no ids, all) of mine read. */
+  markRead: (ids?: string[]) => post<{ marked: number }>('/api/notifications/read', ids ? { ids } : {}),
+};
+
 export const settings = {
   async load(): Promise<VaultSettings> {
     return VaultSettings.fromJson(await get<Record<string, unknown>>('/api/settings'));

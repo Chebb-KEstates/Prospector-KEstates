@@ -10,7 +10,7 @@ export type IconName =
   | 'copy' | 'star' | 'flame' | 'clock' | 'upload' | 'download' | 'trash'
   | 'plus' | 'search' | 'columns' | 'sliders' | 'minimize' | 'play'
   | 'arrowRight' | 'alert' | 'sparkles' | 'layers' | 'coin' | 'vault'
-  | 'user' | 'calendar' | 'refresh' | 'grip' | 'ban' | 'eye';
+  | 'user' | 'calendar' | 'refresh' | 'grip' | 'ban' | 'eye' | 'bell';
 
 const PATHS: Record<IconName, React.ReactNode> = {
   home: <path d="M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5" />,
@@ -30,6 +30,7 @@ const PATHS: Record<IconName, React.ReactNode> = {
   star: <path d="m12 3 2.6 5.5 6 .8-4.4 4.2 1.1 6-5.3-2.9-5.3 2.9 1.1-6L3.4 9.3l6-.8z" />,
   flame: <path d="M12 3c1 3-2 4-2 7a4 4 0 0 0 8 0c0-2-1-3-1.5-4C17 7 14 5 12 3z" />,
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.5 2" /></>,
+  bell: <><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20a2 2 0 0 0 4 0" /></>,
   upload: <path d="M12 16V4m-5 5 5-5 5 5M5 20h14" />,
   download: <path d="M12 4v12m-5-5 5 5 5-5M5 20h14" />,
   trash: <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />,

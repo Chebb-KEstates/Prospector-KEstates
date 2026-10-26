@@ -22,5 +22,6 @@ export const newDatasetId = () => `ds-${suffix()}`;
 export const newUserId = () => `u-${suffix()}`;
 export const newAuditId = () => `a-${suffix()}`;
 export const newImportSessionId = () => `imp-${suffix()}`;
+export const newNotificationId = () => `n-${suffix()}`;
 
 export const newUuid = () => randomUUID();

@@ -47,9 +47,9 @@ async function main() {
       // After the timer sweep, not alongside it: both reclaim held units, and
       // running them one after the other keeps their row locks from contending.
       const stages = await sweepStaleStages();
-      if (sessions || imports || lapsed.properties || lapsed.leads || stages.reclaimed) {
+      if (sessions || imports || lapsed.properties || lapsed.leads || stages.reclaimed || stages.warned) {
         app.log.info(
-          { sessions, imports, ...lapsed, stageReclaimed: stages.reclaimed },
+          { sessions, imports, ...lapsed, stageReclaimed: stages.reclaimed, stageWarned: stages.warned },
           'housekeeping sweep',
         );
       }

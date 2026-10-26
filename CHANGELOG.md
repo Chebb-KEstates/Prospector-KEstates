@@ -18,6 +18,35 @@ for what each part means for Prospector.
 
 ---
 
+## [4.4.0] — 2026-10-23
+
+### Added
+- **24 hours' notice before a stage follow-up reclaim.** A broker gets a
+  notification ("Eden · 101 goes back to the pool in 24 hours", with why and
+  what to do) 24 hours before one of their units would go back to the pool for
+  lack of calls. **A unit is never reclaimed without a reminder at least 24 hours
+  old** for the current idle period. A unit that is already overdue when first
+  seen (the first run after deploying, or a limit lowered in Settings) is warned
+  then and goes back no sooner than 24 hours later. Any call, stage change or new
+  assignment cancels the reminder; if the unit lapses again, a fresh one goes
+  out. One reminder per unit per idle period, sent to the unit's current broker.
+- **Notifications** in the broker sidebar, with an unread badge. It opens a list
+  where each reminder has **Open unit**. It refreshes every minute and after
+  your own changes; notices are marked read when you close the list or open a
+  unit.
+- `npm run diagnose:stages` now also lists which brokers would be warned.
+
+### Changed
+- The broker sidebar no longer shows **Pool**. The page is still there (Home →
+  "Browse pool").
+- The broker Database chip **All** is now **My units**.
+
+### Data
+- **Migration 020** adds the `notifications` table. Additive: nothing else
+  changes. **Run `npm run migrate` (in `server/`) before starting the server.**
+
+---
+
 ## [4.3.0] — 2026-10-22
 
 ### Added

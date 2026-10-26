@@ -125,8 +125,9 @@ export function SettingsScreen() {
           <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginBottom: 16 }}>
             An assigned unit in one of these stages goes back to the pool when its broker hasn't logged a call
             on it (any call result) for this many days — counted from the last call, the day it entered the
-            stage, or the day it was assigned, whichever is latest. Set any field to <b>0</b> to switch that
-            stage's rule off. None and Listed online have no rule.
+            stage, or the day it was assigned, whichever is latest. The broker always gets a notification
+            24 hours before (the unit never goes back with less notice). Set any field to <b>0</b> to switch
+            that stage's rule off. None and Listed online have no rule.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {field('Prospecting (days)', 'stageIdleProspectingDays', 'number', 'No call for this long in Prospecting → back to the pool', true)}

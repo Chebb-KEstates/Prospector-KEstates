@@ -20,6 +20,7 @@ import settingsRoutes from './routes/settings';
 import auditRoutes from './routes/audit';
 import importRoutes from './routes/imports';
 import dashboardRoutes from './routes/dashboard';
+import notificationRoutes from './routes/notifications';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -146,6 +147,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(auditRoutes);
   await app.register(importRoutes);
   await app.register(dashboardRoutes);
+  await app.register(notificationRoutes);
 
   return app;
 }

@@ -25,11 +25,11 @@ import { useStickyHeader, stickyHeaderStyle } from '../common/useStickyHeader';
 
 type Quick = 'toCall' | 'all' | 'everyone' | 'due' | 'fresh' | 'noAnswer' | 'callback' | 'text' | 'interested' | 'expiring';
 const QUICKS: { key: Quick; label: string }[] = [
-  // "To call" is the actionable working list (assigned + portfolio). "All" also
+  // "To call" is the actionable working list (assigned + portfolio). "My units" also
   // shows the units the broker still holds but that dropped off — cooled-off and
   // do-not-call — so nothing silently disappears after it's dispositioned.
   { key: 'toCall', label: 'To call' },
-  { key: 'all', label: 'All' },
+  { key: 'all', label: 'My units' },
   // Open view: every unit in the vault, whoever holds it — read-only unless it's
   // yours, with "Take over ownership" on the record.
   ...(OPEN_VIEW ? [{ key: 'everyone' as Quick, label: 'All units' }] : []),
