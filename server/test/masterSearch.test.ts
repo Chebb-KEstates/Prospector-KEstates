@@ -210,6 +210,17 @@ test('each row keeps its source file name; deleting a file removes exactly its r
   assert.equal((await upload(manager, 'clients.xlsx', CLIENTS)).status, 200);
 });
 
+test('a batch of many files uploads back to back without hitting the rate limit', async () => {
+  await wipe();
+  for (let i = 1; i <= 40; i++) {
+    const r = await upload(manager, `batch-${i}.csv`, Buffer.from(`Ref,Tag\nB${i},batchrow\n`, 'utf8'));
+    assert.equal(r.status, 200, `file ${i} → ${r.status}`);
+  }
+  const files = (await call(manager, 'GET', '/api/master-search/files')).json();
+  assert.equal(files.totalFiles, 40);
+  assert.equal((await search(broker, 'batchrow')).total, 40);
+});
+
 test('searches, uploads, downloads and deletes are audited', async () => {
   await wipe();
   await pool.query("DELETE FROM audit WHERE detail LIKE 'Master search%'");

@@ -69,7 +69,8 @@ export default async function masterSearchRoutes(app: FastifyInstance) {
   /** Upload a spreadsheet: keep the original, read every sheet into rows. */
   app.post('/api/master-search/files', {
     preHandler: [app.authenticate, app.requirePermission(Permission.manageData)],
-    config: { rateLimit: { max: 20, timeWindow: '5 minutes' } },
+    // Batches upload one file at a time; the client waits out a 429 and retries.
+    config: { rateLimit: { max: 300, timeWindow: '5 minutes' } },
   }, async (req) => {
     const file = await req.file();
     if (!file) throw badRequest('No file was uploaded.');

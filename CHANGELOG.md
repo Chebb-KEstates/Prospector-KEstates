@@ -18,6 +18,26 @@ for what each part means for Prospector.
 
 ---
 
+## [4.6.0] — 2026-11-03
+
+### Added
+- **Master Search: upload many files at once.** "Upload files" now takes a
+  multi-file selection. The files go into a queue and upload **one at a time**,
+  so a selection of hundreds doesn't flood the server or the browser. A progress panel shows
+  each file (Waiting / Uploading / Loaded / Skipped / Failed) and a progress bar.
+  You can keep adding files while a batch is running, or stop it after the current
+  file. The queue keeps going if you switch to another page, and the browser
+  asks before you close the tab mid-batch.
+- Files are checked before uploading: a wrong type, an Excel lock file (`~$…`), an empty
+  file, or a name that is already loaded or already queued is skipped with a reason.
+- One bad file fails on its own and the rest carry on. A busy server (429) is
+  waited out and retried. A network drop or server error is retried 3 times. A
+  lost session stops the queue.
+
+### Changed
+- The Master Search upload rate limit went from 20 to 300 per 5 minutes, so a big batch
+  isn't cut off part-way.
+
 ## [4.5.0] — 2026-11-03
 
 ### Added

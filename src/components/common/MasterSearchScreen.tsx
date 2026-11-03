@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import * as api from '../../data/api';
 import { ApiError } from '../../data/apiClient';
 import { useAuth } from '../../state/AuthContext';
@@ -7,6 +7,7 @@ import { Permission } from '../../types/user';
 import { Icon } from './Icon';
 import { saveBlob } from '../../logic/downloadFile';
 import { fmtInt, fmtDateTime } from '../../utils/format';
+import { UploadQueue, QueueStatus } from '../../data/uploadQueue';
 
 /**
  * Master Search — one search bar over every row of every uploaded spreadsheet.
@@ -29,7 +30,25 @@ function fmtSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-const reEsc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/**
+ * One queue for the whole app (module level), so a long batch keeps uploading
+ * when the admin switches to another page and back.
+ */
+const uploadQueue = new UploadQueue<File, api.SearchFile>({
+  extensions: ACCEPT.split(','),
+  upload: file => api.masterSearch.upload(file),
+  describe: f => `${fmtInt(f.rowCount)} rows · ${f.sheetCount} sheet${f.sheetCount === 1 ? '' : 's'}`,
+});
+
+const STATUS_LABEL: Record<QueueStatus, string> = {
+  waiting: 'Waiting', uploading: 'Uploading…', done: 'Loaded', skipped: 'Skipped', failed: 'Failed', cancelled: 'Cancelled',
+};
+const STATUS_COLOR: Record<QueueStatus, string> = {
+  waiting: 'var(--text-tertiary)', uploading: 'var(--gold-dark)', done: 'var(--success)',
+  skipped: 'var(--text-secondary)', failed: 'var(--error)', cancelled: 'var(--text-tertiary)',
+};
+
+const reEsc =(s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** `text` with every term wrapped in a highlight. */
 function Highlight({ text, terms }: { text: string; terms: string[] }) {
@@ -60,7 +79,7 @@ export function MasterSearchScreen() {
 
   const [files, setFiles] = useState<api.SearchFile[]>([]);
   const [totals, setTotals] = useState({ files: 0, rows: 0 });
-  const [busy, setBusy] = useState<string | null>(null); // 'upload' | file id
+  const [busy, setBusy] = useState<string | null>(null); // file id being downloaded/deleted
   const [fileMsg, setFileMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const seq = useRef(0);
@@ -104,21 +123,44 @@ export function MasterSearchScreen() {
     [searched],
   );
 
-  const onUpload = async (file: File | undefined) => {
-    if (!file || busy) return;
-    setBusy('upload'); setFileMsg(null);
-    try {
-      const f = await api.masterSearch.upload(file);
-      setFileMsg({ kind: 'ok', text: `Loaded "${f.fileName}" — ${fmtInt(f.rowCount)} rows from ${f.sheetCount} sheet${f.sheetCount === 1 ? '' : 's'}.` });
-      await loadFiles();
-      if (q.trim().length >= MIN_CHARS) void runSearch(q);
-    } catch (e) {
-      setFileMsg({ kind: 'error', text: e instanceof ApiError ? e.message : 'Could not upload that file.' });
-    } finally {
-      setBusy(null);
-      if (fileInput.current) fileInput.current.value = '';
-    }
+  // The upload queue: many files, one at a time.
+  const queue = useSyncExternalStore(uploadQueue.subscribe, uploadQueue.getSnapshot);
+  const onPick = (list: FileList | null) => {
+    const picked = list ? Array.from(list) : [];
+    if (fileInput.current) fileInput.current.value = ''; // the same files can be picked again
+    if (picked.length === 0) return;
+    setFileMsg(null);
+    uploadQueue.add(picked, files.map(f => f.fileName));
   };
+
+  // Refresh the file list as the batch lands (every few files, and at the end)
+  // and re-run the open search so new rows show up.
+  const lastDone = useRef(queue.done);
+  const qRef = useRef(q);
+  qRef.current = q;
+  useEffect(() => {
+    const landed = queue.done !== lastDone.current;
+    if (!landed) return;
+    if (queue.running && queue.done % 5 !== 0) return;
+    lastDone.current = queue.done;
+    void loadFiles();
+    if (qRef.current.trim().length >= MIN_CHARS) void runSearch(qRef.current);
+  }, [queue.done, queue.running, loadFiles, runSearch]);
+
+  // Closing the tab mid-batch would drop the rest — ask first.
+  useEffect(() => {
+    if (!queue.running) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [queue.running]);
+
+  const counts = useMemo(() => {
+    const c: Record<QueueStatus, number> = { waiting: 0, uploading: 0, done: 0, skipped: 0, failed: 0, cancelled: 0 };
+    for (const it of queue.items) c[it.status]++;
+    return c;
+  }, [queue.items]);
+  const finished = queue.items.length - counts.waiting - counts.uploading;
 
   const onDownload = async (f: api.SearchFile) => {
     if (busy) return;
@@ -211,12 +253,51 @@ export function MasterSearchScreen() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid var(--border-light)', flexWrap: 'wrap' }}>
             <h3 style={{ fontWeight: 600, margin: 0, flex: 1 }}>Files</h3>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>Excel (.xlsx, .xls, .xlsm) or CSV · first row = column names</span>
-            <input ref={fileInput} type="file" accept={ACCEPT} style={{ display: 'none' }}
-              onChange={e => void onUpload(e.target.files?.[0])} aria-label="Upload a file to Master Search" />
-            <button className="btn btn-sm btn-primary" disabled={!!busy} onClick={() => fileInput.current?.click()}>
-              <Icon name="upload" size={14} /> {busy === 'upload' ? 'Uploading…' : 'Upload file'}
+            <input ref={fileInput} type="file" multiple accept={ACCEPT} style={{ display: 'none' }}
+              onChange={e => onPick(e.target.files)} aria-label="Upload files to Master Search" />
+            <button className="btn btn-sm btn-primary" onClick={() => fileInput.current?.click()}
+              title="Pick one or many files — they upload one after another">
+              <Icon name="upload" size={14} /> {queue.running ? 'Add more files' : 'Upload files'}
             </button>
           </div>
+          {queue.items.length > 0 && (
+            <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-light)', background: 'var(--surface-2)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: '0.8125rem' }}>
+                <span style={{ fontWeight: 600 }}>
+                  {queue.running
+                    ? `Uploading ${fmtInt(finished + 1)} of ${fmtInt(queue.items.length)}…`
+                    : `Upload finished — ${fmtInt(queue.items.length)} file${queue.items.length === 1 ? '' : 's'}`}
+                </span>
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  {[
+                    counts.done && `${fmtInt(counts.done)} loaded`,
+                    counts.skipped && `${fmtInt(counts.skipped)} skipped`,
+                    counts.failed && `${fmtInt(counts.failed)} failed`,
+                    counts.cancelled && `${fmtInt(counts.cancelled)} cancelled`,
+                  ].filter(Boolean).join(' · ')}
+                </span>
+                <span style={{ flex: 1 }} />
+                {queue.running && counts.waiting > 0 && (
+                  <button className="btn btn-sm" onClick={() => uploadQueue.cancel()}>Stop after this file</button>
+                )}
+                {!queue.running && (
+                  <button className="btn btn-sm btn-ghost" onClick={() => uploadQueue.clearFinished()}>Clear</button>
+                )}
+              </div>
+              <div style={{ height: 4, borderRadius: 2, background: 'var(--border-light)', margin: '8px 0', overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${(finished / queue.items.length) * 100}%`, background: 'var(--gold)', transition: 'width .2s' }} />
+              </div>
+              <div style={{ maxHeight: 220, overflowY: 'auto', fontSize: '0.78rem' }}>
+                {queue.items.map(it => (
+                  <div key={it.id} style={{ display: 'flex', gap: 10, padding: '3px 0', alignItems: 'baseline' }}>
+                    <span style={{ width: 82, flexShrink: 0, fontWeight: 600, color: STATUS_COLOR[it.status] }}>{STATUS_LABEL[it.status]}</span>
+                    <span style={{ wordBreak: 'break-word', flex: 1 }}>{it.name}</span>
+                    <span style={{ color: 'var(--text-secondary)', textAlign: 'right' }}>{it.message ?? fmtSize(it.size)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {fileMsg && (
             <div style={{ padding: '8px 16px', fontSize: '0.8125rem', color: fileMsg.kind === 'ok' ? 'var(--success)' : 'var(--error)', borderBottom: '1px solid var(--border-light)' }}>
               {fileMsg.text}
