@@ -470,6 +470,42 @@ export const datasets = {
 
 // ── Settings ───────────────────────────────────────────────────────────────
 
+// ── Master Search ──────────────────────────────────────────────────────────
+
+/** One loaded spreadsheet (no contents). */
+export interface SearchFile {
+  id: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  sheetCount: number;
+  rowCount: number;
+  uploadedBy?: string;
+  uploadedAt: string;
+}
+
+/** One matching spreadsheet row: where it came from and its [column, value] pairs. */
+export interface SearchHit {
+  file: string;
+  sheet: string;
+  row: number;
+  cells: [string, string][];
+}
+
+export const masterSearch = {
+  /** Rows containing every word of `q`. `total` may exceed `results.length` (capped at `limit`). */
+  search: (q: string) =>
+    get<{ query: string; total: number; limit: number; results: SearchHit[] }>('/api/master-search', { q }),
+  /** The loaded files and totals. */
+  files: () => get<{ files: SearchFile[]; totalFiles: number; totalRows: number }>('/api/master-search/files'),
+  /** Admin: load a spreadsheet. */
+  upload: (file: File) => upload<SearchFile>('/api/master-search/files', file),
+  /** Admin: the original file, as uploaded. */
+  download: (id: string) => download(`/api/master-search/files/${id}/download`),
+  /** Admin: delete a file and every row read from it. */
+  remove: (id: string) => del<{ removedRows: number }>(`/api/master-search/files/${id}`),
+};
+
 // ── Notifications ──────────────────────────────────────────────────────────
 
 /** One in-app notification (the sidebar bell). */

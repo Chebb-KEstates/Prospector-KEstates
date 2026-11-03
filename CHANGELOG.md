@@ -18,6 +18,40 @@ for what each part means for Prospector.
 
 ---
 
+## [4.5.0] — 2026-11-03
+
+### Added
+- **Master Search** — a new sidebar item for brokers and managers. One search
+  bar over every row of every uploaded spreadsheet.
+  - **How it matches:** a row matches when it contains all the words you type,
+    in any column, ignoring case. Each result shows its source (file › sheet ›
+    row number) and its columns, with your words highlighted. Up to 500 rows are
+    shown, with the exact total.
+  - **Everyone** can search.
+  - **Admins** (the "Import & delete data" permission) also get a **Files**
+    panel: upload an Excel (.xlsx, .xls, .xlsm) or CSV file, **download the
+    original** exactly as uploaded, or **delete** a file together with every row
+    read from it.
+  - **Duplicate names:** a file with the same name as one already loaded is
+    refused (delete the old one first), so rows never appear twice.
+  - **How files are read:** every sheet is read, and the first non-empty row is
+    the column names. Blank or repeated headers get unique names, empty rows and
+    cells are skipped, and CSVs are read as UTF-8 (Arabic text survives).
+  - **Audit:** searches, uploads, downloads and deletes are all written to the
+    audit trail. "search" is a new action in the audit filter.
+- Replaces the stand-alone "Excel Search" prototype. Its Reload button is gone,
+  because files are read once, on upload.
+
+### Data
+- **Migration 021** adds `search_files` (each original file's bytes, name,
+  sheets, row count, uploader) and `search_rows` (one row per spreadsheet row,
+  with its source file id and name, sheet, Excel row number and cells). Files
+  live in the database, never on disk. Deleting a file removes its rows.
+  Additive: nothing else changes. **Run `npm run migrate` (in `server/`) before
+  starting the server.**
+
+---
+
 ## [4.4.0] — 2026-10-23
 
 ### Added

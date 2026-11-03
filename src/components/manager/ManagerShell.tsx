@@ -10,8 +10,9 @@ import { HomeScreen } from './HomeScreen';
 import { DatabaseScreen } from './DatabaseScreen';
 import { TeamScreen } from './TeamScreen';
 import { ControlScreen } from './ControlScreen';
+import { MasterSearchScreen } from '../common/MasterSearchScreen';
 
-type Tab = 'home' | 'database' | 'team' | 'control';
+type Tab = 'home' | 'database' | 'search' | 'team' | 'control';
 
 export function ManagerShell() {
   const [activeTab, setActiveTab] = React.useState<Tab>('home');
@@ -25,6 +26,8 @@ export function ManagerShell() {
     { key: 'home', label: 'Dashboard' },
     // Data Vault + Assignments, merged. Visible to anyone who could see either.
     { key: 'database', label: 'Database', anyOf: [Permission.manageData, Permission.assignData], badge: pendingRequests.length },
+    // Everyone searches; admins (manageData) also upload / delete there.
+    { key: 'search', label: 'Master Search' },
     { key: 'team', label: 'Report', permission: Permission.viewReports },
     { key: 'control', label: 'Control' },
   ];
@@ -106,6 +109,7 @@ export function ManagerShell() {
         }}>
           {activeTab === 'home' && <HomeScreen onGo={(t) => setActiveTab(t as Tab)} />}
           {activeTab === 'database' && <DatabaseScreen />}
+          {activeTab === 'search' && <MasterSearchScreen />}
           {activeTab === 'team' && <TeamScreen />}
           {activeTab === 'control' && <ControlScreen />}
         </main>

@@ -22,7 +22,7 @@ import { PropertyPopup } from './PropertyPopup';
 const ACTIONS = [
   'call', 'view', 'update', 'assign', 'reclaim', 'request', 'approve', 'deny',
   'import', 'export', 'edit', 'delete', 'settings', 'user', 'dnc-undo',
-  'signin', 'password',
+  'signin', 'password', 'search',
 ];
 
 const PAGE_SIZE = 100;

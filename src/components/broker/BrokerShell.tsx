@@ -9,15 +9,17 @@ import { Icon, IconName } from '../common/Icon';
 import { BrokerHome } from './BrokerHome';
 import { TodayTab } from './TodayTab';
 import { PoolTab } from './PoolTab';
+import { MasterSearchScreen } from '../common/MasterSearchScreen';
 import { useNotifications, NotificationsPanel } from '../common/Notifications';
 import { PropertyPopup } from '../manager/PropertyPopup';
 import { useVault } from '../../state/VaultContext';
 
-type Tab = 'home' | 'today' | 'pool';
+type Tab = 'home' | 'today' | 'pool' | 'search';
 
 const NAV: { key: Tab; label: string; icon: IconName }[] = [
   { key: 'home', label: 'Home', icon: 'home' },
   { key: 'today', label: 'Database', icon: 'phone' },
+  { key: 'search', label: 'Master Search', icon: 'search' },
   // The Pool page is still there (Home's "Browse pool" opens it) — it just isn't
   // in the sidebar any more.
 ];
@@ -110,6 +112,7 @@ export function BrokerShell() {
           {activeTab === 'home' && <BrokerHome onGo={(t) => setActiveTab(t as Tab)} />}
           {activeTab === 'today' && <TodayTab />}
           {activeTab === 'pool' && <PoolTab />}
+          {activeTab === 'search' && <MasterSearchScreen />}
         </main>
       </div>
 
